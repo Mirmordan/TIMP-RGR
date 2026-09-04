@@ -2,10 +2,12 @@ import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Table, type Column } from '../Table/Table';
 import { Button } from '../Button/Button';
 import { apiFetch } from '../../api';
+import { useNotify } from '../../notifications';
 import type { AdminGroup, AdminGroupObject, RecordingDevice } from '../../types';
 import styles from './GroupsTab.module.css';
 
 export function GroupsTab() {
+  const { toast } = useNotify();
   const [groups, setGroups] = useState<AdminGroup[]>([]);
   const [devices, setDevices] = useState<RecordingDevice[]>([]);
   const [loading, setLoading] = useState(true);
@@ -97,9 +99,12 @@ export function GroupsTab() {
         throw new Error(d.error || 'Не удалось создать');
       }
       setName('');
+      toast.success(`Группа «${trimmed}» создана`);
       setTick(t => t + 1);
     } catch (err: unknown) {
-      setCreateError(err instanceof Error ? err.message : 'Не удалось создать');
+      const msg = err instanceof Error ? err.message : 'Не удалось создать';
+      setCreateError(msg);
+      toast.error(msg);
     } finally {
       setCreating(false);
     }
@@ -135,9 +140,12 @@ export function GroupsTab() {
         throw new Error(d.error || 'Не удалось переименовать');
       }
       setRenamingId(null);
+      toast.success(`Группа переименована в «${trimmed}»`);
       setTick(t => t + 1);
     } catch (err: unknown) {
-      setActionError(err instanceof Error ? err.message : 'Не удалось переименовать');
+      const msg = err instanceof Error ? err.message : 'Не удалось переименовать';
+      setActionError(msg);
+      toast.error(msg);
     } finally {
       setRenaming(false);
     }
@@ -161,9 +169,12 @@ export function GroupsTab() {
         throw new Error(d.error || 'Не удалось удалить');
       }
       setConfirmDeleteId(null);
+      toast.success(`Группа «${row.name}» удалена`);
       setTick(t => t + 1);
     } catch (err: unknown) {
-      setActionError(err instanceof Error ? err.message : 'Не удалось удалить');
+      const msg = err instanceof Error ? err.message : 'Не удалось удалить';
+      setActionError(msg);
+      toast.error(msg);
     } finally {
       setDeleting(false);
     }
@@ -193,7 +204,9 @@ export function GroupsTab() {
       })
       .catch((e: unknown) => {
         if (compRequestId.current === reqId) {
-          setCompError(e instanceof Error ? e.message : 'Не удалось загрузить состав');
+          const msg = e instanceof Error ? e.message : 'Не удалось загрузить состав';
+          setCompError(msg);
+          toast.error(msg);
         }
       })
       .finally(() => {
@@ -228,9 +241,12 @@ export function GroupsTab() {
         throw new Error(d.error || 'Не удалось сохранить');
       }
       closeComposition();
+      toast.success('Состав группы сохранён');
       setTick(t => t + 1);
     } catch (err: unknown) {
-      setCompError(err instanceof Error ? err.message : 'Не удалось сохранить');
+      const msg = err instanceof Error ? err.message : 'Не удалось сохранить';
+      setCompError(msg);
+      toast.error(msg);
     } finally {
       setCompSaving(false);
     }

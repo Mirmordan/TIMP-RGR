@@ -1,29 +1,32 @@
 #!/usr/bin/env bash
 #
-# ТИМП-РГР — резервное копирование (ежедневно).
-#   1) pg_dump логической БД (Docker-контейнер с Postgres) в custom-format (.dump)
-#   2) tar.gz директорий с чанками/записями -> data/archive (gitignore покрывает data/)
-#   3) ротация по КОЛИЧЕСТВУ: доступны текущий и вчерашний день (KEEP_COUNT=2)
+# ТИМП-РГР — резервное копирование (ежедневно). Все пути и параметры — только
+# переменными в блоке ниже; абсолютных личных путей в скрипте нет.
+#   1) pg_dump логической БД (контейнер $DB_CONTAINER) в custom-format (.dump)
+#   2) tar.gz $ARCHIVE_SOURCES -> $BACKUP_DIR
+#   3) ротация по КОЛИЧЕСТВУ: храним последние $KEEP_COUNT архивов каждого типа
+#      (при суточном кроне и KEEP=2 доступны сегодня и вчера)
 #
-# Запуск из крона раз в сутки (пользователь с доступом к docker):
-#   30 3 * * *  /home/mirmordan/Projects/TIMP-RGR/scripts/backup.sh >> /home/mirmordan/Projects/TIMP-RGR/data/backup.log 2>&1
+# Запуск из крона от пользователя с доступом к docker (путь подставить свой):
+#   30 3 * * *  <РЕПО>/scripts/backup.sh >> <РЕПО>/data/backup.log 2>&1
 #
-# Бюджет диска: KEEP_COUNT=2 × ~13G ≈ ~26G + рост записей.
-#
-# Параметры окружения:
-#   BACKUP_DIR     куда складывать бэкапы (по умолчанию ./data/archive от корня репо)
-#   KEEP_COUNT     сколько последних архивов каждого типа хранить (по умолчанию 2 = сегодня+вчера)
-#   SKIP_RECORDS=1 не архивировать чанки/записи (только дамп БД)
+# Параметры окружения (переопределяют дефолты ниже):
+#   BACKUP_DIR, KEEP_COUNT, DB_CONTAINER, DB_DUMP_USER, DB_NAME, ARCHIVE_SOURCES,
+#   SKIP_RECORDS=1 — только дамп БД, без чанков.
 
 set -euo pipefail
 
+# ===== настройки =====
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-BACKUP_DIR="${BACKUP_DIR:-$REPO_ROOT/data/archive}"
-KEEP_COUNT="${KEEP_COUNT:-2}"
-DB_CONTAINER="${DB_CONTAINER:-timp-rgr-db-1}"
-# Роль дампа: суперuser кластера — он единственный проходит FORCE RLS в pg_dump.
-DB_USER="${DB_DUMP_USER:-timprgr}"
+BACKUP_DIR="${BACKUP_DIR:-$REPO_ROOT/data/archive}"   # куда класть архивы
+KEEP_COUNT="${KEEP_COUNT:-2}"                          # сколько поколений хранить
+DB_CONTAINER="${DB_CONTAINER:-timp-rgr-db-1}"         # контейнер Postgres
+# Роль дампа: суперuser кластера — только он проходит FORCE RLS в pg_dump.
+DB_DUMP_USER="${DB_DUMP_USER:-timprgr}"
 DB_NAME="${DB_NAME:-timprgr}"
+# Директории-источники для tar (относительно корня репо, пробелом разделены):
+ARCHIVE_SOURCES="${ARCHIVE_SOURCES:-data/chunks ffmpeg-manager/recordings}"
+# =====================
 STAMP="$(date +%Y%m%d-%H%M%S)"
 
 mkdir -p "$BACKUP_DIR"

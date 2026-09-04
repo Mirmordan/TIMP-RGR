@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { Table, type Column } from '../Table/Table';
 import { Button } from '../Button/Button';
 import { apiFetch } from '../../api';
+import { useNotify } from '../../notifications';
 import type { AdminGroup, AdminPermission, AdminRole } from '../../types';
 import styles from './RolesTab.module.css';
 
@@ -24,6 +25,7 @@ function isSystemRole(role: AdminRole) {
 }
 
 export function RolesTab() {
+  const { toast } = useNotify();
   const [roles, setRoles] = useState<AdminRole[]>([]);
   const [groups, setGroups] = useState<AdminGroup[]>([]);
   const [permissions, setPermissions] = useState<AdminPermission[]>([]);
@@ -96,9 +98,12 @@ export function RolesTab() {
         throw new Error(d.error || 'Не удалось создать');
       }
       setName('');
+      toast.success(`Роль «${trimmed}» создана`);
       setTick(t => t + 1);
     } catch (err: unknown) {
-      setCreateError(err instanceof Error ? err.message : 'Не удалось создать');
+      const msg = err instanceof Error ? err.message : 'Не удалось создать';
+      setCreateError(msg);
+      toast.error(msg);
     } finally {
       setCreating(false);
     }
@@ -134,9 +139,12 @@ export function RolesTab() {
         throw new Error(d.error || 'Не удалось переименовать');
       }
       setRenamingId(null);
+      toast.success(`Роль переименована в «${trimmed}»`);
       setTick(t => t + 1);
     } catch (err: unknown) {
-      setActionError(err instanceof Error ? err.message : 'Не удалось переименовать');
+      const msg = err instanceof Error ? err.message : 'Не удалось переименовать';
+      setActionError(msg);
+      toast.error(msg);
     } finally {
       setRenaming(false);
     }
@@ -154,9 +162,12 @@ export function RolesTab() {
       }
       setConfirmDeleteId(null);
       setMatrixRole(prev => (prev?.id === row.id ? null : prev));
+      toast.success(`Роль «${row.name}» удалена`);
       setTick(t => t + 1);
     } catch (err: unknown) {
-      setActionError(err instanceof Error ? err.message : 'Не удалось удалить');
+      const msg = err instanceof Error ? err.message : 'Не удалось удалить';
+      setActionError(msg);
+      toast.error(msg);
     } finally {
       setDeleting(false);
     }
@@ -206,9 +217,12 @@ export function RolesTab() {
         throw new Error(d.error || 'Не удалось сохранить');
       }
       setMatrixRole(null);
+      toast.success(`Права роли «${matrixRole.name}» сохранены`);
       setTick(t => t + 1);
     } catch (err: unknown) {
-      setMatrixError(err instanceof Error ? err.message : 'Не удалось сохранить');
+      const msg = err instanceof Error ? err.message : 'Не удалось сохранить';
+      setMatrixError(msg);
+      toast.error(msg);
     } finally {
       setMatrixSaving(false);
     }

@@ -3,6 +3,7 @@ import { Table, type Column } from '../Table/Table'
 import { Button } from '../Button/Button'
 import { apiFetch } from '../../api'
 import { useAuth } from '../../auth'
+import { useNotify } from '../../notifications'
 import type {
   AdminCreateUserResponse,
   AdminResetPasswordResponse,
@@ -23,6 +24,7 @@ interface PasswordBanner {
 
 export function UsersTab() {
   const { user } = useAuth();
+  const { toast } = useNotify();
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [roles, setRoles] = useState<AdminRole[]>([]);
   const [loading, setLoading] = useState(true);
@@ -116,11 +118,14 @@ export function UsersTab() {
               code: data.initialPassword,
               suffix: '— скопируйте сейчас',
             }
-          : { prefix: 'Пользователь создан' },
+          : null,
       );
+      toast.success(`Пользователь «${trimmedUsername}» создан`);
       setTick(t => t + 1);
     } catch (err: unknown) {
-      setCreateError(err instanceof Error ? err.message : 'Не удалось создать пользователя');
+      const msg = err instanceof Error ? err.message : 'Не удалось создать пользователя';
+      setCreateError(msg);
+      toast.error(msg);
     } finally {
       setCreating(false);
     }
@@ -160,9 +165,12 @@ export function UsersTab() {
         throw new Error(d.error || 'Не удалось сохранить');
       }
       setEditingId(null);
+      toast.success('Роли сохранены');
       setTick(t => t + 1);
     } catch (err: unknown) {
-      setSaveError(err instanceof Error ? err.message : 'Не удалось сохранить');
+      const msg = err instanceof Error ? err.message : 'Не удалось сохранить';
+      setSaveError(msg);
+      toast.error(msg);
     } finally {
       setSaving(false);
     }
@@ -205,9 +213,12 @@ export function UsersTab() {
         throw new Error(d.error || 'Не удалось сохранить');
       }
       setProfileId(null);
+      toast.success('Профиль пользователя обновлён');
       setTick(t => t + 1);
     } catch (err: unknown) {
-      setProfileError(err instanceof Error ? err.message : 'Не удалось сохранить');
+      const msg = err instanceof Error ? err.message : 'Не удалось сохранить';
+      setProfileError(msg);
+      toast.error(msg);
     } finally {
       setProfileSaving(false);
     }
@@ -234,9 +245,12 @@ export function UsersTab() {
       }
       setConfirmDeleteId(null);
       if (profileId === row.id) setProfileId(null);
+      toast.success(`Пользователь «${row.username}» удалён`);
       setTick(t => t + 1);
     } catch (err: unknown) {
-      setActionError(err instanceof Error ? err.message : 'Не удалось удалить');
+      const msg = err instanceof Error ? err.message : 'Не удалось удалить';
+      setActionError(msg);
+      toast.error(msg);
     } finally {
       setDeleting(false);
     }
@@ -260,11 +274,14 @@ export function UsersTab() {
       setBanner(
         data.initialPassword
           ? { prefix: 'Новый пароль:', code: data.initialPassword }
-          : { prefix: 'Пароль сброшен' },
+          : null,
       );
+      toast.success(row.passwordSet ? 'Пароль сброшен' : 'Пароль задан');
       setTick(t => t + 1);
     } catch (err: unknown) {
-      setActionError(err instanceof Error ? err.message : 'Не удалось сбросить пароль');
+      const msg = err instanceof Error ? err.message : 'Не удалось сбросить пароль';
+      setActionError(msg);
+      toast.error(msg);
     } finally {
       setResettingId(null);
     }

@@ -4,31 +4,28 @@ import { Layout, PageHeader, Card } from '../components/Layout/Layout';
 import { Button } from '../components/Button/Button';
 import { useAuth } from '../auth';
 import { apiFetch } from '../api';
+import { useNotify } from '../notifications';
 import styles from './ProfilePage.module.css';
 
 const USERNAME_RE = /^[a-z0-9][a-z0-9._-]{2,31}$/i;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-interface Flash {
-  kind: 'success' | 'error';
-  text: string;
-}
-
 export function ProfilePage() {
   const { user, refresh, logout } = useAuth();
+  const { toast } = useNotify();
   const navigate = useNavigate();
 
   const [base, setBase] = useState(() => ({ username: user?.username ?? '', email: user?.email ?? '' }));
   const [username, setUsername] = useState(base.username);
   const [email, setEmail] = useState(base.email);
-  const [profileFlash, setProfileFlash] = useState<Flash | null>(null);
+  const [profileError, setProfileError] = useState('');
   const [savingProfile, setSavingProfile] = useState(false);
 
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmNewPassword, setConfirmNewPassword] = useState('');
   const [showCurrent, setShowCurrent] = useState(false);
-  const [passwordFlash, setPasswordFlash] = useState<Flash | null>(null);
+  const [passwordError, setPasswordError] = useState('');
   const [savingPassword, setSavingPassword] = useState(false);
 
   if (!user) return null;
@@ -41,13 +38,9 @@ export function ProfilePage() {
 
   const passwordFilled = currentPassword !== '' && newPassword !== '' && confirmNewPassword !== '';
 
-  function flashClass(f: Flash): string {
-    return f.kind === 'error' ? styles.flashError : styles.flashSuccess;
-  }
-
   async function handleSaveProfile(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    setProfileFlash(null);
+    setProfileError('');
     if (!profileDirty || !profileValid) return;
     setSavingProfile(true);
     try {
@@ -61,14 +54,17 @@ export function ProfilePage() {
       });
       const data = await r.json().catch(() => ({})) as { error?: string };
       if (!r.ok) {
-        setProfileFlash({ kind: 'error', text: data.error || 'Не удалось сохранить профиль' });
+        const msg = data.error || 'Не удалось сохранить профиль';
+        setProfileError(msg);
+        toast.error(msg);
         return;
       }
       setBase({ username: body.username ?? base.username, email: body.email ?? base.email });
-      setProfileFlash({ kind: 'success', text: 'Профиль сохранён' });
+      toast.success('Профиль сохранён');
       await refresh();
     } catch {
-      setProfileFlash({ kind: 'error', text: 'Ошибка сети' });
+      setProfileError('Ошибка сети');
+      toast.error('Ошибка сети');
     } finally {
       setSavingProfile(false);
     }
@@ -76,13 +72,17 @@ export function ProfilePage() {
 
   async function handleChangePassword(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    setPasswordFlash(null);
+    setPasswordError('');
     if (newPassword.length < 8) {
-      setPasswordFlash({ kind: 'error', text: 'Пароль должен быть не короче 8 символов' });
+      const msg = 'Пароль должен быть не короче 8 символов';
+      setPasswordError(msg);
+      toast.error(msg);
       return;
     }
     if (newPassword !== confirmNewPassword) {
-      setPasswordFlash({ kind: 'error', text: 'Пароли не совпадают' });
+      const msg = 'Пароли не совпадают';
+      setPasswordError(msg);
+      toast.error(msg);
       return;
     }
     setSavingPassword(true);
@@ -94,16 +94,19 @@ export function ProfilePage() {
       });
       const data = await r.json().catch(() => ({})) as { error?: string };
       if (!r.ok) {
-        setPasswordFlash({ kind: 'error', text: data.error || 'Не удалось сменить пароль' });
+        const msg = data.error || 'Не удалось сменить пароль';
+        setPasswordError(msg);
+        toast.error(msg);
         return;
       }
       setCurrentPassword('');
       setNewPassword('');
       setConfirmNewPassword('');
-      setPasswordFlash({ kind: 'success', text: 'Пароль изменён' });
+      toast.success('Пароль изменён');
       await refresh();
     } catch {
-      setPasswordFlash({ kind: 'error', text: 'Ошибка сети' });
+      setPasswordError('Ошибка сети');
+      toast.error('Ошибка сети');
     } finally {
       setSavingPassword(false);
     }
@@ -149,7 +152,7 @@ export function ProfilePage() {
                   autoComplete="email"
                 />
               </div>
-              {profileFlash && <div className={flashClass(profileFlash)}>{profileFlash.text}</div>}
+              {profileError && <div className={styles.flashError}>{profileError}</div>}
               <div className={styles.formActions}>
                 <Button type="submit" variant="primary" disabled={!canSaveProfile}>
                   {savingProfile ? '...' : 'Сохранить'}
@@ -201,7 +204,7 @@ export function ProfilePage() {
                   autoComplete="new-password"
                 />
               </div>
-              {passwordFlash && <div className={flashClass(passwordFlash)}>{passwordFlash.text}</div>}
+              {passwordError && <div className={styles.flashError}>{passwordError}</div>}
               <div className={styles.formActions}>
                 <Button type="submit" variant="primary" disabled={!passwordFilled || savingPassword}>
                   {savingPassword ? '...' : 'Сменить пароль'}

@@ -16,6 +16,8 @@ import { ProcessDetailPage } from './pages/ProcessDetailPage';
 import { ProcessEditPage } from './pages/ProcessEditPage';
 import { ProcessCreatePage } from './pages/ProcessCreatePage';
 import { ProfilePage } from './pages/ProfilePage';
+import { NotificationsProvider } from './notifications';
+import { Toaster } from './components/Toaster/Toaster';
 import './styles/global.css';
 
 function AppRoutes() {
@@ -54,7 +56,10 @@ export default function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
-        <AppRoutes />
+        <NotificationsProvider>
+          <AppRoutes />
+          <Toaster />
+        </NotificationsProvider>
       </AuthProvider>
     </BrowserRouter>
   );
