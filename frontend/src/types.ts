@@ -89,3 +89,18 @@ export interface AdminUser {
   createdAt: string;
   roles: Array<{ id: string; name: string }>;
 }
+
+export interface AdminGroup {
+  id: string;
+  name: string;
+  objectCount: number;
+}
+
+export interface AdminPermission {
+  id: string;
+  roleId: string;
+  roleName: string;
+  groupId: string;
+  groupName: string;
+  action: string;
+}

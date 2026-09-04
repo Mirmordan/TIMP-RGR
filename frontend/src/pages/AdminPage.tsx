@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Layout, PageHeader, Card } from '../components/Layout/Layout';
 import { UsersTab } from '../components/admin/UsersTab';
+import { RolesTab } from '../components/admin/RolesTab';
 import styles from './AdminPage.module.css';
 
 const TABS = ['Пользователи', 'Роли и права', 'Группы объектов'] as const;
@@ -28,6 +29,8 @@ export function AdminPage() {
         </div>
         {active === 'Пользователи' ? (
           <UsersTab />
+        ) : active === 'Роли и права' ? (
+          <RolesTab />
         ) : (
           <div className={styles.placeholder}>
             <div className={styles.placeholderTitle}>{active}</div>
