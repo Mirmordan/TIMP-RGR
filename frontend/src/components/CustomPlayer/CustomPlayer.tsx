@@ -2,37 +2,7 @@ import { useRef, useEffect, useState, useMemo } from 'react';
 import Hls from 'hls.js';
 import { Button } from '../Button/Button';
 import styles from './CustomPlayer.module.css';
-
-interface Segment {
-  id: string;
-  startOffsetS: number;
-  durationS: number;
-  fileCount: number;
-  sizeBytes: number;
-  startedAt: string;
-  endedAt: string;
-  live?: boolean;
-}
-
-interface Incident {
-  id: string;
-  processId: string;
-  segmentId?: string;
-  title: string;
-  description?: string;
-  timeOffsetS: number;
-  severity: 'info' | 'warning' | 'critical';
-  createdAt: string;
-  createdBy?: string;
-}
-
-interface TimelineData {
-  segments: Segment[];
-  totalDurationS: number;
-  start: string | null;
-  end: string | null;
-  live?: boolean;
-}
+import type { RecordingIncident as Incident, TimelineData, TimelineSegment as Segment } from '../../types';
 
 interface CustomPlayerProps {
   processId: string;

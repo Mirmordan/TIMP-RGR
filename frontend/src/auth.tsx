@@ -1,12 +1,7 @@
 import { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
 import { config } from './config';
 import { apiFetch } from './api';
-
-interface User {
-  id: string;
-  username: string;
-  role: string;
-}
+import type { User } from './types';
 
 interface AuthState {
   user: User | null;

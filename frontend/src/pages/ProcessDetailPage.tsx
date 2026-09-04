@@ -6,47 +6,11 @@ import { Button } from '../components/Button/Button';
 import { CustomPlayer } from '../components/CustomPlayer/CustomPlayer';
 import { useEntity } from '../hooks/useEntity';
 import { apiFetch } from '../api';
-
-interface Process {
-  id: string;
-  streamId: string;
-  startedAt: string;
-  endedAt: string | null;
-  status: 'running' | 'stopped' | 'failed';
-  createdAt: string;
-  mtxPath?: string;
-}
-
-interface Segment {
-  id: string;
-  startOffsetS: number;
-  durationS: number;
-  fileCount: number;
-  sizeBytes: number;
-  startedAt: string;
-  endedAt: string;
-  live?: boolean;
-}
-
-interface Incident {
-  id: string;
-  processId: string;
-  segmentId?: string;
-  title: string;
-  description?: string;
-  timeOffsetS: number;
-  severity: 'info' | 'warning' | 'critical';
-  createdAt: string;
-  createdBy?: string;
-}
-
-interface TimelineData {
-  segments: Segment[];
-  totalDurationS: number;
-  start: string | null;
-  end: string | null;
-  live?: boolean;
-}
+import type {
+  RecordingIncident as Incident,
+  RecordingProcess as Process,
+  TimelineData,
+} from '../types';
 
 export function ProcessDetailPage() {
   const { id } = useParams<{ id: string }>();

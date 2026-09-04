@@ -3,15 +3,8 @@ import { Layout, PageHeader, Card } from '../components/Layout/Layout';
 import { Table, type Column } from '../components/Table/Table';
 import { Pagination } from '../components/Pagination/Pagination';
 import { usePaginatedData } from '../hooks/usePaginatedData';
+import type { RecordingStream as Stream } from '../types';
 import styles from './ListPage.module.css';
-
-interface Stream {
-  id: string;
-  url: string;
-  deviceId: string | null;
-  sourceFingerprint: string | null;
-  createdAt: string;
-}
 
 function truncate(s: string, max = 50) {
   return s.length > max ? s.slice(0, max) + '...' : s;

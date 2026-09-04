@@ -5,13 +5,7 @@ import { DetailHeader, InfoRow, DetailGrid, styles } from '../components/Layout/
 import { Button } from '../components/Button/Button';
 import { useEntity } from '../hooks/useEntity';
 import { apiFetch } from '../api';
-
-interface Device {
-  id: string;
-  name: string;
-  type: string;
-  createdAt: string;
-}
+import type { RecordingDevice as Device } from '../types';
 
 export function DeviceDetailPage() {
   const { id } = useParams<{ id: string }>();

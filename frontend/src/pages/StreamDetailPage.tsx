@@ -5,14 +5,7 @@ import { DetailHeader, InfoRow, DetailGrid, styles } from '../components/Layout/
 import { Button } from '../components/Button/Button';
 import { useEntity } from '../hooks/useEntity';
 import { apiFetch } from '../api';
-
-interface Stream {
-  id: string;
-  url: string;
-  deviceId: string | null;
-  sourceFingerprint: string | null;
-  createdAt: string;
-}
+import type { RecordingStream as Stream } from '../types';
 
 export function StreamDetailPage() {
   const { id } = useParams<{ id: string }>();

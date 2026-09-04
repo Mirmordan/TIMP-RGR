@@ -5,13 +5,7 @@ import { DetailHeader, styles } from '../components/Layout/DetailPage';
 import { Button } from '../components/Button/Button';
 import { useEntity } from '../hooks/useEntity';
 import { apiFetch } from '../api';
-
-interface Stream {
-  id: string;
-  url: string;
-  deviceId: string | null;
-  sourceFingerprint: string | null;
-}
+import type { RecordingStream as Stream } from '../types';
 
 export function StreamEditPage() {
   const { id } = useParams<{ id: string }>();

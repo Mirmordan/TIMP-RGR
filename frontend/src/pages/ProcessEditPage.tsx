@@ -5,11 +5,7 @@ import { DetailHeader, styles } from '../components/Layout/DetailPage';
 import { Button } from '../components/Button/Button';
 import { useEntity } from '../hooks/useEntity';
 import { apiFetch } from '../api';
-
-interface Process {
-  id: string;
-  streamId: string;
-}
+import type { RecordingProcess as Process } from '../types';
 
 export function ProcessEditPage() {
   const { id } = useParams<{ id: string }>();

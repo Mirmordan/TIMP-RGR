@@ -1,12 +1,8 @@
 import { useRef, useCallback, useState, useMemo } from 'react';
 import styles from './Timeline.module.css';
+import type { TimelineSegment } from '../../types';
 
-interface Segment {
-  id: string;
-  startOffsetS: number;
-  durationS: number;
-  live?: boolean;
-}
+type Segment = Pick<TimelineSegment, 'id' | 'startOffsetS' | 'durationS'> & { live?: boolean };
 
 interface TimelineProps {
   segments: Segment[];

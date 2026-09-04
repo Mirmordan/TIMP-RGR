@@ -4,11 +4,7 @@ import { Layout, Card } from '../components/Layout/Layout';
 import { DetailHeader, styles } from '../components/Layout/DetailPage';
 import { Button } from '../components/Button/Button';
 import { apiFetch } from '../api';
-
-interface Stream {
-  id: string;
-  url: string;
-}
+import type { RecordingStream as Stream } from '../types';
 
 type StartMode = 'running' | 'stopped';
 

@@ -5,12 +5,7 @@ import { DetailHeader, styles } from '../components/Layout/DetailPage';
 import { Button } from '../components/Button/Button';
 import { useEntity } from '../hooks/useEntity';
 import { apiFetch } from '../api';
-
-interface Device {
-  id: string;
-  name: string;
-  type: string;
-}
+import type { RecordingDevice as Device } from '../types';
 
 const DEVICE_TYPES = ['camera', 'microphone', 'sensor', 'nvr', 'encoder'];
 

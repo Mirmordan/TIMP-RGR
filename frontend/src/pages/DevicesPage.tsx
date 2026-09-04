@@ -3,14 +3,8 @@ import { Layout, PageHeader, Card } from '../components/Layout/Layout';
 import { Table, type Column } from '../components/Table/Table';
 import { Pagination } from '../components/Pagination/Pagination';
 import { usePaginatedData } from '../hooks/usePaginatedData';
+import type { RecordingDevice as Device } from '../types';
 import styles from './ListPage.module.css';
-
-interface Device {
-  id: string;
-  name: string;
-  type: string;
-  createdAt: string;
-}
 
 const columns: Column<Device>[] = [
   { key: 'name', header: 'Название' },

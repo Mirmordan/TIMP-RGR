@@ -4,16 +4,8 @@ import { Table, type Column } from '../components/Table/Table';
 import { Pagination } from '../components/Pagination/Pagination';
 import { Button } from '../components/Button/Button';
 import { usePaginatedData } from '../hooks/usePaginatedData';
+import type { RecordingProcess as Process } from '../types';
 import styles from './ListPage.module.css';
-
-interface Process {
-  id: string;
-  streamId: string;
-  startedAt: string;
-  endedAt: string | null;
-  status: 'running' | 'stopped' | 'failed';
-  createdAt: string;
-}
 
 const columns: Column<Process>[] = [
   { key: 'status', header: 'Статус', render: (_, row) => <StatusBadge status={row.status} /> },
