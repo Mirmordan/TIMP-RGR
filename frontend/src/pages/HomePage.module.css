@@ -1,78 +1,232 @@
 .welcome {
-  max-width: 700px;
-  margin: 0 auto;
+  margin-bottom: var(--space-8);
 }
-.hero {
-  text-align: center;
-  margin-bottom: var(--space-10);
+.heroRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-6);
+  flex-wrap: wrap;
+}
+.heroBrand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
 }
 .heroIcon {
-  width: 64px;
-  height: 64px;
-  margin: 0 auto var(--space-5);
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
   background: linear-gradient(135deg, var(--accent), var(--copper));
   border-radius: var(--radius-lg);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 28px;
-  box-shadow: 0 0 40px var(--accent-glow);
+  font-family: var(--font-display);
+  font-size: 18px;
+  font-weight: 700;
+  box-shadow: 0 0 30px var(--accent-glow);
 }
 .heroTitle {
-  font-family: var(--font-display);
-  font-size: 24px;
+  font-size: 18px;
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  margin-bottom: var(--space-3);
 }
 .heroSub {
   color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.6;
+  margin-top: var(--space-1);
+  max-width: 520px;
+}
+.heroUser {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--space-1);
+}
+.userName {
+  font-family: var(--font-display);
   font-size: 13px;
-  line-height: 1.7;
-  max-width: 500px;
-  margin: 0 auto;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text);
 }
-.cards {
-  display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
-  gap: var(--space-4);
-  margin-bottom: var(--space-8);
+.userRole {
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-muted);
 }
-.infoCard {
+.adminLink {
+  display: inline-flex;
+  align-items: center;
+  height: 28px;
+  padding: 0 var(--space-3);
+  margin-top: var(--space-2);
+  font-family: var(--font-body);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--accent);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+.adminLink:hover {
+  border-color: var(--accent);
+  background: var(--accent-bg);
+  text-decoration: none;
+}
+.heroChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-4);
+}
+.heroChip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 3px var(--space-3);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
   background: var(--surface-1);
   border: 1px solid var(--border-light);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow), var(--shadow-inset);
-  padding: var(--space-5);
-  text-align: center;
+  border-radius: 9999px;
 }
-.infoCardIcon {
-  font-size: 24px;
-  margin-bottom: var(--space-3);
+.heroChip::before {
+  content: '';
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--accent);
+  flex-shrink: 0;
 }
-.infoCardTitle {
+
+.dashboard {
+  display: flex;
+  flex-direction: column;
+}
+.dashTitle {
   font-family: var(--font-display);
-  font-size: 11px;
-  font-weight: 600;
+  font-size: 14px;
+  font-weight: 700;
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--text);
-  margin-bottom: var(--space-2);
+  margin-bottom: var(--space-4);
 }
-.infoCardDesc {
-  font-size: 12px;
-  color: var(--text-muted);
-  line-height: 1.6;
+
+.tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--space-4);
+  margin-bottom: var(--space-4);
 }
-.tech {
+.tile {
   background: var(--surface-1);
   border: 1px solid var(--border-light);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow), var(--shadow-inset);
-  padding: var(--space-6);
+  padding: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
 }
-.techTitle {
+.tileLabel {
+  font-family: var(--font-display);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.tileValue {
+  font-family: var(--font-display);
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1.2;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tileSub {
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+.runningRow {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  align-self: flex-start;
+  padding: 2px var(--space-2);
+  border-radius: 9999px;
+  background: var(--success-bg);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+.runningDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 6px var(--accent-glow);
+  animation: dashPulse 2s ease-in-out infinite;
+}
+@keyframes dashPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+.sevRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  align-items: center;
+}
+.sevItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.sevDot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.sevCount {
+  color: var(--text-muted);
+}
+
+.gridArea {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-4);
+  align-items: start;
+}
+.span2 {
+  grid-column: 1 / -1;
+}
+.chartBody {
+  padding: var(--space-5);
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.chartTitle {
   font-family: var(--font-display);
   font-size: 11px;
   font-weight: 600;
@@ -81,27 +235,70 @@
   color: var(--text-muted);
   margin-bottom: var(--space-4);
 }
-.techList {
+.chartBox {
+  width: 100%;
+}
+.chartEmpty {
+  padding: var(--space-10) var(--space-4);
+  text-align: center;
+  font-size: 12px;
+  color: var(--text-muted);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+}
+
+.diskBar {
+  position: relative;
+  height: 10px;
+  width: 100%;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.06);
+  overflow: hidden;
+  margin-bottom: var(--space-3);
+}
+.diskBarFill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  height: 100%;
+  border-radius: 9999px;
+  background: linear-gradient(90deg, var(--accent), var(--copper));
+  box-shadow: 0 0 12px var(--accent-glow);
+}
+.diskCaption {
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.6;
+}
+.diskCaption b {
+  color: var(--text);
+  font-weight: 500;
+}
+
+.failed {
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
-}
-.techItem {
-  display: flex;
   align-items: center;
   gap: var(--space-3);
-  font-size: 13px;
-  color: var(--text);
+  padding: var(--space-10);
 }
-.techDot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--accent);
-  flex-shrink: 0;
-}
-.techLabel {
-  color: var(--text-muted);
-  min-width: 120px;
+.errorText {
   font-size: 12px;
+  color: var(--danger);
+  letter-spacing: 0.06em;
+}
+
+@media (max-width: 900px) {
+  .heroRow {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .heroUser {
+    align-items: flex-start;
+  }
+  .gridArea {
+    grid-template-columns: 1fr;
+  }
+  .tiles {
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  }
 }

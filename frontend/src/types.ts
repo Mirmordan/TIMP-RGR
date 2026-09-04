@@ -159,3 +159,54 @@ export interface AuditClearResponse {
   ok: boolean;
   deleted: number;
 }
+
+// --- Статистика дашборда (U6): wire-ответы /stats/* ---
+
+export interface StatsProcessesWire {
+  total: number;
+  running: number;
+}
+
+export interface StatsSeverityCountsWire {
+  info: number;
+  warning: number;
+  critical: number;
+}
+
+export interface StatsOverviewWire {
+  processes: StatsProcessesWire;
+  segments: {
+    count: number;
+    durationS: number;
+    sizeBytes: number;
+  };
+  incidents: {
+    total: number;
+    bySeverity: StatsSeverityCountsWire;
+    last24h: number;
+  };
+  devices: { visible: number };
+  topDevices: Array<{ id: string; name: string; durationS: number }>;
+  recordingTodayS: number;
+}
+
+/** Строка GET /stats/timeline?days=N (день × устройство). */
+export interface StatsTimelineRowWire {
+  day: string;
+  device: string;
+  seconds: number;
+}
+
+/** Строка GET /stats/incidents?days=N (день × severity). */
+export interface StatsIncidentRowWire {
+  day: string;
+  severity: 'info' | 'warning' | 'critical';
+  count: number;
+}
+
+/** Ответ GET /stats/disk. */
+export interface StatsDiskWire {
+  chunksBytes: number | null;
+  freeBytes: number | null;
+  totalBytes: number | null;
+}
