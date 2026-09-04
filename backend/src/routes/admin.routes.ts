@@ -55,6 +55,17 @@ adminRouter.get('/roles', requireCapability('admin:read'), async (_req: Request,
   res.json(roles);
 });
 
+adminRouter.get('/roles/:id', requireCapability('admin:read'), async (req: Request, res: Response) => {
+  try {
+    const id = req.params.id as string;
+    const role = await rbacRepository.findRoleById(id);
+    if (!role) return res.status(404).json({ error: 'роль не найдена' });
+    res.json(role);
+  } catch {
+    res.status(404).json({ error: 'роль не найдена' });
+  }
+});
+
 adminRouter.get('/groups', requireCapability('admin:read'), async (_req: Request, res: Response) => {
   const groups = await rbacRepository.findGroups();
   res.json(groups);
@@ -117,6 +128,57 @@ adminRouter.delete('/roles/:id', requireCapability('admin:write'), async (req: R
     const id = req.params.id as string;
     await rbacService.deleteRole(id);
     res.status(204).send();
+  } catch (e) {
+    sendRbacError(res, e);
+  }
+});
+
+// --- Мутации (Э5): права ролей и группы объектов ---
+
+adminRouter.put('/roles/:id/permissions', requireCapability('admin:write'), async (req: Request, res: Response) => {
+  try {
+    const id = req.params.id as string;
+    const permissions = await rbacService.replaceRolePermissions(id, (req.body ?? {}).entries);
+    res.json(permissions);
+  } catch (e) {
+    sendRbacError(res, e);
+  }
+});
+
+adminRouter.post('/groups', requireCapability('admin:write'), async (req: Request, res: Response) => {
+  try {
+    const group = await rbacService.createGroup((req.body ?? {}).name);
+    res.status(201).json(group);
+  } catch (e) {
+    sendRbacError(res, e);
+  }
+});
+
+adminRouter.patch('/groups/:id', requireCapability('admin:write'), async (req: Request, res: Response) => {
+  try {
+    const id = req.params.id as string;
+    const group = await rbacService.renameGroup(id, (req.body ?? {}).name);
+    res.json(group);
+  } catch (e) {
+    sendRbacError(res, e);
+  }
+});
+
+adminRouter.delete('/groups/:id', requireCapability('admin:write'), async (req: Request, res: Response) => {
+  try {
+    const id = req.params.id as string;
+    await rbacService.deleteGroup(id);
+    res.status(204).send();
+  } catch (e) {
+    sendRbacError(res, e);
+  }
+});
+
+adminRouter.put('/groups/:id/objects', requireCapability('admin:write'), async (req: Request, res: Response) => {
+  try {
+    const id = req.params.id as string;
+    const objects = await rbacService.replaceGroupObjects(id, (req.body ?? {}).objectIds);
+    res.json(objects);
   } catch (e) {
     sendRbacError(res, e);
   }
