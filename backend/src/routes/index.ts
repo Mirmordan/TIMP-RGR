@@ -9,6 +9,7 @@ import { recordingRouter } from './recording.routes';
 import { userRouter } from './user.routes';
 import { incidentRouter } from './incident.routes';
 import { adminRouter } from './admin.routes';
+import { statsRouter } from './stats.routes';
 import { authRouter } from '../security/auth.routes';
 
 export const apiRouter = Router();
@@ -27,3 +28,4 @@ apiRouter.use('/segments', segmentRouter);
 apiRouter.use('/recordings', recordingRouter);
 apiRouter.use('/incidents', incidentRouter);
 apiRouter.use('/admin', adminRouter);
+apiRouter.use('/stats', statsRouter);
