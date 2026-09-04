@@ -18,8 +18,11 @@ media-manager/recordings/
 # Системное
 .DS_Store
 
-# Инструкции агентов (не в репозитории учебного проекта)
+# Инструменты ассистента разработки (не в VCS; конфиги в ~/.config/opencode/)
 AGENTS.md
+CLAUDE.md
+.opencode/
+.claude/
 
 # ВАЖНО: .env и конфиги (docker-compose.yml, mediamtx.yml, nginx.conf) намеренно
 # НЕ игнорируются — учебный проект, должны попадать в репозиторий.
