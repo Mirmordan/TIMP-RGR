@@ -7,6 +7,40 @@ import type { Role } from './types';
 
 const ROLE_FALLBACK: Role = 'viewer';
 
+// Общие правила полей для профиля/пароля (username/email/password).
+const USERNAME_RE = /^[a-zA-Z0-9][a-zA-Z0-9._-]{2,31}$/;
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const PASSWORD_MIN = 8;
+
+/** Ошибка с HTTP-статусом (для /auth/profile и /auth/change-password). */
+export class AuthError extends Error {
+  status: number;
+
+  constructor(status: number, message: string) {
+    super(message);
+    this.name = 'AuthError';
+    this.status = status;
+  }
+}
+
+function assertUsername(username: unknown): asserts username is string {
+  if (typeof username !== 'string' || !USERNAME_RE.test(username)) {
+    throw new AuthError(400, 'username: 3-32 символа, латиница/цифры/._-, начинается с буквы или цифры');
+  }
+}
+
+function assertEmail(email: unknown): asserts email is string {
+  if (typeof email !== 'string' || !EMAIL_RE.test(email)) {
+    throw new AuthError(400, 'некорректный email');
+  }
+}
+
+function assertPassword(password: unknown): asserts password is string {
+  if (typeof password !== 'string' || password.length < PASSWORD_MIN) {
+    throw new AuthError(400, `пароль минимум ${PASSWORD_MIN} символов`);
+  }
+}
+
 async function getRole(userId: string): Promise<Role> {
   const { rows } = await pool.query<{ role: string | null }>(
     `SELECT (SELECT r.name FROM user_roles ur JOIN roles r ON r.id = ur.role_id
@@ -66,6 +100,50 @@ export const authService = {
       accessToken: createAccessToken(user.id, user.username, role),
       refreshToken: createRefreshToken(user.id),
       user: { id: user.id, username: user.username, role },
+    };
+  },
+
+  /** Профиль: обновление своих username/email (пароль не трогаем). */
+  async updateProfile(userId: string, patch: { username?: string; email?: string }): Promise<void> {
+    if (patch.username === undefined && patch.email === undefined) {
+      throw new AuthError(400, 'укажите username или email');
+    }
+    if (patch.username !== undefined) assertUsername(patch.username);
+    if (patch.email !== undefined) assertEmail(patch.email);
+    if (patch.username !== undefined) {
+      const clash = await userRepository.findByUsername(patch.username);
+      if (clash && clash.id !== userId) throw new AuthError(409, 'username уже занят');
+    }
+    if (patch.email !== undefined) {
+      const clash = await userRepository.findByEmail(patch.email);
+      if (clash && clash.id !== userId) throw new AuthError(409, 'email уже занят');
+    }
+    const updated = await userRepository.patch(userId, {
+      ...(patch.username !== undefined ? { username: patch.username } : {}),
+      ...(patch.email !== undefined ? { email: patch.email } : {}),
+    });
+    if (!updated) throw new AuthError(404, 'пользователь не найден');
+  },
+
+  /** Смена пароля: проверка текущего, новый хэш + перевыпуск пары токенов. */
+  async changePassword(userId: string, currentPassword: unknown, newPassword: unknown) {
+    const user = await userRepository.findAuthById(userId);
+    if (!user || !user.passwordHash) throw new AuthError(401, 'неверный текущий пароль');
+    if (typeof currentPassword !== 'string' || currentPassword === '') {
+      throw new AuthError(400, 'currentPassword обязателен');
+    }
+    const currentOk = await verifyPassword(currentPassword, user.passwordHash);
+    if (!currentOk) throw new AuthError(401, 'неверный текущий пароль');
+    assertPassword(newPassword);
+    const sameAsOld = await verifyPassword(newPassword, user.passwordHash);
+    if (sameAsOld) throw new AuthError(400, 'новый пароль совпадает с текущим');
+    const passwordHash = await hashPassword(newPassword);
+    const updated = await userRepository.patch(userId, { passwordHash });
+    if (!updated) throw new AuthError(404, 'пользователь не найден');
+    const role = await getRole(userId);
+    return {
+      accessToken: createAccessToken(user.id, user.username, role),
+      refreshToken: createRefreshToken(user.id),
     };
   },
 

@@ -31,9 +31,27 @@ export const userRepository = {
     return rows[0] ? toUser(rows[0]) : null;
   },
 
+  async findByEmail(email: string): Promise<User | null> {
+    const { rows } = await pool.query<UserRow>(
+      `SELECT id, username, email, created_at AS "createdAt" FROM users WHERE email = $1`,
+      [email],
+    );
+    return rows[0] ? toUser(rows[0]) : null;
+  },
+
   /** Внутренний: вернуть пользователя с хэшем пароля (только для auth). */
   async findAuthByUsername(username: string): Promise<UserAuth | null> {
     const { rows } = await pool.query<UserRow>(userQueries.findAuthByUsername, [username]);
+    return rows[0] ? toUserAuth(rows[0]) : null;
+  },
+
+  /** Внутренний: пользователь с хэшем пароля по id (только для auth). */
+  async findAuthById(id: string): Promise<UserAuth | null> {
+    const { rows } = await pool.query<UserRow>(
+      `SELECT id, username, email, password_hash AS "passwordHash", created_at AS "createdAt"
+       FROM users WHERE id = $1`,
+      [id],
+    );
     return rows[0] ? toUserAuth(rows[0]) : null;
   },
 

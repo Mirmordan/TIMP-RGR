@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import type { Request, Response } from 'express';
-import { authService } from './auth.service';
+import { authService, AuthError } from './auth.service';
 import { authenticate } from './middleware/authenticate';
 import { userRepository } from '../repositories/user.repository';
 import { pool } from '../database/connection';
@@ -115,5 +115,36 @@ authRouter.get('/me', authenticate, async (req: Request, res: Response) => {
     res.json(await authPayload(req.user.id));
   } catch (e: any) {
     res.status(401).json({ error: e.message });
+  }
+});
+
+/** Профиль: обновление своих username/email (только для себя). */
+authRouter.patch('/profile', authenticate, async (req: Request, res: Response) => {
+  try {
+    if (!req.user) {
+      res.status(401).json({ error: 'требуется авторизация' });
+      return;
+    }
+    const { username, email } = req.body ?? {};
+    await authService.updateProfile(req.user.id, { username, email });
+    res.json(await authPayload(req.user.id));
+  } catch (e: any) {
+    res.status(e instanceof AuthError ? e.status : 400).json({ error: e.message });
+  }
+});
+
+/** Смена пароля: проверка текущего + перевыпуск сессии. */
+authRouter.post('/change-password', authenticate, async (req: Request, res: Response) => {
+  try {
+    if (!req.user) {
+      res.status(401).json({ error: 'требуется авторизация' });
+      return;
+    }
+    const { currentPassword, newPassword } = req.body ?? {};
+    const result = await authService.changePassword(req.user.id, currentPassword, newPassword);
+    setAuthCookies(res, result.accessToken, result.refreshToken);
+    res.json({ ok: true, user: await authPayload(req.user.id) });
+  } catch (e: any) {
+    res.status(e instanceof AuthError ? e.status : 400).json({ error: e.message });
   }
 });
