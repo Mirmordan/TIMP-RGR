@@ -24,7 +24,7 @@ function parseIvideonUrl(source: string): { server: string; camera: string } {
   // ivideon://server/camera
   const match = source.match(/^ivideon:\/\/([^/]+)\/(.+)$/);
   if (!match) throw new Error(`Неверный Ivideon URL: ${source}`);
-  return { server: match[1], camera: match[2] };
+  return { server: match[1]!, camera: match[2]! };
 }
 
 async function request<T = unknown>(url: string, init: RequestInit = {}): Promise<T> {

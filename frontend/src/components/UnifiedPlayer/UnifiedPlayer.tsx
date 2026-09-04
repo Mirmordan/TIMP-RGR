@@ -106,6 +106,7 @@ export function UnifiedPlayer({ playlistUrl, liveUrl, timeline }: UnifiedPlayerP
     if (!v) return;
     let raf: number;
     function tick() {
+      if (!v) return;
       setCurrentTime(v.currentTime);
       const ranges: [number, number][] = [];
       for (let i = 0; i < v.buffered.length; i++) {
