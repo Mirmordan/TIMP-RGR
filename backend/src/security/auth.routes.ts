@@ -92,7 +92,7 @@ authRouter.post('/refresh', async (req: Request, res: Response) => {
     }
     const result = await authService.refresh(token);
     setAuthCookies(res, result.accessToken, result.refreshToken);
-    res.json({ user: result.user });
+    res.json(await authPayload(result.user.id));
   } catch (e: any) {
     clearAuthCookies(res);
     res.status(401).json({ error: e.message });

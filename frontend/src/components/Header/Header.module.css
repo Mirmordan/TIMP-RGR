@@ -67,9 +67,12 @@
   padding-left: var(--space-4);
   border-left: 1px solid var(--border-light);
 }
-.username {
+.usernameLink {
   font-family: var(--font-mono);
   font-size: 11px;
   color: var(--text-muted);
   letter-spacing: 0.04em;
+  text-decoration: none;
+  transition: color 0.2s;
 }
+.usernameLink:hover { color: var(--accent); text-decoration: none; }

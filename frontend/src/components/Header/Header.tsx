@@ -1,4 +1,4 @@
-import { NavLink } from 'react-router';
+import { Link, NavLink } from 'react-router';
 import { useAuth } from '../../auth';
 import { Button } from '../Button/Button';
 import styles from './Header.module.css';
@@ -36,7 +36,7 @@ export function Header() {
             </NavLink>
           ))}
           <div className={styles.user}>
-            <span className={styles.username}>{user.username}</span>
+            <Link to="/profile" className={styles.usernameLink}>{user.username}</Link>
             <Button variant="ghost" size="sm" onClick={logout}>Выход</Button>
           </div>
         </nav>

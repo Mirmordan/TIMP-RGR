@@ -15,6 +15,7 @@ import { ProcessesPage } from './pages/ProcessesPage';
 import { ProcessDetailPage } from './pages/ProcessDetailPage';
 import { ProcessEditPage } from './pages/ProcessEditPage';
 import { ProcessCreatePage } from './pages/ProcessCreatePage';
+import { ProfilePage } from './pages/ProfilePage';
 import './styles/global.css';
 
 function AppRoutes() {
@@ -40,6 +41,7 @@ function AppRoutes() {
       <Route path="/streams/:id/edit" element={<ProtectedRoute><StreamEditPage /></ProtectedRoute>} />
       <Route path="/processes" element={<ProtectedRoute><ProcessesPage /></ProtectedRoute>} />
       <Route path="/admin" element={<ProtectedRoute><RequireCapability caps={['admin:read']}><AdminPage /></RequireCapability></ProtectedRoute>} />
+      <Route path="/profile" element={<ProtectedRoute><ProfilePage /></ProtectedRoute>} />
       <Route path="/processes/new" element={<ProtectedRoute><ProcessCreatePage /></ProtectedRoute>} />
       <Route path="/processes/:id" element={<ProtectedRoute><ProcessDetailPage /></ProtectedRoute>} />
       <Route path="/processes/:id/edit" element={<ProtectedRoute><ProcessEditPage /></ProtectedRoute>} />
