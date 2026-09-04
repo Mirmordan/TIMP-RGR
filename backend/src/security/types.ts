@@ -8,6 +8,8 @@ export const ROLES: Role[] = ['admin', 'operator', 'viewer'];
  * эти capability связаны с управлением самой системой и выдаются по роли.
  */
 export type Capability =
+  | 'admin:read'
+  | 'admin:write'
   | 'user:create'
   | 'user:read'
   | 'user:update'
@@ -33,6 +35,8 @@ export const OBJECT_ACTIONS: ObjectAction[] = ['read', 'write', 'delete', 'strea
  */
 export const ROLE_CAPABILITIES: Record<Role, Capability[]> = {
   admin: [
+    'admin:read',
+    'admin:write',
     'user:create',
     'user:read',
     'user:update',

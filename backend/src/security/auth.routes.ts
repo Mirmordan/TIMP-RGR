@@ -2,6 +2,10 @@ import { Router } from 'express';
 import type { Request, Response } from 'express';
 import { authService } from './auth.service';
 import { authenticate } from './middleware/authenticate';
+import { userRepository } from '../repositories/user.repository';
+import { pool } from '../database/connection';
+import { ROLE_CAPABILITIES } from './types';
+import type { Role, Capability } from './types';
 
 export const authRouter = Router();
 
@@ -27,6 +31,39 @@ function setAuthCookies(res: Response, accessToken: string, refreshToken: string
 function clearAuthCookies(res: Response): void {
   res.clearCookie('access_token', { path: '/' });
   res.clearCookie('refresh_token', { path: '/' });
+}
+
+/** Роль из БД: приоритет admin, иначе первый из выданных, fallback viewer. */
+async function fetchRole(userId: string): Promise<Role> {
+  const { rows } = await pool.query<{ role: string | null }>(
+    `SELECT (SELECT r.name FROM user_roles ur JOIN roles r ON r.id = ur.role_id
+              WHERE ur.user_id = u.id ORDER BY CASE r.name WHEN 'admin' THEN 0 ELSE 1 END LIMIT 1) AS "role"
+     FROM users u WHERE u.id = $1`,
+    [userId],
+  );
+  return (rows[0]?.role as Role) || 'viewer';
+}
+
+/** Единая форма сессионного ответа: полный user из БД + capabilities по роли. */
+async function authPayload(userId: string): Promise<{
+  user: { id: string; username: string; email: string; createdAt: string; role: Role };
+  capabilities: Capability[];
+}> {
+  const [user, role] = await Promise.all([
+    userRepository.findById(userId),
+    fetchRole(userId),
+  ]);
+  if (!user) throw new Error('пользователь не найден');
+  return {
+    user: {
+      id: user.id,
+      username: user.username,
+      email: user.email,
+      createdAt: user.createdAt.toISOString(),
+      role,
+    },
+    capabilities: ROLE_CAPABILITIES[role],
+  };
 }
 
 /** Регистрация: создаёт пользователя + выдаёт сессию. */
@@ -59,7 +96,7 @@ authRouter.post('/login', async (req: Request, res: Response) => {
     }
     const result = await authService.login(username, password);
     setAuthCookies(res, result.accessToken, result.refreshToken);
-    res.json({ user: result.user });
+    res.json(await authPayload(result.user.id));
   } catch (e: any) {
     res.status(401).json({ error: e.message });
   }
@@ -89,6 +126,14 @@ authRouter.post('/logout', (_req: Request, res: Response) => {
 });
 
 /** Текущий пользователь: читает access_token из cookie или Authorization header. */
-authRouter.get('/me', authenticate, (req: Request, res: Response) => {
-  res.json({ user: req.user });
+authRouter.get('/me', authenticate, async (req: Request, res: Response) => {
+  try {
+    if (!req.user) {
+      res.status(401).json({ error: 'требуется авторизация' });
+      return;
+    }
+    res.json(await authPayload(req.user.id));
+  } catch (e: any) {
+    res.status(401).json({ error: e.message });
+  }
 });

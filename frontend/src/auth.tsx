@@ -1,10 +1,11 @@
 import { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
 import { config } from './config';
 import { apiFetch } from './api';
-import type { User } from './types';
+import type { User, Capabilities } from './types';
 
 interface AuthState {
   user: User | null;
+  capabilities: Capabilities;
   loading: boolean;
   login: (username: string, password: string) => Promise<string>;
   register: (username: string, email: string, password: string) => Promise<string>;
@@ -12,17 +13,30 @@ interface AuthState {
   refresh: () => Promise<void>;
 }
 
+interface AuthResponse {
+  user?: User;
+  capabilities?: Capabilities;
+}
+
 const AuthContext = createContext<AuthState | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
+  const [capabilities, setCapabilities] = useState<Capabilities>([]);
   const [loading, setLoading] = useState(true);
+
+  function applyAuth(data: AuthResponse | null): void {
+    if (data?.user) {
+      setUser(data.user);
+      setCapabilities(data.capabilities ?? []);
+    }
+  }
 
   // При монтировании — пробуем достать сессию из cookies.
   useEffect(() => {
     apiFetch('/auth/me')
       .then(r => r.ok ? r.json() : null)
-      .then(data => { if (data?.user) setUser(data.user); })
+      .then(data => applyAuth(data))
       .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
@@ -35,12 +49,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Ошибка');
-    if (data.user) setUser(data.user);
+    applyAuth(data);
     return data.user?.username ?? '';
   }
 
   const authCtx: AuthState = {
     user,
+    capabilities,
     loading,
     login: (username, password) =>
       authRequest('/auth/login', { username, password }),
@@ -49,15 +64,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     logout: async () => {
       await apiFetch('/auth/logout', { method: 'POST' });
       setUser(null);
+      setCapabilities([]);
     },
     refresh: async () => {
       try {
         const res = await apiFetch('/auth/refresh', { method: 'POST' });
-        if (!res.ok) { setUser(null); return; }
+        if (!res.ok) { setUser(null); setCapabilities([]); return; }
         const data = await res.json();
-        if (data.user) setUser(data.user);
+        applyAuth(data);
       } catch {
         setUser(null);
+        setCapabilities([]);
       }
     },
   };

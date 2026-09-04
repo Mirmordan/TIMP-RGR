@@ -1,8 +1,10 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router';
 import { AuthProvider, useAuth } from './auth';
 import { ProtectedRoute } from './ProtectedRoute';
+import { RequireCapability } from './components/RequireCapability';
 import { AuthPage } from './pages/AuthPage';
 import { HomePage } from './pages/HomePage';
+import { AdminPage } from './pages/AdminPage';
 import { DevicesPage } from './pages/DevicesPage';
 import { DeviceDetailPage } from './pages/DeviceDetailPage';
 import { DeviceEditPage } from './pages/DeviceEditPage';
@@ -37,6 +39,7 @@ function AppRoutes() {
       <Route path="/streams/:id" element={<ProtectedRoute><StreamDetailPage /></ProtectedRoute>} />
       <Route path="/streams/:id/edit" element={<ProtectedRoute><StreamEditPage /></ProtectedRoute>} />
       <Route path="/processes" element={<ProtectedRoute><ProcessesPage /></ProtectedRoute>} />
+      <Route path="/admin" element={<ProtectedRoute><RequireCapability caps={['admin:read']}><AdminPage /></RequireCapability></ProtectedRoute>} />
       <Route path="/processes/new" element={<ProtectedRoute><ProcessCreatePage /></ProtectedRoute>} />
       <Route path="/processes/:id" element={<ProtectedRoute><ProcessDetailPage /></ProtectedRoute>} />
       <Route path="/processes/:id/edit" element={<ProtectedRoute><ProcessEditPage /></ProtectedRoute>} />

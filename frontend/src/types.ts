@@ -1,10 +1,12 @@
 export interface User {
   id: string;
   username: string;
-  email: string;
-  createdAt: string;
+  email?: string;
+  createdAt?: string;
   role?: string;
 }
+
+export type Capabilities = string[];
 
 export interface RecordingDevice {
   id: string;

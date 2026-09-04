@@ -3,14 +3,18 @@ import { useAuth } from '../../auth';
 import { Button } from '../Button/Button';
 import styles from './Header.module.css';
 
-const links = [
+const baseLinks = [
   { to: '/devices', label: 'Устройства' },
   { to: '/streams', label: 'Потоки' },
   { to: '/processes', label: 'Записи' },
 ];
 
 export function Header() {
-  const { user, logout } = useAuth();
+  const { user, capabilities, logout } = useAuth();
+
+  const links = capabilities.includes('admin:read')
+    ? [...baseLinks, { to: '/admin', label: 'Админ' }]
+    : baseLinks;
 
   return (
     <header className={styles.header}>
