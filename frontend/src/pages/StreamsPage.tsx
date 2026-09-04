@@ -2,9 +2,9 @@ import { useNavigate } from 'react-router';
 import { Layout, PageHeader, Card } from '../components/Layout/Layout';
 import { Table, type Column } from '../components/Table/Table';
 import { Pagination } from '../components/Pagination/Pagination';
+import { SkeletonRows } from '../components/Skeleton/Skeleton';
 import { usePaginatedData } from '../hooks/usePaginatedData';
 import type { RecordingStream as Stream } from '../types';
-import styles from './ListPage.module.css';
 
 function truncate(s: string, max = 50) {
   return s.length > max ? s.slice(0, max) + '...' : s;
@@ -26,7 +26,7 @@ export function StreamsPage() {
       <PageHeader title="Потоки" />
       <Card>
         {loading ? (
-          <div className={styles.loading}>Загрузка...</div>
+          <SkeletonRows rows={8} cols={columns.length} cellWidths={['46%', '54%', '36%', '26%']} />
         ) : (
           <>
             <Table columns={columns} data={items} emptyText="Потоков нет" onRowClick={r => navigate(`/streams/${r.id}`)} />

@@ -4,6 +4,7 @@ import { Layout, Card, StatusBadge } from '../components/Layout/Layout';
 import { DetailHeader, InfoRow, DetailGrid, styles } from '../components/Layout/DetailPage';
 import { Button } from '../components/Button/Button';
 import { CustomPlayer } from '../components/CustomPlayer/CustomPlayer';
+import { Skeleton } from '../components/Skeleton/Skeleton';
 import { useEntity } from '../hooks/useEntity';
 import { apiFetch } from '../api';
 import type {
@@ -106,7 +107,37 @@ export function ProcessDetailPage() {
     setIncidents(prev => prev.map(i => i.id === incidentId ? updated : i));
   }
 
-  if (loading) return <Layout><div className={styles.loading}>Загрузка...</div></Layout>;
+  if (loading) {
+    return (
+      <Layout>
+        <DetailHeader
+          title="Запись"
+          actions={
+            <>
+              <Skeleton width={124} height={26} />
+              <Skeleton width={112} height={26} />
+              <Skeleton width={96} height={26} />
+            </>
+          }
+        />
+        <Card>
+          <DetailGrid>
+            {Array.from({ length: 6 }, (_, i) => (
+              <InfoRow key={i} label={<Skeleton width={64} height={10} />}>
+                <Skeleton width={i % 3 === 2 ? '40%' : '70%'} height={14} />
+              </InfoRow>
+            ))}
+          </DetailGrid>
+        </Card>
+        <div className={styles.playerSection}>
+          <div className={styles.sectionTitle}>
+            <Skeleton width={220} height={14} />
+          </div>
+          <Skeleton width="100%" height={544} />
+        </div>
+      </Layout>
+    );
+  }
   if (error || !process) return <Layout><div className={styles.error}>Запись не найдена</div></Layout>;
 
   const isRunning = process.status === 'running';
@@ -169,7 +200,7 @@ export function ProcessDetailPage() {
             <div className={styles.noSegments}>Запись отсутствует</div>
           )
         ) : (
-          <div className={styles.noSegments}>Загрузка...</div>
+          <Skeleton width="100%" height={544} />
         )}
       </div>
 

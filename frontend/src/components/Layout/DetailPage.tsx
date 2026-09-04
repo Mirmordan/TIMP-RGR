@@ -29,7 +29,7 @@ export function DetailHeader({ title, subtitle, onBack = '..', actions }: Detail
 }
 
 interface InfoRowProps {
-  label: string;
+  label: ReactNode;
   children: ReactNode;
   mono?: boolean;
 }

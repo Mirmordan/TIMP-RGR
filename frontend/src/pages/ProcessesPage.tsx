@@ -2,10 +2,10 @@ import { useNavigate } from 'react-router';
 import { Layout, PageHeader, Card, StatusBadge } from '../components/Layout/Layout';
 import { Table, type Column } from '../components/Table/Table';
 import { Pagination } from '../components/Pagination/Pagination';
+import { SkeletonRows } from '../components/Skeleton/Skeleton';
 import { Button } from '../components/Button/Button';
 import { usePaginatedData } from '../hooks/usePaginatedData';
 import type { RecordingProcess as Process } from '../types';
-import styles from './ListPage.module.css';
 
 const columns: Column<Process>[] = [
   { key: 'status', header: 'Статус', render: (_, row) => <StatusBadge status={row.status} /> },
@@ -26,7 +26,7 @@ export function ProcessesPage() {
       } />
       <Card>
         {loading ? (
-          <div className={styles.loading}>Загрузка...</div>
+          <SkeletonRows rows={8} cols={columns.length} cellWidths={['24%', '44%', '46%', '40%', '26%']} />
         ) : (
           <>
             <Table columns={columns} data={items} emptyText="Записей нет" onRowClick={r => navigate(`/processes/${r.id}`)} />

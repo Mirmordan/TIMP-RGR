@@ -3,6 +3,7 @@ import { Table, type Column } from '../Table/Table';
 import { Button } from '../Button/Button';
 import { apiFetch } from '../../api';
 import { useNotify } from '../../notifications';
+import { Skeleton, SkeletonRows } from '../Skeleton/Skeleton';
 import type { AdminGroup, AdminGroupObject, RecordingDevice } from '../../types';
 import styles from './GroupsTab.module.css';
 
@@ -306,7 +307,14 @@ export function GroupsTab() {
         </div>
         {compError && <div className={styles.saveError}>{compError}</div>}
         {compLoading ? (
-          <div className={styles.compLoading}>Загрузка состава...</div>
+          <div className={styles.compGrid} aria-hidden="true">
+            <Skeleton width={150} height={24} />
+            <Skeleton width={110} height={24} />
+            <Skeleton width={180} height={24} />
+            <Skeleton width={130} height={24} />
+            <Skeleton width={160} height={24} />
+            <Skeleton width={190} height={24} />
+          </div>
         ) : (
           <>
             {devices.length === 0 ? (
@@ -342,7 +350,24 @@ export function GroupsTab() {
   }
 
   if (loading) {
-    return <div className={styles.loading}>Загрузка...</div>;
+    return (
+      <>
+        <div className={styles.createBox}>
+          <div className={styles.createLabel}>
+            <Skeleton width={130} height={10} />
+          </div>
+          <div className={styles.createRow}>
+            <Skeleton style={{ flex: '1 1 0%' }} height={30} />
+            <Skeleton width={96} height={26} />
+          </div>
+        </div>
+        <SkeletonRows
+          rows={7}
+          cols={3}
+          cellWidths={['48%', '26%', '72%']}
+        />
+      </>
+    );
   }
 
   if (loadError) {

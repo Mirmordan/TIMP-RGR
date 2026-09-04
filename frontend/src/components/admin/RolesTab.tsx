@@ -3,6 +3,7 @@ import { Table, type Column } from '../Table/Table';
 import { Button } from '../Button/Button';
 import { apiFetch } from '../../api';
 import { useNotify } from '../../notifications';
+import { Skeleton, SkeletonRows } from '../Skeleton/Skeleton';
 import type { AdminGroup, AdminPermission, AdminRole } from '../../types';
 import styles from './RolesTab.module.css';
 
@@ -341,7 +342,24 @@ export function RolesTab() {
   }
 
   if (loading) {
-    return <div className={styles.loading}>Загрузка...</div>;
+    return (
+      <>
+        <div className={styles.createBox}>
+          <div className={styles.createLabel}>
+            <Skeleton width={110} height={10} />
+          </div>
+          <div className={styles.createRow}>
+            <Skeleton style={{ flex: '1 1 0%' }} height={30} />
+            <Skeleton width={96} height={26} />
+          </div>
+        </div>
+        <SkeletonRows
+          rows={7}
+          cols={4}
+          cellWidths={['46%', '40%', '36%', '72%']}
+        />
+      </>
+    );
   }
 
   if (loadError) {

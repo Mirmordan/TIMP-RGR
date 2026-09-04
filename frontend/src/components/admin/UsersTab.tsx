@@ -4,6 +4,7 @@ import { Button } from '../Button/Button'
 import { apiFetch } from '../../api'
 import { useAuth } from '../../auth'
 import { useNotify } from '../../notifications'
+import { Skeleton, SkeletonRows } from '../Skeleton/Skeleton'
 import type {
   AdminCreateUserResponse,
   AdminResetPasswordResponse,
@@ -428,7 +429,26 @@ export function UsersTab() {
   ];
 
   if (loading) {
-    return <div className={styles.loading}>Загрузка...</div>;
+    return (
+      <>
+        <div className={styles.createBox}>
+          <div className={styles.createLabel}>
+            <Skeleton width={150} height={10} />
+          </div>
+          <div className={styles.createRow}>
+            <Skeleton style={{ flex: '1 1 0%', minWidth: 160 }} height={30} />
+            <Skeleton style={{ flex: '1 1 0%', minWidth: 160 }} height={30} />
+            <Skeleton style={{ flex: '1 1 0%', minWidth: 160 }} height={30} />
+            <Skeleton width={90} height={26} />
+          </div>
+        </div>
+        <SkeletonRows
+          rows={7}
+          cols={6}
+          cellWidths={['44%', '60%', '30%', '48%', '26%', '70%']}
+        />
+      </>
+    );
   }
 
   if (loadError) {

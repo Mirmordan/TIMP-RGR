@@ -2,9 +2,9 @@ import { useNavigate } from 'react-router';
 import { Layout, PageHeader, Card } from '../components/Layout/Layout';
 import { Table, type Column } from '../components/Table/Table';
 import { Pagination } from '../components/Pagination/Pagination';
+import { SkeletonRows } from '../components/Skeleton/Skeleton';
 import { usePaginatedData } from '../hooks/usePaginatedData';
 import type { RecordingDevice as Device } from '../types';
-import styles from './ListPage.module.css';
 
 const columns: Column<Device>[] = [
   { key: 'name', header: 'Название' },
@@ -22,7 +22,7 @@ export function DevicesPage() {
       <PageHeader title="Устройства" />
       <Card>
         {loading ? (
-          <div className={styles.loading}>Загрузка...</div>
+          <SkeletonRows rows={8} cols={columns.length} cellWidths={['56%', '30%', '44%', '48%']} />
         ) : (
           <>
             <Table columns={columns} data={items} emptyText="Устройств нет" onRowClick={r => navigate(`/devices/${r.id}`)} />
