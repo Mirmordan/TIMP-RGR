@@ -1,15 +1,34 @@
 import { Router } from 'express';
 import type { Request, Response } from 'express';
 import { rbacRepository } from '../repositories/rbac.repository';
+import { rbacService, HttpError } from '../services/rbac.service';
 import { authenticate } from '../security/middleware/authenticate';
 import { requireCapability } from '../security/middleware/requireCapability';
 
 /**
- * Read-only эндпоинты /admin для панели RBAC.
- * Все маршруты — GET под authenticate + requireCapability('admin:read').
- * Мутации (POST/PUT/PATCH/DELETE) добавятся отдельной задачей (Э3).
+ * Эндпоинты /admin для панели RBAC.
+ * Чтение — GET под authenticate + requireCapability('admin:read');
+ * мутации (роли пользователей, CRUD кастомных ролей) — под 'admin:write'.
  */
 export const adminRouter = Router();
+
+/** Разложить ошибку мутации в { error } с нужным статусом (uuid/unique → не 500). */
+function sendRbacError(res: Response, e: unknown): void {
+  if (e instanceof HttpError) {
+    res.status(e.status).json({ error: e.message });
+    return;
+  }
+  const code = (e as { code?: string })?.code;
+  if (code === '22P02') {
+    res.status(404).json({ error: 'запись не найдена' });
+    return;
+  }
+  if (code === '23505') {
+    res.status(409).json({ error: 'роль с таким именем уже существует' });
+    return;
+  }
+  res.status(400).json({ error: e instanceof Error ? e.message : 'ошибка запроса' });
+}
 
 adminRouter.use(authenticate);
 
@@ -55,4 +74,50 @@ adminRouter.get('/groups/:id/objects', requireCapability('admin:read'), async (r
 adminRouter.get('/permissions', requireCapability('admin:read'), async (_req: Request, res: Response) => {
   const permissions = await rbacRepository.findPermissions();
   res.json(permissions);
+});
+
+// --- Мутации (Э3) ---
+
+adminRouter.put('/users/:id/roles', requireCapability('admin:write'), async (req: Request, res: Response) => {
+  try {
+    const id = req.params.id as string;
+    const actor = req.user as { id: string };
+    const { roleNames } = req.body ?? {};
+    if (!Array.isArray(roleNames) || roleNames.some((n: unknown) => typeof n !== 'string')) {
+      return res.status(400).json({ error: 'roleNames должен быть массивом строк' });
+    }
+    const user = await rbacService.setUserRoles(id, actor.id, roleNames);
+    res.json(user);
+  } catch (e) {
+    sendRbacError(res, e);
+  }
+});
+
+adminRouter.post('/roles', requireCapability('admin:write'), async (req: Request, res: Response) => {
+  try {
+    const role = await rbacService.createRole((req.body ?? {}).name);
+    res.status(201).json(role);
+  } catch (e) {
+    sendRbacError(res, e);
+  }
+});
+
+adminRouter.patch('/roles/:id', requireCapability('admin:write'), async (req: Request, res: Response) => {
+  try {
+    const id = req.params.id as string;
+    const role = await rbacService.renameRole(id, (req.body ?? {}).name);
+    res.json(role);
+  } catch (e) {
+    sendRbacError(res, e);
+  }
+});
+
+adminRouter.delete('/roles/:id', requireCapability('admin:write'), async (req: Request, res: Response) => {
+  try {
+    const id = req.params.id as string;
+    await rbacService.deleteRole(id);
+    res.status(204).send();
+  } catch (e) {
+    sendRbacError(res, e);
+  }
 });

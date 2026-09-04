@@ -1,10 +1,28 @@
 import { pool } from '../database/connection';
+import type { PoolClient } from 'pg';
 
 /**
- * Read-only доступ к RBAC-таблицам (users, roles, user_roles, groups,
- * group_members, permissions, objects, recording_devices) для /admin панели.
+ * Доступ к RBAC-таблицам (users, roles, user_roles, groups,
+ * group_members, permissions, objects, recording_devices) для /admin панели:
+ * read-only выборки + мутации ролей пользователей и CRUD кастомных ролей.
  * Таблицы не имеют RLS, поэтому читаются напрямую через pool (без queryAs).
  */
+
+/** Выполнить серию запросов в одной транзакции. */
+async function withTransaction<T>(fn: (client: PoolClient) => Promise<T>): Promise<T> {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const result = await fn(client);
+    await client.query('COMMIT');
+    return result;
+  } catch (e) {
+    await client.query('ROLLBACK');
+    throw e;
+  } finally {
+    client.release();
+  }
+}
 
 export interface RbacRole {
   id: string;
@@ -137,5 +155,105 @@ export const rbacRepository = {
        ORDER BY r.name, g.name, p.action`,
     );
     return rows;
+  },
+
+  // --- Мутации (Э3) ---
+
+  async findRoleById(id: string): Promise<RbacRole | null> {
+    const { rows } = await pool.query<RbacRole>(
+      `SELECT id, name, created_at AS "createdAt"
+       FROM roles
+       WHERE id = $1`,
+      [id],
+    );
+    return rows[0] ?? null;
+  },
+
+  async findRoleByName(name: string): Promise<RbacRole | null> {
+    const { rows } = await pool.query<RbacRole>(
+      `SELECT id, name, created_at AS "createdAt"
+       FROM roles
+       WHERE name = $1`,
+      [name],
+    );
+    return rows[0] ?? null;
+  },
+
+  async findRoleIdsByNames(names: string[]): Promise<Array<{ id: string; name: string }>> {
+    if (names.length === 0) return [];
+    const { rows } = await pool.query<{ id: string; name: string }>(
+      `SELECT id, name FROM roles WHERE name = ANY($1)`,
+      [names],
+    );
+    return rows;
+  },
+
+  /** Число админов, исключая данного пользователя (для защиты последнего админа). */
+  async countAdminsExcluding(userId: string): Promise<number> {
+    const { rows } = await pool.query<{ count: string }>(
+      `SELECT count(*) AS "count"
+       FROM user_roles ur
+       JOIN roles r ON r.id = ur.role_id
+       WHERE r.name = 'admin' AND ur.user_id <> $1`,
+      [userId],
+    );
+    return rows[0] ? Number(rows[0].count) : 0;
+  },
+
+  /** Заменить роли пользователя (транзакция: DELETE + INSERT по списку id). */
+  async setUserRoles(userId: string, roleIds: string[]): Promise<void> {
+    await withTransaction(async (client) => {
+      await client.query('DELETE FROM user_roles WHERE user_id = $1', [userId]);
+      for (const roleId of roleIds) {
+        await client.query(
+          'INSERT INTO user_roles (user_id, role_id) VALUES ($1, $2)',
+          [userId, roleId],
+        );
+      }
+    });
+  },
+
+  async createRole(name: string): Promise<RbacRole> {
+    const { rows } = await pool.query<RbacRole>(
+      `INSERT INTO roles (name) VALUES ($1)
+       RETURNING id, name, created_at AS "createdAt"`,
+      [name],
+    );
+    const row = rows[0];
+    if (!row) throw new Error('роль не создана');
+    return row;
+  },
+
+  async renameRole(id: string, name: string): Promise<RbacRole | null> {
+    const { rows } = await pool.query<RbacRole>(
+      `UPDATE roles SET name = $1 WHERE id = $2
+       RETURNING id, name, created_at AS "createdAt"`,
+      [name, id],
+    );
+    return rows[0] ?? null;
+  },
+
+  /**
+   * Удалить роль (user_roles и permissions сносятся FK CASCADE).
+   * Возвращает затронутые user_id/group_id для инвалидации ACL-кеша,
+   * либо null, если роль с таким id не существует.
+   */
+  async deleteRole(id: string): Promise<{ userIds: string[]; groupIds: string[] } | null> {
+    return withTransaction(async (client) => {
+      const ur = await client.query<{ userId: string }>(
+        'SELECT user_id AS "userId" FROM user_roles WHERE role_id = $1',
+        [id],
+      );
+      const p = await client.query<{ groupId: string }>(
+        'SELECT group_id AS "groupId" FROM permissions WHERE role_id = $1',
+        [id],
+      );
+      const del = await client.query('DELETE FROM roles WHERE id = $1', [id]);
+      if ((del.rowCount ?? 0) === 0) return null;
+      return {
+        userIds: ur.rows.map((r) => r.userId),
+        groupIds: p.rows.map((r) => r.groupId),
+      };
+    });
   },
 };
