@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Layout, PageHeader, Card } from '../components/Layout/Layout';
+import { UsersTab } from '../components/admin/UsersTab';
 import styles from './AdminPage.module.css';
 
 const TABS = ['Пользователи', 'Роли и права', 'Группы объектов'] as const;
@@ -25,10 +26,14 @@ export function AdminPage() {
             </button>
           ))}
         </div>
-        <div className={styles.placeholder}>
-          <div className={styles.placeholderTitle}>{active}</div>
-          <div className={styles.placeholderText}>Раздел в разработке</div>
-        </div>
+        {active === 'Пользователи' ? (
+          <UsersTab />
+        ) : (
+          <div className={styles.placeholder}>
+            <div className={styles.placeholderTitle}>{active}</div>
+            <div className={styles.placeholderText}>Раздел в разработке</div>
+          </div>
+        )}
       </Card>
     </Layout>
   );

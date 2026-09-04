@@ -1,0 +1,109 @@
+.loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-10);
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.failed {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  padding: var(--space-10);
+}
+
+.errorText {
+  font-size: 12px;
+  color: var(--danger);
+  letter-spacing: 0.06em;
+}
+
+.saveError {
+  margin: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  font-size: 12px;
+  color: var(--danger);
+  background: var(--danger-bg);
+  border: 1px solid rgba(232, 93, 117, 0.25);
+  border-radius: var(--radius);
+  letter-spacing: 0.04em;
+}
+
+.roleList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.roleBadge {
+  padding: 2px 10px;
+  border-radius: 9999px;
+  background: var(--accent-bg);
+  border: 1px solid var(--accent-glow);
+  font-family: var(--font-body);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent);
+  white-space: nowrap;
+}
+
+.noRoles {
+  font-size: 11px;
+  color: var(--text-dim);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.youMark {
+  font-size: 11px;
+  color: var(--text-dim);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.roleOptions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.roleOption {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  font-size: 11px;
+  color: var(--text);
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.roleOption:hover {
+  border-color: var(--accent);
+}
+
+.roleOption input {
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.editorActions {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+}

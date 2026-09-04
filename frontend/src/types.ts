@@ -75,3 +75,17 @@ export interface TimelineData {
   end: string | null;
   live?: boolean;
 }
+
+export interface AdminRole {
+  id: string;
+  name: string;
+  createdAt: string;
+}
+
+export interface AdminUser {
+  id: string;
+  username: string;
+  email: string;
+  createdAt: string;
+  roles: Array<{ id: string; name: string }>;
+}
