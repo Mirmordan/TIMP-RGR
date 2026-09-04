@@ -1,0 +1,623 @@
+.player {
+  background: #000;
+  border-radius: var(--radius);
+  overflow: hidden;
+  border: 1px solid var(--border-light);
+  user-select: none;
+}
+
+/* ─── Player layout: video + sidebar ─────────── */
+.playerLayout {
+  display: flex;
+  gap: 0;
+  height: 544px;
+}
+.playerMain {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* ─── Sidebar ────────────────────────────────── */
+.sidebar {
+  width: 240px;
+  flex-shrink: 0;
+  background: var(--surface-1);
+  border-left: 1px solid var(--border-light);
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+/* ─── Sidebar tabs ───────────────────────────── */
+.sidebarTabs {
+  display: flex;
+  border-bottom: 1px solid var(--border-light);
+  flex-shrink: 0;
+}
+.sidebarTab {
+  flex: 1;
+  padding: 8px 0;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+}
+.sidebarTab:hover {
+  color: var(--text-muted);
+}
+.sidebarTabActive {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+.tabBadge {
+  font-size: 9px;
+  background: rgba(255, 255, 255, 0.08);
+  padding: 1px 5px;
+  border-radius: 8px;
+  font-weight: 500;
+}
+.sidebarTabActive .tabBadge {
+  background: rgba(58, 175, 169, 0.15);
+  color: var(--accent);
+}
+
+/* ─── Sidebar content ────────────────────────── */
+.sidebarContent {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+/* ─── Timecodes list ─────────────────────────── */
+.timecodesList {
+  padding: 2px 0;
+}
+.timecodesItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  cursor: pointer;
+  transition: background 0.1s;
+  border-left: 2px solid transparent;
+}
+.timecodesItem:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+.timecodesItemActive {
+  background: rgba(58, 175, 169, 0.1);
+  border-left-color: rgba(58, 175, 169, 0.6);
+}
+.timecodesItemLive {
+  background: rgba(234, 179, 8, 0.08);
+  border-left-color: rgba(234, 179, 8, 0.5);
+}
+.timecodesIndex {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-dim);
+  min-width: 14px;
+  flex-shrink: 0;
+}
+.timecodesInfo {
+  flex: 1;
+  min-width: 0;
+}
+.timecodesTime {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text);
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.timecodesMeta {
+  font-size: 10px;
+  color: var(--text-dim);
+  margin-top: 1px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.timecodesDel {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  padding: 2px;
+  border-radius: 3px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.15s, color 0.15s;
+  flex-shrink: 0;
+}
+.timecodesItem:hover .timecodesDel {
+  opacity: 1;
+}
+.timecodesDel:hover {
+  color: var(--danger);
+}
+.timecodesEmpty {
+  padding: 16px 12px;
+  text-align: center;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+/* ─── Video area ──────────────────────────────── */
+.videoWrap {
+  position: relative;
+  width: 100%;
+  line-height: 0;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #000;
+}
+.video {
+  width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  display: block;
+  cursor: pointer;
+}
+.overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  background: rgba(0, 0, 0, 0.6);
+  z-index: 3;
+}
+.errorOverlay {
+  color: var(--danger);
+}
+.gapOverlay {
+  color: #9ca3af;
+  background: rgba(0, 0, 0, 0.7);
+  font-style: italic;
+}
+
+/* ─── Controls bar ────────────────────────────── */
+.controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  background: var(--surface-1);
+  border-top: 1px solid var(--border-light);
+  min-height: 38px;
+  flex-shrink: 0;
+}
+
+/* ─── Buttons ─────────────────────────────────── */
+.btn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 3px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.15s, background 0.15s;
+  flex-shrink: 0;
+}
+.btn:hover {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+/* ─── Time ────────────────────────────────────── */
+.time {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  flex-shrink: 0;
+  cursor: pointer;
+  padding: 2px 5px;
+  border-radius: 3px;
+  transition: background 0.15s;
+}
+.time:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text);
+}
+.timeInput {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text);
+  background: var(--surface-2);
+  border: 1px solid var(--accent);
+  border-radius: 3px;
+  padding: 2px 5px;
+  width: 75px;
+  outline: none;
+  flex-shrink: 0;
+}
+
+/* ─── Zoom controls ───────────────────────────── */
+.zoomControls {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+.zoomReset {
+  background: none;
+  border: none;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  color: var(--text-dim);
+  cursor: pointer;
+  padding: 2px 5px;
+  border-radius: 3px;
+  transition: color 0.15s, background 0.15s;
+}
+.zoomReset:hover {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+/* ─── Right buttons ───────────────────────────── */
+.rightBtns {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+.liveBadge {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  color: #eab308;
+  background: rgba(234, 179, 8, 0.15);
+  padding: 2px 6px;
+  border-radius: 3px;
+  text-transform: uppercase;
+  animation: livePulse 1.5s ease-in-out infinite;
+}
+
+/* ─── Timeline area ───────────────────────────── */
+.timelineArea {
+  border-top: 1px solid var(--border-light);
+  flex-shrink: 0;
+}
+
+/* ─── Minimap overview ────────────────────────── */
+.minimap {
+  height: 36px;
+  padding: 6px 10px;
+  background: var(--surface-1);
+  cursor: pointer;
+  border-bottom: 1px solid var(--border-light);
+}
+.minimapTrack {
+  position: relative;
+  height: 100%;
+  background: var(--surface-2);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.minimapSeg {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  background: rgba(58, 175, 169, 0.3);
+  pointer-events: none;
+}
+.minimapWindow {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 2px;
+  pointer-events: none;
+}
+.minimapCursor {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  width: 2px;
+  background: #fff;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+/* ─── Track wrapper ───────────────────────────── */
+.trackWrap {
+  position: relative;
+  height: 28px;
+  margin: 0 10px;
+  cursor: pointer;
+}
+
+/* ─── Main track ──────────────────────────────── */
+.track {
+  position: absolute;
+  inset: 0;
+  height: 100%;
+  background: var(--surface-2);
+  border-radius: 3px;
+  cursor: pointer;
+  overflow: hidden;
+  border: 1px solid var(--border);
+}
+.track:hover {
+  background: var(--surface-3);
+}
+
+/* ─── Hour markers ────────────────────────────── */
+.hourMarker {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  width: 0;
+  pointer-events: none;
+  z-index: 5;
+}
+.hourMarkerLine {
+  position: absolute;
+  top: 0;
+  width: 1px;
+  height: 100%;
+  background: rgba(255, 255, 255, 0.12);
+}
+.hourMarkerLabel {
+  position: absolute;
+  top: 2px;
+  left: 4px;
+  font-family: var(--font-mono);
+  font-size: 8px;
+  color: var(--text-dim);
+  white-space: nowrap;
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  line-height: 1.2;
+}
+
+/* ─── Segment markers ─────────────────────────── */
+.segMarker {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  background: rgba(58, 175, 169, 0.35);
+  pointer-events: none;
+  z-index: 1;
+}
+.segMarkerLive {
+  background: rgba(234, 179, 8, 0.4);
+}
+
+/* ─── Gap marker ──────────────────────────────── */
+.gapMarker {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  background: repeating-linear-gradient(
+    -45deg,
+    rgba(150, 150, 150, 0.15),
+    rgba(150, 150, 150, 0.15) 4px,
+    rgba(150, 150, 150, 0.08) 4px,
+    rgba(150, 150, 150, 0.08) 8px
+  );
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* ─── Buffer bar ──────────────────────────────── */
+.bufferBar {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  background: rgba(255, 255, 255, 0.1);
+  pointer-events: none;
+  z-index: 2;
+}
+
+/* ─── Incident markers ────────────────────────── */
+.incidentMarker {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  width: 0;
+  pointer-events: none;
+  z-index: 5;
+}
+.incidentDot {
+  position: absolute;
+  top: -3px;
+  left: -3px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  border: 1px solid rgba(0, 0, 0, 0.3);
+  box-shadow: 0 0 3px rgba(0, 0, 0, 0.4);
+}
+
+/* ─── Progress fill ───────────────────────────── */
+.progressFill {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  background: rgba(255, 255, 255, 0.2);
+  pointer-events: none;
+  z-index: 3;
+}
+
+/* ─── Cursor line + handle ────────────────────── */
+.cursorLine {
+  position: absolute;
+  top: 0;
+  width: 2px;
+  height: 100%;
+  background: var(--text);
+  transform: translateX(-50%);
+  pointer-events: none;
+  z-index: 6;
+}
+.cursorHandle {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 10px;
+  height: 10px;
+  background: #fff;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+  opacity: 0;
+  transition: opacity 0.1s;
+}
+.trackWrap:hover .cursorHandle {
+  opacity: 1;
+}
+
+/* ─── Tooltip ─────────────────────────────────── */
+.tooltip {
+  position: absolute;
+  bottom: calc(100% + 4px);
+  transform: translateX(-50%);
+  background: var(--surface-1);
+  border: 1px solid var(--border-light);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 2px 6px;
+  border-radius: 3px;
+  pointer-events: none;
+  white-space: nowrap;
+  z-index: 10;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+}
+
+/* ─── No data ─────────────────────────────────── */
+.noData {
+  padding: 16px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-dim);
+  letter-spacing: 0.05em;
+}
+
+@keyframes livePulse {
+  0%, 100% { opacity: 0.5; }
+  50% { opacity: 0.85; }
+}
+
+/* ─── Incident modal ─────────────────────────── */
+.modalOverlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+.modal {
+  background: var(--surface-1);
+  border: 1px solid var(--border-light);
+  border-radius: 8px;
+  width: 380px;
+  max-width: 90vw;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+}
+.modalHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border-light);
+  font-size: 13px;
+  font-weight: 600;
+}
+.modalBody {
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.modalLabel {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+.modalInput, .modalTextarea {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 6px 8px;
+  color: var(--text);
+  font-size: 12px;
+  outline: none;
+  font-family: inherit;
+  resize: vertical;
+}
+.modalInput:focus, .modalTextarea:focus {
+  border-color: var(--accent);
+}
+.modalSeverities {
+  display: flex;
+  gap: 5px;
+}
+.modalSeverityBtn {
+  flex: 1;
+  padding: 5px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--surface-2);
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 11px;
+  transition: all 0.15s;
+}
+.modalSeverityBtn:hover {
+  border-color: var(--text-muted);
+}
+.modalSeverityActive {
+  border-color: var(--accent);
+  background: rgba(58, 175, 169, 0.1);
+  color: var(--text);
+}
+.modalFooter {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  padding: 10px 14px;
+  border-top: 1px solid var(--border-light);
+}

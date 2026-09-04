@@ -1,0 +1,107 @@
+.welcome {
+  max-width: 700px;
+  margin: 0 auto;
+}
+.hero {
+  text-align: center;
+  margin-bottom: var(--space-10);
+}
+.heroIcon {
+  width: 64px;
+  height: 64px;
+  margin: 0 auto var(--space-5);
+  background: linear-gradient(135deg, var(--accent), var(--copper));
+  border-radius: var(--radius-lg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 28px;
+  box-shadow: 0 0 40px var(--accent-glow);
+}
+.heroTitle {
+  font-family: var(--font-display);
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  margin-bottom: var(--space-3);
+}
+.heroSub {
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.7;
+  max-width: 500px;
+  margin: 0 auto;
+}
+.cards {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: var(--space-4);
+  margin-bottom: var(--space-8);
+}
+.infoCard {
+  background: var(--surface-1);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow), var(--shadow-inset);
+  padding: var(--space-5);
+  text-align: center;
+}
+.infoCardIcon {
+  font-size: 24px;
+  margin-bottom: var(--space-3);
+}
+.infoCardTitle {
+  font-family: var(--font-display);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text);
+  margin-bottom: var(--space-2);
+}
+.infoCardDesc {
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.6;
+}
+.tech {
+  background: var(--surface-1);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow), var(--shadow-inset);
+  padding: var(--space-6);
+}
+.techTitle {
+  font-family: var(--font-display);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: var(--space-4);
+}
+.techList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.techItem {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  font-size: 13px;
+  color: var(--text);
+}
+.techDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  flex-shrink: 0;
+}
+.techLabel {
+  color: var(--text-muted);
+  min-width: 120px;
+  font-size: 12px;
+}

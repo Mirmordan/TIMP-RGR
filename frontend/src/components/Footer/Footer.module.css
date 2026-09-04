@@ -1,0 +1,10 @@
+.footer {
+  padding: var(--space-4) var(--space-6);
+  border-top: 1px solid var(--border-light);
+  background: rgba(10,13,18,0.5);
+  text-align: center;
+  color: var(--text-dim);
+  font-size: 12px;
+  font-family: var(--font-heading);
+  letter-spacing: 0.03em;
+}

@@ -1,0 +1,31 @@
+# ============================================================
+# Отдельный compose для контейнера медиа (MediaMTX).
+#
+# НЕ зависит от корневого docker-compose.yml — это изолированный
+# микросервис нарезки видео. Монтирует общую папку данных проекта
+# (../data) как /data внутри контейнера; MediaMTX пишет туда чанки
+# согласно mediamtx.yml.
+#
+# Запуск:
+#   docker compose -f media-manager/docker-compose.yml up -d
+# Логи:
+#   docker compose -f media-manager/docker-compose.yml logs -f mediamtx
+# ============================================================
+
+services:
+  mediamtx:
+    image: bluenviron/mediamtx:latest
+    container_name: timp-rgr-mediamtx-1
+    restart: unless-stopped
+    # Конфиг + общая папка данных (../data → /data)
+    volumes:
+      - ./mediamtx.yml:/mediamtx.yml:ro
+      - ../data:/data
+    # Порты: RTSP, RTMP, HLS, Playback, API, метрики
+    ports:
+      - "8554:8554"   # RTSP
+      - "1935:1935"   # RTMP
+      - "8888:8888"   # HLS
+      - "9996:9996"   # Playback (отдача записанных чанков)
+      - "9997:9997"   # Control API
+      - "9998:9998"   # Metrics

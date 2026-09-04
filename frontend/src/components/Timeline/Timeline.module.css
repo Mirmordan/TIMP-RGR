@@ -1,0 +1,134 @@
+.wrapper {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) 0;
+  flex-wrap: wrap;
+}
+.timeDisplay {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  min-width: 90px;
+  text-align: right;
+}
+.timeSep {
+  color: var(--text-dim);
+  margin: 0 2px;
+}
+.track {
+  position: relative;
+  flex: 1;
+  height: 32px;
+  background: var(--surface-2);
+  border-radius: 4px;
+  cursor: pointer;
+  overflow: hidden;
+  border: 1px solid var(--border);
+}
+.track:hover {
+  background: var(--surface-3);
+}
+.progress {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  background: rgba(255,255,255,0.06);
+  pointer-events: none;
+  z-index: 1;
+}
+.segmentWrap {
+  position: absolute;
+  top: 2px;
+  height: calc(100% - 4px);
+  pointer-events: none;
+}
+.segment {
+  position: absolute;
+  inset: 0;
+  background: rgba(58,175,169,0.35);
+  border-radius: 2px;
+  border-left: 1px solid rgba(58,175,169,0.6);
+  border-right: 1px solid rgba(58,175,169,0.6);
+  transition: opacity 0.15s;
+}
+.segment:hover {
+  opacity: 0.85;
+}
+.segment.live {
+  background: rgba(234, 179, 8, 0.4);
+  border-left-color: rgba(234, 179, 8, 0.6);
+  border-right-color: rgba(234, 179, 8, 0.6);
+  animation: livePulse 1.5s ease-in-out infinite;
+}
+.segmentBuffer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  background: rgba(58,175,169,0.5);
+  border-radius: 2px;
+  transition: width 0.3s ease;
+}
+.segmentBuffer.liveBuffer {
+  background: rgba(234, 179, 8, 0.45);
+}
+@keyframes livePulse {
+  0%, 100% { opacity: 0.5; }
+  50% { opacity: 0.85; }
+}
+.cursor {
+  position: absolute;
+  top: -2px;
+  width: 3px;
+  height: calc(100% + 4px);
+  background: var(--text);
+  border-radius: 2px;
+  transform: translateX(-50%);
+  pointer-events: none;
+  z-index: 5;
+}
+.legend {
+  display: flex;
+  gap: var(--space-3);
+  font-size: 11px;
+  color: var(--text-muted);
+  width: 100%;
+  padding-top: 2px;
+}
+.legendItem {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.legendDot {
+  width: 10px;
+  height: 6px;
+  border-radius: 2px;
+  background: rgba(58,175,169,0.35);
+  display: inline-block;
+}
+.liveDot {
+  background: rgba(234, 179, 8, 0.4);
+  animation: livePulse 1.5s ease-in-out infinite;
+}
+.bufferDot {
+  background: rgba(58,175,169,0.5);
+}
+.hoverTooltip {
+  position: absolute;
+  top: -28px;
+  transform: translateX(-50%);
+  background: var(--surface-1);
+  border: 1px solid var(--border-light);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 2px 6px;
+  border-radius: 3px;
+  pointer-events: none;
+  white-space: nowrap;
+  z-index: 10;
+}

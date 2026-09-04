@@ -1,0 +1,42 @@
+import { NavLink } from 'react-router';
+import { useAuth } from '../../auth';
+import { Button } from '../Button/Button';
+import styles from './Header.module.css';
+
+const links = [
+  { to: '/devices', label: 'Устройства' },
+  { to: '/streams', label: 'Потоки' },
+  { to: '/processes', label: 'Записи' },
+];
+
+export function Header() {
+  const { user, logout } = useAuth();
+
+  return (
+    <header className={styles.header}>
+      <NavLink to="/" className={styles.logo}>
+        <span className={styles.logoIcon}>T</span>
+        ТИМП-РГР
+      </NavLink>
+      {user && (
+        <nav className={styles.nav}>
+          {links.map(l => (
+            <NavLink
+              key={l.to}
+              to={l.to}
+              className={({ isActive }) =>
+                [styles.navLink, isActive ? styles.navLinkActive : ''].filter(Boolean).join(' ')
+              }
+            >
+              {l.label}
+            </NavLink>
+          ))}
+          <div className={styles.user}>
+            <span className={styles.username}>{user.username}</span>
+            <Button variant="ghost" size="sm" onClick={logout}>Выход</Button>
+          </div>
+        </nav>
+      )}
+    </header>
+  );
+}

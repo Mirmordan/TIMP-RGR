@@ -1,0 +1,20 @@
+services:
+  webserver:
+    build: web-server
+    network_mode: host
+    volumes:
+      - /home/mirmordan/Projects/TIMP-RGR/data:/data:ro
+
+  db:
+    build: database
+    environment:
+      POSTGRES_DB: ${DB_DATABASE}
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    ports:
+      - "${DB_PORT}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+volumes:
+  pgdata:

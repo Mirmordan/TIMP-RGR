@@ -1,0 +1,51 @@
+###############################################
+# MediaMTX — media-manager
+# Отдельный контейнер медиа-сервера, нарезающего чанки
+# из внешнего HLS-источника (cameras.smarty.kz) в общий том data.
+###############################################
+
+# --- Серверы ---
+rtspAddress: :8554
+hlsAddress: :8888
+api: true
+apiAddress: :9997
+metrics: true
+metricsAddress: :9998
+
+# Playback-сервер: отдаёт записанные чанки по стабильному URL
+# (http://<host>:9996/<path>/<segment>). Полезен для отдачи видео напрямую.
+playback: true
+playbackAddress: :9996
+
+# --- Авторизация: dev-режим.
+# Любой может читать/публиковать/playback; api доступно с localhost (бэкенд).
+authMethod: internal
+authInternalUsers:
+  - user: any
+    pass:
+    ips: []
+    permissions:
+      - action: publish
+      - action: read
+      - action: playback
+      - action: api
+
+###############################################
+# Пути (потоки). mediaMTX тянет HLS с websites и пишет записи.
+paths:
+  # Реальный источник: Хан-Шатыр (Астана) — HLS c cameras.smarty.kz.
+  # Без wowzasessionid — сервер сам выдаст свежий в варианте плейлиста.
+  camera_khanshatyr:
+    source: "https://cameras.smarty.kz/rtplive/camera1.stream/playlist.m3u8"
+    # TLS-серт источника подписан неизвестным CA — разрешаем по отпечатку.
+    # Формат mediaMTX: нижний регистр, БЕЗ двоеточий (openssl -fingerprint даёт с ':').
+    sourceFingerprint: "fe63f54416d93e5a654c8fdbd4095e62b55115e627d920ea4065977082be9fd9"
+    sourceOnDemand: false
+    # Встроенная запись: чанки MPEG-TS (как HLS сегменты) в общий том data.
+    # Расширение (.ts) mediaMTX подставляет сам по recordFormat — в пути НЕ пишем.
+    record: true
+    recordPath: /data/chunks/%path/%Y-%m-%d_%H-%M-%S-%f
+    recordFormat: mpegts
+    recordPartDuration: 2s
+    recordSegmentDuration: 10s
+    recordDeleteAfter: 0s
