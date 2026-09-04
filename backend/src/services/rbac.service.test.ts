@@ -42,9 +42,14 @@ vi.mock('../repositories/user.repository', () => ({
   userRepository: { deleteById: vi.fn() },
 }));
 
+vi.mock('./audit.service', () => ({
+  auditService: { logAudit: vi.fn() },
+}));
+
 import { rbacRepository } from '../repositories/rbac.repository';
 import { invalidateUser, invalidateGroup } from '../security/acl';
 import { userRepository } from '../repositories/user.repository';
+import { auditService } from './audit.service';
 import { rbacService } from './rbac.service';
 
 const role = (id: string, name: string) => ({ id, name });
@@ -57,6 +62,9 @@ const user = (id: string, roles: Array<{ id: string; name: string }> = []) => ({
   roles,
 });
 
+// Актор (req.user) для мутаций сервиса.
+const ACTOR = { id: 'actor', username: 'alice' };
+
 function expectHttpError(promise: Promise<unknown>, status: number): Promise<void> {
   return expect(promise).rejects.toMatchObject({ status });
 }
@@ -67,7 +75,10 @@ beforeEach(() => {
 
 describe('rbacService.setUserRoles', () => {
   it('самому себе роли менять нельзя → 400', async () => {
-    await expectHttpError(rbacService.setUserRoles('me', 'me', ['viewer']), 400);
+    await expectHttpError(
+      rbacService.setUserRoles('me', { id: 'me', username: 'alice' }, ['viewer']),
+      400,
+    );
     expect(rbacRepository.findUserWithRoles).not.toHaveBeenCalled();
   });
 
@@ -78,7 +89,7 @@ describe('rbacService.setUserRoles', () => {
     (rbacRepository.findRoleIdsByNames as unknown as Mock).mockResolvedValue([
       { id: 'rv', name: 'viewer' },
     ]);
-    await expectHttpError(rbacService.setUserRoles('t1', 'actor', ['viewer', 'ghost']), 400);
+    await expectHttpError(rbacService.setUserRoles('t1', ACTOR, ['viewer', 'ghost']), 400);
     expect(rbacRepository.setUserRoles).not.toHaveBeenCalled();
   });
 
@@ -90,7 +101,7 @@ describe('rbacService.setUserRoles', () => {
       { id: 'rv', name: 'viewer' },
     ]);
     (rbacRepository.countAdminsExcluding as unknown as Mock).mockResolvedValue(0);
-    await expectHttpError(rbacService.setUserRoles('t2', 'actor', ['viewer']), 400);
+    await expectHttpError(rbacService.setUserRoles('t2', ACTOR, ['viewer']), 400);
     expect(rbacRepository.setUserRoles).not.toHaveBeenCalled();
   });
 
@@ -103,23 +114,48 @@ describe('rbacService.setUserRoles', () => {
     ]);
     (rbacRepository.setUserRoles as unknown as Mock).mockResolvedValue(undefined);
 
-    const updated = await rbacService.setUserRoles('t3', 'actor', ['operator']);
+    const updated = await rbacService.setUserRoles('t3', ACTOR, ['operator']);
 
     expect(rbacRepository.setUserRoles).toHaveBeenCalledWith('t3', ['ro']);
     expect(invalidateUser).toHaveBeenCalledWith('t3');
     expect(updated.roles).toHaveLength(2);
+  });
+
+  it('после успешной записи пишется аудит action=user.roles.set', async () => {
+    (rbacRepository.findUserWithRoles as unknown as Mock)
+      .mockResolvedValueOnce(user('t4', [role('rv', 'viewer')]))
+      .mockResolvedValueOnce(user('t4', [role('rv', 'viewer'), role('ro', 'operator')]));
+    (rbacRepository.findRoleIdsByNames as unknown as Mock).mockResolvedValue([
+      { id: 'ro', name: 'operator' },
+    ]);
+    (rbacRepository.setUserRoles as unknown as Mock).mockResolvedValue(undefined);
+
+    await rbacService.setUserRoles('t4', ACTOR, ['operator']);
+
+    const logAudit = auditService.logAudit as unknown as Mock;
+    expect(logAudit).toHaveBeenCalledTimes(1);
+    expect(logAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'user.roles.set',
+        targetType: 'user',
+        targetId: 't4',
+        actorId: 'actor',
+        actorName: 'alice',
+        details: { roleNames: ['operator'] },
+      }),
+    );
   });
 });
 
 describe('rbacService.deleteRole', () => {
   it('роль не найдена → 404', async () => {
     (rbacRepository.findRoleById as unknown as Mock).mockResolvedValue(null);
-    await expectHttpError(rbacService.deleteRole('r-missing'), 404);
+    await expectHttpError(rbacService.deleteRole('r-missing', ACTOR), 404);
   });
 
   it('системную роль удалять нельзя → 400', async () => {
     (rbacRepository.findRoleById as unknown as Mock).mockResolvedValue(role('r1', 'admin'));
-    await expectHttpError(rbacService.deleteRole('r1'), 400);
+    await expectHttpError(rbacService.deleteRole('r1', ACTOR), 400);
     expect(rbacRepository.deleteRole).not.toHaveBeenCalled();
   });
 
@@ -130,7 +166,7 @@ describe('rbacService.deleteRole', () => {
       groupIds: ['g1'],
     });
 
-    await rbacService.deleteRole('r2');
+    await rbacService.deleteRole('r2', ACTOR);
 
     expect(invalidateUser).toHaveBeenCalledWith('u1');
     expect(invalidateGroup).toHaveBeenCalledWith('g1');
@@ -139,12 +175,15 @@ describe('rbacService.deleteRole', () => {
 
 describe('rbacService.deleteUser', () => {
   it('самого себя удалять нельзя → 400', async () => {
-    await expectHttpError(rbacService.deleteUser('me', 'me'), 400);
+    await expectHttpError(
+      rbacService.deleteUser('me', { id: 'me', username: 'alice' }),
+      400,
+    );
   });
 
   it('пользователь не найден → 404', async () => {
     (rbacRepository.findUserWithRoles as unknown as Mock).mockResolvedValue(null);
-    await expectHttpError(rbacService.deleteUser('x', 'actor'), 404);
+    await expectHttpError(rbacService.deleteUser('x', ACTOR), 404);
   });
 
   it('последнего администратора удалять нельзя → 400', async () => {
@@ -152,17 +191,26 @@ describe('rbacService.deleteUser', () => {
       user('adm', [role('ra', 'admin')]),
     );
     (rbacRepository.countAdminsExcluding as unknown as Mock).mockResolvedValue(0);
-    await expectHttpError(rbacService.deleteUser('adm', 'actor'), 400);
+    await expectHttpError(rbacService.deleteUser('adm', ACTOR), 400);
     expect(userRepository.deleteById).not.toHaveBeenCalled();
   });
 
-  it('happy path: deleteById + invalidateUser', async () => {
+  it('happy path: deleteById + invalidateUser + аудит', async () => {
     (rbacRepository.findUserWithRoles as unknown as Mock).mockResolvedValue(user('del'));
     (userRepository.deleteById as unknown as Mock).mockResolvedValue(true);
 
-    await rbacService.deleteUser('del', 'actor');
+    await rbacService.deleteUser('del', ACTOR);
 
     expect(userRepository.deleteById).toHaveBeenCalledWith('del');
     expect(invalidateUser).toHaveBeenCalledWith('del');
+    const logAudit = auditService.logAudit as unknown as Mock;
+    expect(logAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'user.delete',
+        targetType: 'user',
+        targetId: 'del',
+        details: { username: 'alice' },
+      }),
+    );
   });
 });

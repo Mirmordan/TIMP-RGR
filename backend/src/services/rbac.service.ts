@@ -5,6 +5,8 @@ import { authService, assertEmail, assertPassword, assertUsername } from '../sec
 import { userRepository } from '../repositories/user.repository';
 import { OBJECT_ACTIONS } from '../security/types';
 import type { ObjectAction } from '../security/types';
+import { auditService } from './audit.service';
+import type { AuditActor } from './audit.service';
 import type {
   RbacGroup,
   RbacGroupObject,
@@ -56,8 +58,8 @@ export const rbacService = {
    * роль admin с последнего администратора. После записи — инвалидация
    * ACL-кеша пользователя. Возвращает пользователя в формате GET /admin/users/:id.
    */
-  async setUserRoles(targetId: string, actorId: string, roleNames: string[]): Promise<RbacUserWithRoles> {
-    if (targetId === actorId) throw new HttpError(400, 'нельзя менять свои роли');
+  async setUserRoles(targetId: string, actor: AuditActor, roleNames: string[]): Promise<RbacUserWithRoles> {
+    if (targetId === actor.id) throw new HttpError(400, 'нельзя менять свои роли');
 
     const user = await rbacRepository.findUserWithRoles(targetId);
     if (!user) throw new HttpError(404, 'пользователь не найден');
@@ -83,20 +85,37 @@ export const rbacService = {
 
     const updated = await rbacRepository.findUserWithRoles(targetId);
     if (!updated) throw new HttpError(404, 'пользователь не найден');
+    await auditService.logAudit({
+      actorId: actor.id,
+      actorName: actor.username,
+      action: 'user.roles.set',
+      targetType: 'user',
+      targetId,
+      details: { roleNames },
+    });
     return updated;
   },
 
   /** Создать кастомную роль (имя не занято и не из системных). */
-  async createRole(name: unknown): Promise<RbacRole> {
+  async createRole(name: unknown, actor: AuditActor): Promise<RbacRole> {
     assertValidRoleName(name);
     if (SYSTEM_ROLE_NAMES.includes(name)) throw new HttpError(400, 'системные роли неизменяемы');
     const existing = await rbacRepository.findRoleByName(name);
     if (existing) throw new HttpError(409, 'роль с таким именем уже существует');
-    return rbacRepository.createRole(name);
+    const role = await rbacRepository.createRole(name);
+    await auditService.logAudit({
+      actorId: actor.id,
+      actorName: actor.username,
+      action: 'role.create',
+      targetType: 'role',
+      targetId: role.id,
+      details: { name: role.name },
+    });
+    return role;
   },
 
   /** Переименовать кастомную роль (системные роли менять нельзя). */
-  async renameRole(id: string, name: unknown): Promise<RbacRole> {
+  async renameRole(id: string, actor: AuditActor, name: unknown): Promise<RbacRole> {
     const role = await rbacRepository.findRoleById(id);
     if (!role) throw new HttpError(404, 'роль не найдена');
     if (SYSTEM_ROLE_NAMES.includes(role.name)) throw new HttpError(400, 'системные роли неизменяемы');
@@ -108,11 +127,19 @@ export const rbacService = {
 
     const updated = await rbacRepository.renameRole(id, name);
     if (!updated) throw new HttpError(404, 'роль не найдена');
+    await auditService.logAudit({
+      actorId: actor.id,
+      actorName: actor.username,
+      action: 'role.rename',
+      targetType: 'role',
+      targetId: id,
+      details: { from: role.name, to: updated.name },
+    });
     return updated;
   },
 
   /** Удалить кастомную роль + инвалидировать ACL-кеш затронутых юзеров и групп. */
-  async deleteRole(id: string): Promise<void> {
+  async deleteRole(id: string, actor: AuditActor): Promise<void> {
     const role = await rbacRepository.findRoleById(id);
     if (!role) throw new HttpError(404, 'роль не найдена');
     if (SYSTEM_ROLE_NAMES.includes(role.name)) throw new HttpError(400, 'системные роли неизменяемы');
@@ -121,6 +148,14 @@ export const rbacService = {
     if (!affected) throw new HttpError(404, 'роль не найдена');
     for (const userId of affected.userIds) invalidateUser(userId);
     for (const groupId of affected.groupIds) invalidateGroup(groupId);
+    await auditService.logAudit({
+      actorId: actor.id,
+      actorName: actor.username,
+      action: 'role.delete',
+      targetType: 'role',
+      targetId: id,
+      details: { name: role.name },
+    });
   },
 
   // --- Э5: права ролей и группы объектов ---
@@ -130,7 +165,7 @@ export const rbacService = {
    * чек-листа OBJECT_ACTIONS, все groupId существуют, дубликаты схлопываются.
    * После commit — инвалидация ACL-кеша затронутых групп (до+после).
    */
-  async replaceRolePermissions(id: string, entries: unknown): Promise<RbacPermission[]> {
+  async replaceRolePermissions(id: string, actor: AuditActor, entries: unknown): Promise<RbacPermission[]> {
     const role = await rbacRepository.findRoleById(id);
     if (!role) throw new HttpError(404, 'роль не найдена');
 
@@ -170,19 +205,37 @@ export const rbacService = {
     for (const e of finalEntries) affected.add(e.groupId);
     for (const groupId of affected) invalidateGroup(groupId);
 
+    await auditService.logAudit({
+      actorId: actor.id,
+      actorName: actor.username,
+      action: 'role.perms.set',
+      targetType: 'role',
+      targetId: id,
+      details: { entries: finalEntries.map((e) => [e.groupId, e.action]) },
+    });
+
     return rbacRepository.findPermissionsByRole(id);
   },
 
   /** Создать группу объектов (имя валидируется тем же regex, что и роли). */
-  async createGroup(name: unknown): Promise<RbacGroup> {
+  async createGroup(name: unknown, actor: AuditActor): Promise<RbacGroup> {
     assertValidGroupName(name);
     const existing = await rbacRepository.findGroupByName(name);
     if (existing) throw new HttpError(409, 'группа с таким именем уже существует');
-    return rbacRepository.createGroup(name);
+    const group = await rbacRepository.createGroup(name);
+    await auditService.logAudit({
+      actorId: actor.id,
+      actorName: actor.username,
+      action: 'group.create',
+      targetType: 'group',
+      targetId: group.id,
+      details: { name: group.name },
+    });
+    return group;
   },
 
   /** Переименовать группу объектов. */
-  async renameGroup(id: string, name: unknown): Promise<RbacGroup> {
+  async renameGroup(id: string, actor: AuditActor, name: unknown): Promise<RbacGroup> {
     const group = await rbacRepository.findGroupById(id);
     if (!group) throw new HttpError(404, 'группа не найдена');
 
@@ -193,6 +246,14 @@ export const rbacService = {
     const updated = await rbacRepository.renameGroup(id, name);
     if (!updated) throw new HttpError(404, 'группа не найдена');
     invalidateGroup(id);
+    await auditService.logAudit({
+      actorId: actor.id,
+      actorName: actor.username,
+      action: 'group.rename',
+      targetType: 'group',
+      targetId: id,
+      details: { from: group.name, to: updated.name },
+    });
     return updated;
   },
 
@@ -200,7 +261,7 @@ export const rbacService = {
    * Удалить группу, только если на ней не висит ни прав, ни объектов
    * (иначе 409 — никаких молчаливых каскадов).
    */
-  async deleteGroup(id: string): Promise<void> {
+  async deleteGroup(id: string, actor: AuditActor): Promise<void> {
     const group = await rbacRepository.findGroupById(id);
     if (!group) throw new HttpError(404, 'группа не найдена');
 
@@ -214,6 +275,14 @@ export const rbacService = {
     const deleted = await rbacRepository.deleteGroup(id);
     if (!deleted) throw new HttpError(404, 'группа не найдена');
     invalidateGroup(id);
+    await auditService.logAudit({
+      actorId: actor.id,
+      actorName: actor.username,
+      action: 'group.delete',
+      targetType: 'group',
+      targetId: id,
+      details: { name: group.name },
+    });
   },
 
   /**
@@ -221,7 +290,7 @@ export const rbacService = {
    * Валидация id объектов до записи; после — инвалидация кеша группы
    * и всех затронутых объектов (старое+новое множество).
    */
-  async replaceGroupObjects(id: string, objectIds: unknown): Promise<RbacGroupObject[]> {
+  async replaceGroupObjects(id: string, actor: AuditActor, objectIds: unknown): Promise<RbacGroupObject[]> {
     const group = await rbacRepository.findGroupById(id);
     if (!group) throw new HttpError(404, 'группа не найдена');
 
@@ -249,6 +318,24 @@ export const rbacService = {
     for (const objectId of affectedObjects) invalidateObject(objectId);
 
     const after = await rbacRepository.findGroupObjects(id);
+    const beforeIds = new Set(before.objects.map((o) => o.objectId));
+    const afterIds = new Set(after.objects.map((o) => o.objectId));
+    await auditService.logAudit({
+      actorId: actor.id,
+      actorName: actor.username,
+      action: 'group.members.set',
+      targetType: 'group',
+      targetId: id,
+      details: {
+        count: uniqueIds.length,
+        ...(uniqueIds.some((o) => !beforeIds.has(o))
+          ? { added: uniqueIds.filter((o) => !beforeIds.has(o)).slice(0, 5) }
+          : {}),
+        ...(before.objects.some((o) => !afterIds.has(o.objectId))
+          ? { removed: before.objects.map((o) => o.objectId).filter((o) => !afterIds.has(o)).slice(0, 5) }
+          : {}),
+      },
+    });
     return after.objects;
   },
 
@@ -260,7 +347,7 @@ export const rbacService = {
    * — генерируется криптостойкий временный и возвращается один раз в
    * initialPassword. Всегда выдаётся роль viewer, роли из тела игнорируются.
    */
-  async createUser(input: { username?: unknown; email?: unknown; password?: unknown }): Promise<{
+  async createUser(input: { username?: unknown; email?: unknown; password?: unknown }, actor: AuditActor): Promise<{
     user: RbacUserWithRoles;
     initialPassword?: string;
   }> {
@@ -290,6 +377,14 @@ export const rbacService = {
     const userId = await rbacRepository.createUserWithViewerRole({ username, email, passwordHash });
     const user = await rbacRepository.findUserWithRoles(userId);
     if (!user) throw new Error('пользователь не создан');
+    await auditService.logAudit({
+      actorId: actor.id,
+      actorName: actor.username,
+      action: 'user.create',
+      targetType: 'user',
+      targetId: userId,
+      details: { email: user.email, generated: initialPassword !== undefined },
+    });
     if (initialPassword === undefined) return { user };
     return { user, initialPassword };
   },
@@ -299,7 +394,7 @@ export const rbacService = {
    * не задан — генерируется временный и возвращается в initialPassword.
    * Инвалидация токенов не нужна: login читает хэш из БД на каждый запрос.
    */
-  async resetUserPassword(userId: string, password: unknown): Promise<{
+  async resetUserPassword(userId: string, actor: AuditActor, password: unknown): Promise<{
     ok: true;
     initialPassword?: string;
   }> {
@@ -321,6 +416,14 @@ export const rbacService = {
     const passwordHash = await authService.hashPassword(plain);
     const updated = await rbacRepository.setUserPasswordHash(userId, passwordHash);
     if (!updated) throw new HttpError(404, 'пользователь не найден');
+    await auditService.logAudit({
+      actorId: actor.id,
+      actorName: actor.username,
+      action: 'user.password.reset',
+      targetType: 'user',
+      targetId: userId,
+      details: {},
+    });
     if (initialPassword === undefined) return { ok: true };
     return { ok: true, initialPassword };
   },
@@ -329,7 +432,7 @@ export const rbacService = {
    * Редактирование username/email пользователя админом (как updateProfile,
    * но цель задаётся id). Пароль через этот эндпоинт менять нельзя.
    */
-  async patchUser(userId: string, patch: Record<string, unknown>): Promise<RbacUserWithRoles> {
+  async patchUser(userId: string, actor: AuditActor, patch: Record<string, unknown>): Promise<RbacUserWithRoles> {
     if ('password' in patch || 'passwordHash' in patch) {
       throw new HttpError(400, 'сброс пароля — отдельный эндпоинт');
     }
@@ -348,12 +451,20 @@ export const rbacService = {
 
     const user = await rbacRepository.findUserWithRoles(userId);
     if (!user) throw new HttpError(404, 'пользователь не найден');
+    await auditService.logAudit({
+      actorId: actor.id,
+      actorName: actor.username,
+      action: 'user.update',
+      targetType: 'user',
+      targetId: userId,
+      details: { username: user.username, email: user.email },
+    });
     return user;
   },
 
   /** Удалить пользователя админом: себя нельзя, последнего админа нельзя. */
-  async deleteUser(userId: string, actorId: string): Promise<void> {
-    if (userId === actorId) throw new HttpError(400, 'нельзя удалить себя');
+  async deleteUser(userId: string, actor: AuditActor): Promise<void> {
+    if (userId === actor.id) throw new HttpError(400, 'нельзя удалить себя');
 
     const target = await rbacRepository.findUserWithRoles(userId);
     if (!target) throw new HttpError(404, 'пользователь не найден');
@@ -365,5 +476,13 @@ export const rbacService = {
     const deleted = await userRepository.deleteById(userId);
     if (!deleted) throw new HttpError(404, 'пользователь не найден');
     invalidateUser(userId);
+    await auditService.logAudit({
+      actorId: actor.id,
+      actorName: actor.username,
+      action: 'user.delete',
+      targetType: 'user',
+      targetId: userId,
+      details: { username: target.username },
+    });
   },
 };

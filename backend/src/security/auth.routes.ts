@@ -4,6 +4,7 @@ import { authService, AuthError } from './auth.service';
 import { authenticate } from './middleware/authenticate';
 import { userRepository } from '../repositories/user.repository';
 import { pool } from '../database/connection';
+import { auditService } from '../services/audit.service';
 import { ROLE_CAPABILITIES } from './types';
 import type { Role, Capability } from './types';
 
@@ -78,6 +79,16 @@ authRouter.post('/login', async (req: Request, res: Response) => {
     setAuthCookies(res, result.accessToken, result.refreshToken);
     res.json(await authPayload(result.user.id));
   } catch (e: any) {
+    const raw = (req.body ?? {})?.username;
+    await auditService.logAudit({
+      actorId: null,
+      actorName: null,
+      action: 'auth.login.failed',
+      details: {
+        username: (typeof raw === 'string' ? raw : '').slice(0, 64),
+        ip: req.ip,
+      },
+    });
     res.status(401).json({ error: e.message });
   }
 });
@@ -143,6 +154,13 @@ authRouter.post('/change-password', authenticate, async (req: Request, res: Resp
     const { currentPassword, newPassword } = req.body ?? {};
     const result = await authService.changePassword(req.user.id, currentPassword, newPassword);
     setAuthCookies(res, result.accessToken, result.refreshToken);
+    await auditService.logAudit({
+      actorId: req.user.id,
+      actorName: req.user.username,
+      action: 'auth.password.change',
+      targetType: 'user',
+      targetId: req.user.id,
+    });
     res.json({ ok: true, user: await authPayload(req.user.id) });
   } catch (e: any) {
     res.status(e instanceof AuthError ? e.status : 400).json({ error: e.message });

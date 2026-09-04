@@ -27,7 +27,8 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON
     user_roles,
     groups,
     group_members,
-    permissions
+    permissions,
+    audit_log
 TO timprgr_app;
 
 -- gen_random_uuid() встроен в pg16 (pgcrypto не нужен) — прав не требует.

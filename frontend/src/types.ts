@@ -121,3 +121,41 @@ export interface AdminPermission {
   groupName: string;
   action: string;
 }
+
+/** Действия аудит-лога (U1) — зеркалит backend AUDIT_ACTIONS. */
+export const AUDIT_ACTIONS = [
+  'user.create',
+  'user.update',
+  'user.delete',
+  'user.password.reset',
+  'user.roles.set',
+  'role.create',
+  'role.rename',
+  'role.delete',
+  'role.perms.set',
+  'group.create',
+  'group.rename',
+  'group.delete',
+  'group.members.set',
+  'auth.login.failed',
+  'auth.password.change',
+] as const;
+
+export type AuditAction = (typeof AUDIT_ACTIONS)[number];
+
+/** Запись аудит-лога. id bigint из pg приходит строкой. */
+export interface AuditEntry {
+  id: number | string;
+  createdAt: string;
+  actorId: string | null;
+  actorName: string | null;
+  action: string;
+  targetType: string | null;
+  targetId: string | null;
+  details: Record<string, unknown>;
+}
+
+export interface AuditClearResponse {
+  ok: boolean;
+  deleted: number;
+}
