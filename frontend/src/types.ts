@@ -87,7 +87,18 @@ export interface AdminUser {
   username: string;
   email: string;
   createdAt: string;
+  passwordSet: boolean;
   roles: Array<{ id: string; name: string }>;
+}
+
+export interface AdminCreateUserResponse {
+  user: AdminUser;
+  initialPassword?: string;
+}
+
+export interface AdminResetPasswordResponse {
+  ok: boolean;
+  initialPassword?: string;
 }
 
 export interface AdminGroup {
