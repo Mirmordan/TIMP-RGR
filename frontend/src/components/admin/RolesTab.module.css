@@ -180,6 +180,10 @@
 
 .matrixRoleName {
   color: var(--accent);
+  /* Orbitron кириллицу не имеет: заголовки вида «Сегменты» фактически рендерятся
+     Share Tech Mono — имён ролей (латиница в Orbitron) выглядело чужеродно */
+  font-family: 'Share Tech Mono', ui-monospace, monospace;
+  font-weight: 700;
 }
 
 .matrixHint {
