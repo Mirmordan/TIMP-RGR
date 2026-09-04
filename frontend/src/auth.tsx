@@ -8,7 +8,6 @@ interface AuthState {
   capabilities: Capabilities;
   loading: boolean;
   login: (username: string, password: string) => Promise<string>;
-  register: (username: string, email: string, password: string) => Promise<string>;
   logout: () => Promise<void>;
   refresh: () => Promise<void>;
 }
@@ -59,8 +58,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     loading,
     login: (username, password) =>
       authRequest('/auth/login', { username, password }),
-    register: (username, email, password) =>
-      authRequest('/auth/register', { username, email, password }),
     logout: async () => {
       await apiFetch('/auth/logout', { method: 'POST' });
       setUser(null);

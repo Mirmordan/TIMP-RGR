@@ -66,26 +66,6 @@ async function authPayload(userId: string): Promise<{
   };
 }
 
-/** Регистрация: создаёт пользователя + выдаёт сессию. */
-authRouter.post('/register', async (req: Request, res: Response) => {
-  try {
-    const { username, email, password } = req.body;
-    if (!username || !email || !password) {
-      res.status(400).json({ error: 'username, email и password обязательны' });
-      return;
-    }
-    if (password.length < 6) {
-      res.status(400).json({ error: 'пароль минимум 6 символов' });
-      return;
-    }
-    const result = await authService.register(username, email, password);
-    setAuthCookies(res, result.accessToken, result.refreshToken);
-    res.status(201).json({ user: result.user });
-  } catch (e: any) {
-    res.status(400).json({ error: e.message });
-  }
-});
-
 /** Логин: аутентификация + выдача сессии в cookies. */
 authRouter.post('/login', async (req: Request, res: Response) => {
   try {
