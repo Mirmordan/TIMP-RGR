@@ -96,6 +96,12 @@ export interface AdminGroup {
   objectCount: number;
 }
 
+export interface AdminGroupObject {
+  objectId: string;
+  name: string | null;
+  type: string | null;
+}
+
 export interface AdminPermission {
   id: string;
   roleId: string;
