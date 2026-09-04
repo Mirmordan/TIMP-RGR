@@ -1,5 +1,8 @@
+import { randomBytes } from 'node:crypto';
 import { rbacRepository } from '../repositories/rbac.repository';
 import { invalidateGroup, invalidateObject, invalidateUser } from '../security/acl';
+import { authService, assertEmail, assertPassword, assertUsername } from '../security/auth.service';
+import { userRepository } from '../repositories/user.repository';
 import { OBJECT_ACTIONS } from '../security/types';
 import type { ObjectAction } from '../security/types';
 import type {
@@ -40,6 +43,11 @@ function assertValidGroupName(name: unknown): asserts name is string {
       'имя группы: от 2 до 31 символа, латиница в нижнем регистре, цифры, "_" или "-", начинается с буквы',
     );
   }
+}
+
+/** Криптостойкий временный пароль: 12 символов base64url (9 случайных байт). */
+function generateTemporaryPassword(): string {
+  return randomBytes(9).toString('base64url');
 }
 
 export const rbacService = {
@@ -242,5 +250,120 @@ export const rbacService = {
 
     const after = await rbacRepository.findGroupObjects(id);
     return after.objects;
+  },
+
+  // --- P4: CRUD пользователей (панель /admin) ---
+
+  /**
+   * Создать пользователя админом. username/email валидируются теми же
+   * правилами, что в /auth; коллизии → 409. Если password не передан (или "")
+   * — генерируется криптостойкий временный и возвращается один раз в
+   * initialPassword. Всегда выдаётся роль viewer, роли из тела игнорируются.
+   */
+  async createUser(input: { username?: unknown; email?: unknown; password?: unknown }): Promise<{
+    user: RbacUserWithRoles;
+    initialPassword?: string;
+  }> {
+    const username = input.username;
+    const email = input.email;
+    assertUsername(username);
+    assertEmail(email);
+
+    const clashName = await userRepository.findByUsername(username);
+    if (clashName) throw new HttpError(409, 'username уже занят');
+    const clashEmail = await userRepository.findByEmail(email);
+    if (clashEmail) throw new HttpError(409, 'email уже занят');
+
+    let plain: string;
+    let initialPassword: string | undefined;
+    if (input.password === undefined || input.password === '') {
+      initialPassword = generateTemporaryPassword();
+      plain = initialPassword;
+    } else if (typeof input.password === 'string') {
+      assertPassword(input.password);
+      plain = input.password;
+    } else {
+      throw new HttpError(400, 'пароль должен быть строкой');
+    }
+
+    const passwordHash = await authService.hashPassword(plain);
+    const userId = await rbacRepository.createUserWithViewerRole({ username, email, passwordHash });
+    const user = await rbacRepository.findUserWithRoles(userId);
+    if (!user) throw new Error('пользователь не создан');
+    if (initialPassword === undefined) return { user };
+    return { user, initialPassword };
+  },
+
+  /**
+   * Сброс/активация пароля пользователя админом (себя можно). Если password
+   * не задан — генерируется временный и возвращается в initialPassword.
+   * Инвалидация токенов не нужна: login читает хэш из БД на каждый запрос.
+   */
+  async resetUserPassword(userId: string, password: unknown): Promise<{
+    ok: true;
+    initialPassword?: string;
+  }> {
+    const target = await rbacRepository.findUserWithRoles(userId);
+    if (!target) throw new HttpError(404, 'пользователь не найден');
+
+    let plain: string;
+    let initialPassword: string | undefined;
+    if (password === undefined || password === '') {
+      initialPassword = generateTemporaryPassword();
+      plain = initialPassword;
+    } else if (typeof password === 'string') {
+      assertPassword(password);
+      plain = password;
+    } else {
+      throw new HttpError(400, 'пароль должен быть строкой');
+    }
+
+    const passwordHash = await authService.hashPassword(plain);
+    const updated = await rbacRepository.setUserPasswordHash(userId, passwordHash);
+    if (!updated) throw new HttpError(404, 'пользователь не найден');
+    if (initialPassword === undefined) return { ok: true };
+    return { ok: true, initialPassword };
+  },
+
+  /**
+   * Редактирование username/email пользователя админом (как updateProfile,
+   * но цель задаётся id). Пароль через этот эндпоинт менять нельзя.
+   */
+  async patchUser(userId: string, patch: Record<string, unknown>): Promise<RbacUserWithRoles> {
+    if ('password' in patch || 'passwordHash' in patch) {
+      throw new HttpError(400, 'сброс пароля — отдельный эндпоинт');
+    }
+    const username = patch.username;
+    const email = patch.email;
+    if (username === undefined && email === undefined) {
+      throw new HttpError(400, 'укажите username или email');
+    }
+    if (username !== undefined) assertUsername(username);
+    if (email !== undefined) assertEmail(email);
+
+    await authService.updateProfile(userId, {
+      ...(username !== undefined ? { username } : {}),
+      ...(email !== undefined ? { email } : {}),
+    });
+
+    const user = await rbacRepository.findUserWithRoles(userId);
+    if (!user) throw new HttpError(404, 'пользователь не найден');
+    return user;
+  },
+
+  /** Удалить пользователя админом: себя нельзя, последнего админа нельзя. */
+  async deleteUser(userId: string, actorId: string): Promise<void> {
+    if (userId === actorId) throw new HttpError(400, 'нельзя удалить себя');
+
+    const target = await rbacRepository.findUserWithRoles(userId);
+    if (!target) throw new HttpError(404, 'пользователь не найден');
+    if (target.roles.some((r) => r.name === 'admin')) {
+      const otherAdmins = await rbacRepository.countAdminsExcluding(userId);
+      if (otherAdmins === 0) throw new HttpError(400, 'нельзя удалить последнего администратора');
+    }
+
+    const deleted = await userRepository.deleteById(userId);
+    if (!deleted) throw new HttpError(404, 'пользователь не найден');
+    invalidateUser(userId);
   },
 };

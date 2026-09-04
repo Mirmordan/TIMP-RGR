@@ -23,19 +23,19 @@ export class AuthError extends Error {
   }
 }
 
-function assertUsername(username: unknown): asserts username is string {
+export function assertUsername(username: unknown): asserts username is string {
   if (typeof username !== 'string' || !USERNAME_RE.test(username)) {
     throw new AuthError(400, 'username: 3-32 символа, латиница/цифры/._-, начинается с буквы или цифры');
   }
 }
 
-function assertEmail(email: unknown): asserts email is string {
+export function assertEmail(email: unknown): asserts email is string {
   if (typeof email !== 'string' || !EMAIL_RE.test(email)) {
     throw new AuthError(400, 'некорректный email');
   }
 }
 
-function assertPassword(password: unknown): asserts password is string {
+export function assertPassword(password: unknown): asserts password is string {
   if (typeof password !== 'string' || password.length < PASSWORD_MIN) {
     throw new AuthError(400, `пароль минимум ${PASSWORD_MIN} символов`);
   }

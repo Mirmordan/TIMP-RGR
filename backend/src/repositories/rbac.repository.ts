@@ -38,6 +38,7 @@ export interface RbacUserWithRoles {
   username: string;
   email: string;
   createdAt: string;
+  passwordSet: boolean;
   roles: Array<{ id: string; name: string }>;
 }
 
@@ -69,6 +70,7 @@ export const rbacRepository = {
               u.username AS "username",
               u.email AS "email",
               u.created_at AS "createdAt",
+              u.password_hash IS NOT NULL AS "passwordSet",
               COALESCE(
                 jsonb_agg(jsonb_build_object('id', r.id, 'name', r.name))
                   FILTER (WHERE r.id IS NOT NULL),
@@ -91,6 +93,7 @@ export const rbacRepository = {
               u.username AS "username",
               u.email AS "email",
               u.created_at AS "createdAt",
+              u.password_hash IS NOT NULL AS "passwordSet",
               COALESCE(
                 jsonb_agg(jsonb_build_object('id', r.id, 'name', r.name))
                   FILTER (WHERE r.id IS NOT NULL),
@@ -232,6 +235,43 @@ export const rbacRepository = {
         );
       }
     });
+  },
+
+  /** Создать пользователя и сразу выдать ему системную роль viewer (одна транзакция). */
+  async createUserWithViewerRole(data: {
+    username: string;
+    email: string;
+    passwordHash: string;
+  }): Promise<string> {
+    return withTransaction(async (client) => {
+      const user = await client.query<{ id: string }>(
+        `INSERT INTO users (username, email, password_hash) VALUES ($1, $2, $3)
+         RETURNING id`,
+        [data.username, data.email, data.passwordHash],
+      );
+      const userId = user.rows[0]?.id;
+      if (!userId) throw new Error('пользователь не создан');
+      const role = await client.query<{ id: string }>(
+        `SELECT id FROM roles WHERE name = $1`,
+        ['viewer'],
+      );
+      const viewerId = role.rows[0]?.id;
+      if (!viewerId) throw new Error('системная роль viewer не найдена');
+      await client.query(
+        'INSERT INTO user_roles (user_id, role_id) VALUES ($1, $2)',
+        [userId, viewerId],
+      );
+      return userId;
+    });
+  },
+
+  /** Установить хэш пароля пользователя (для сброса/активации пароля). */
+  async setUserPasswordHash(userId: string, passwordHash: string): Promise<boolean> {
+    const result = await pool.query(
+      'UPDATE users SET password_hash = $1 WHERE id = $2',
+      [passwordHash, userId],
+    );
+    return (result.rowCount ?? 0) > 0;
   },
 
   async createRole(name: string): Promise<RbacRole> {

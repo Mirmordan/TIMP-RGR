@@ -2,6 +2,7 @@ import { Router } from 'express';
 import type { Request, Response } from 'express';
 import { rbacRepository } from '../repositories/rbac.repository';
 import { rbacService, HttpError } from '../services/rbac.service';
+import { AuthError } from '../security/auth.service';
 import { authenticate } from '../security/middleware/authenticate';
 import { requireCapability } from '../security/middleware/requireCapability';
 
@@ -14,7 +15,7 @@ export const adminRouter = Router();
 
 /** Разложить ошибку мутации в { error } с нужным статусом (uuid/unique → не 500). */
 function sendRbacError(res: Response, e: unknown): void {
-  if (e instanceof HttpError) {
+  if (e instanceof HttpError || e instanceof AuthError) {
     res.status(e.status).json({ error: e.message });
     return;
   }
@@ -24,6 +25,15 @@ function sendRbacError(res: Response, e: unknown): void {
     return;
   }
   if (code === '23505') {
+    const constraint = (e as { constraint?: string })?.constraint;
+    if (constraint === 'users_username_key') {
+      res.status(409).json({ error: 'username уже занят' });
+      return;
+    }
+    if (constraint === 'users_email_key') {
+      res.status(409).json({ error: 'email уже занят' });
+      return;
+    }
     res.status(409).json({ error: 'роль с таким именем уже существует' });
     return;
   }
@@ -179,6 +189,49 @@ adminRouter.put('/groups/:id/objects', requireCapability('admin:write'), async (
     const id = req.params.id as string;
     const objects = await rbacService.replaceGroupObjects(id, (req.body ?? {}).objectIds);
     res.json(objects);
+  } catch (e) {
+    sendRbacError(res, e);
+  }
+});
+
+// --- Мутации (P4): CRUD пользователей ---
+
+adminRouter.post('/users', requireCapability('admin:write'), async (req: Request, res: Response) => {
+  try {
+    const body = (req.body ?? {}) as { username?: unknown; email?: unknown; password?: unknown };
+    const result = await rbacService.createUser(body);
+    res.status(201).json(result);
+  } catch (e) {
+    sendRbacError(res, e);
+  }
+});
+
+adminRouter.put('/users/:id/password', requireCapability('admin:write'), async (req: Request, res: Response) => {
+  try {
+    const id = req.params.id as string;
+    const result = await rbacService.resetUserPassword(id, (req.body ?? {}).password);
+    res.json(result);
+  } catch (e) {
+    sendRbacError(res, e);
+  }
+});
+
+adminRouter.patch('/users/:id', requireCapability('admin:write'), async (req: Request, res: Response) => {
+  try {
+    const id = req.params.id as string;
+    const user = await rbacService.patchUser(id, (req.body ?? {}) as Record<string, unknown>);
+    res.json(user);
+  } catch (e) {
+    sendRbacError(res, e);
+  }
+});
+
+adminRouter.delete('/users/:id', requireCapability('admin:write'), async (req: Request, res: Response) => {
+  try {
+    const id = req.params.id as string;
+    const actor = req.user as { id: string };
+    await rbacService.deleteUser(id, actor.id);
+    res.status(204).send();
   } catch (e) {
     sendRbacError(res, e);
   }
