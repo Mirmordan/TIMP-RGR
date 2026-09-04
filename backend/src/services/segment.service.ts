@@ -246,6 +246,8 @@ function getSegmentWindowM3u8(seg: RecordingSegment, startOffsetS: number): stri
   ];
 
   for (let i = firstIndex; i < files.length; i++) {
+    // PTS пересобирается на ~0 в каждом .ts; hls.js ремапит по PDT с DISCONTINUITY.
+    if (i > firstIndex) lines.push('#EXT-X-DISCONTINUITY');
     const pdt = new Date(files[i]!.tsMs).toISOString().replace(/\.\d{3}Z$/, 'Z');
     lines.push(`#EXT-X-PROGRAM-DATE-TIME:${pdt}`);
     lines.push(`#EXTINF:${durations[i]},`);

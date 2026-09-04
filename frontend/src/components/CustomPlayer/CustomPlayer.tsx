@@ -54,6 +54,15 @@ export function CustomPlayer({
   const loadedSegRef = useRef<Segment | null>(null);
   const windowAnchorRef = useRef(0);
   const gapTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const liveRef = useRef(false);
+
+  // Hover-preview state: scrub within the loaded window while hovering the track.
+  const hoverPreviewRef = useRef(false);
+  const hoverPendingTLRef = useRef<number | null>(null);
+  const hoverLastPreviewTLRef = useRef(-Infinity);
+  const hoverWasPlayingRef = useRef(false);
+  const hoverResumeTLRef = useRef(0);
+  const hoverTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // --- Incident modals ---
   const [showIncidentModal, setShowIncidentModal] = useState(false);
@@ -95,6 +104,10 @@ export function CustomPlayer({
     playingRef.current = p;
     setPlaying(p);
   }
+  function setLiveState(l: boolean) {
+    liveRef.current = l;
+    setIsLive(l);
+  }
 
   function findSegmentAt(t: number): Segment | null {
     for (const seg of recordedSegments) {
@@ -128,6 +141,75 @@ export function CustomPlayer({
       clearInterval(gapTimerRef.current);
       gapTimerRef.current = null;
     }
+  }
+
+  // --- Hover preview: scrub within the loaded window while hovering the track ---
+  function stopHoverTimer() {
+    if (hoverTimerRef.current) {
+      clearInterval(hoverTimerRef.current);
+      hoverTimerRef.current = null;
+    }
+  }
+
+  function resetHoverSession() {
+    stopHoverTimer();
+    hoverPendingTLRef.current = null;
+    hoverPreviewRef.current = false;
+    hoverLastPreviewTLRef.current = -Infinity;
+    hoverWasPlayingRef.current = false;
+  }
+
+  function endHoverPreview() {
+    const wasPreview = hoverPreviewRef.current;
+    const v = videoRef.current;
+    const seg = loadedSegRef.current;
+    if (wasPreview && v && seg && !gapModeRef.current && !liveRef.current && !v.ended) {
+      const media = hoverResumeTLRef.current - (seg.startOffsetS + windowAnchorRef.current);
+      const dur = Number.isFinite(v.duration) ? v.duration : 0;
+      v.currentTime = Math.max(0, Math.min(media, dur));
+      if (hoverWasPlayingRef.current) {
+        v.play().then(() => setPlayingState(true)).catch(() => {});
+      }
+    }
+    resetHoverSession();
+  }
+
+  // Perform a scrub seek (anti-lag: only when the pointer rested >=300ms on a position
+  // that moved >=1.5s from the last applied preview frame).
+  function applyHoverPreview() {
+    const v = videoRef.current;
+    const seg = loadedSegRef.current;
+    const pending = hoverPendingTLRef.current;
+    if (!v || !seg || pending === null) return;
+    if (gapModeRef.current || liveRef.current || dragRef.current) return;
+    // Dirty states (buffering/seek in flight): don't jump.
+    if (v.seeking || v.readyState < 2) return;
+    const media = pending - (seg.startOffsetS + windowAnchorRef.current);
+    const dur = v.duration;
+    // Only scrub within the loaded window; other segments / gaps → no seek.
+    if (!Number.isFinite(dur) || !(media >= 0.5 && media <= dur - 0.5)) return;
+    if (hoverPreviewRef.current && Math.abs(pending - hoverLastPreviewTLRef.current) < 1.5) return;
+
+    if (!hoverPreviewRef.current) {
+      hoverPreviewRef.current = true;
+      hoverWasPlayingRef.current = !v.paused && !v.ended;
+      hoverResumeTLRef.current = timelineTimeRef.current;
+      if (hoverWasPlayingRef.current) v.pause();
+    }
+    hoverLastPreviewTLRef.current = pending;
+    v.currentTime = media + 0.05;
+  }
+
+  function startHoverTimer() {
+    if (hoverTimerRef.current) return;
+    hoverTimerRef.current = setInterval(() => {
+      if (dragRef.current || gapModeRef.current || liveRef.current) {
+        endHoverPreview();
+        return;
+      }
+      if (hoverPendingTLRef.current === null) return;
+      applyHoverPreview();
+    }, 300);
   }
 
   // --- Enter gap mode ---
@@ -225,7 +307,8 @@ export function CustomPlayer({
           hls.startLoad(0);
         } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
           hls.recoverMediaError();
-        } else {
+        } else if (!hoverPreviewRef.current) {
+          // During hover-preview scrub errors must not surface a toast/overlay.
           setError('Не удалось загрузить сегмент');
           setLoading(false);
           setPlayingState(false);
@@ -284,6 +367,8 @@ export function CustomPlayer({
   function seekTo(t: number, autoPlay?: boolean) {
     const v = videoRef.current;
     if (!v) return;
+    // A real seek exits any hover-preview session so the RAF sync never stays frozen.
+    endHoverPreview();
     const target = Math.max(0, Math.min(t, totalDuration));
 
     stopGap();
@@ -293,12 +378,12 @@ export function CustomPlayer({
     if (liveSegment && target >= liveSegment.startOffsetS) {
       loadedSegRef.current = null;
       setGap(false);
-      setIsLive(true);
+      setLiveState(true);
       initLiveHls();
       return;
     }
 
-    setIsLive(false);
+    setLiveState(false);
     const seg = findSegmentAt(target);
     if (!seg || seg.fileCount === 0) {
       enterGap(target, false);
@@ -383,7 +468,7 @@ export function CustomPlayer({
   useEffect(() => {
     if (timeline.live && recordedSegments.length === 0) {
       initLiveHls();
-      setIsLive(true);
+      setLiveState(true);
     }
     return () => {
       destroyHls();
@@ -394,6 +479,7 @@ export function CustomPlayer({
   useEffect(() => {
     return () => {
       stopGap();
+      stopHoverTimer();
       destroyHls();
       // FIX: remove any lingering pointer listeners
       if (dragRef.current) {
@@ -413,7 +499,9 @@ export function CustomPlayer({
     const tick = () => {
       const v = videoRef.current;
       const curSeg = loadedSegRef.current;
-      if (curSeg && v && !gapTimerRef.current) {
+      // During hover-preview the video is paused/scrubbed by the pointer;
+      // skip tl/playing sync so the cursor and play state don't fight the preview.
+      if (!hoverPreviewRef.current && curSeg && v && !gapTimerRef.current) {
         const pt = v.currentTime;
         const tl = curSeg.startOffsetS + windowAnchorRef.current + pt;
 
@@ -477,6 +565,8 @@ export function CustomPlayer({
   function togglePlay() {
     const v = videoRef.current;
     if (!v) return;
+    // A manual play/pause press leaves any active hover-preview session.
+    endHoverPreview();
 
     // In gap mode: start/stop gap playback
     if (gapModeRef.current) {
@@ -531,14 +621,14 @@ export function CustomPlayer({
       setError('Прямая трансляция недоступна');
       return;
     }
-    setIsLive(true);
+    setLiveState(true);
     setGap(false);
     loadedSegRef.current = null;
     initLiveHls();
   }
 
   function goRecord() {
-    setIsLive(false);
+    setLiveState(false);
     setGap(false);
     if (recordedSegments.length > 0) {
       loadSegment(recordedSegments[0]!, recordedSegments[0]!.startOffsetS, false);
@@ -692,6 +782,8 @@ export function CustomPlayer({
   }
 
   function handleTrackPointerDown(e: React.PointerEvent) {
+    // A press ends any active hover-preview session (restore + resume) before drag/seek takes over.
+    endHoverPreview();
     e.preventDefault();
     (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
     dragRef.current = true;
@@ -723,13 +815,21 @@ export function CustomPlayer({
     if (!rect) return;
     const x = e.clientX - rect.left;
     setHoverX(x);
-    setHoverTime(getTimeFromX(e.clientX));
+    const t = getTimeFromX(e.clientX);
+    setHoverTime(t);
+    // Remember the latest hovered timeline position; a 300ms timer performs the
+    // actual scrub (anti-lag), so micro mouse jitter does not seek every tick.
+    hoverPendingTLRef.current = t;
+    if (!hoverTimerRef.current && !gapModeRef.current && !liveRef.current && loadedSegRef.current) {
+      startHoverTimer();
+    }
   }
 
   function handleTrackPointerLeave() {
     if (dragRef.current) return;
     setHoverX(null);
     setHoverTime(null);
+    endHoverPreview();
   }
 
   // --- Computed ---
