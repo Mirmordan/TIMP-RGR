@@ -1,26 +1,25 @@
 #!/usr/bin/env bash
 #
-# ТИМП-РГР — резервное копирование (еженедельно).
+# ТИМП-РГР — резервное копирование (ежедневно).
 #   1) pg_dump логической БД (Docker-контейнер с Postgres) в custom-format (.dump)
-#   2) tar.gz директорий с чанками/записями (только если они существуют)
-#   3) ротация по КОЛИЧЕСТВУ: храним последние KEEP_COUNT архивов каждого типа
+#   2) tar.gz директорий с чанками/записями -> data/archive (gitignore покрывает data/)
+#   3) ротация по КОЛИЧЕСТВУ: доступны текущий и вчерашний день (KEEP_COUNT=2)
 #
-# Запускать РАЗ В НЕДЕЛЮ (полный tar ~13G на data/chunks, держать дневными — не нужно):
-#   30 3 * * 1  /home/mirmordan/Projects/TIMP-RGR/scripts/backup.sh >> /var/log/timp-rgr-backup.log 2>&1
+# Запуск из крона раз в сутки (пользователь с доступом к docker):
+#   30 3 * * *  /home/mirmordan/Projects/TIMP-RGR/scripts/backup.sh >> /home/mirmordan/Projects/TIMP-RGR/data/backup.log 2>&1
 #
-# Бюджет диска: KEEP_COUNT=3 × ~13G ≈ ~40G (при 186G free). При росте архива
-# чаще/тяжелее — перейти на инкрементальную схему (rsync --link-dest) или уменьшить KEEP_COUNT.
+# Бюджет диска: KEEP_COUNT=2 × ~13G ≈ ~26G + рост записей.
 #
 # Параметры окружения:
-#   BACKUP_DIR     куда складывать бэкапы (по умолчанию ./backups от корня репо)
-#   KEEP_COUNT     сколько последних архивов каждого типа хранить (по умолчанию 3)
+#   BACKUP_DIR     куда складывать бэкапы (по умолчанию ./data/archive от корня репо)
+#   KEEP_COUNT     сколько последних архивов каждого типа хранить (по умолчанию 2 = сегодня+вчера)
 #   SKIP_RECORDS=1 не архивировать чанки/записи (только дамп БД)
 
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-BACKUP_DIR="${BACKUP_DIR:-$REPO_ROOT/backups}"
-KEEP_COUNT="${KEEP_COUNT:-3}"
+BACKUP_DIR="${BACKUP_DIR:-$REPO_ROOT/data/archive}"
+KEEP_COUNT="${KEEP_COUNT:-2}"
 DB_CONTAINER="${DB_CONTAINER:-timp-rgr-db-1}"
 # Роль дампа: суперuser кластера — он единственный проходит FORCE RLS в pg_dump.
 DB_USER="${DB_DUMP_USER:-timprgr}"
