@@ -1,8 +1,11 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router';
 import { AuthProvider, useAuth } from './auth';
 import { ProtectedRoute } from './ProtectedRoute';
+import { ErrorBoundary } from './ErrorBoundary';
 import { RequireCapability } from './components/RequireCapability';
+import { Layout } from './components/Layout/Layout';
 import { AuthPage } from './pages/AuthPage';
+import { NotFoundPage } from './pages/NotFoundPage';
 import { HomePage } from './pages/HomePage';
 import { AdminPage } from './pages/AdminPage';
 import { DevicesPage } from './pages/DevicesPage';
@@ -47,7 +50,7 @@ function AppRoutes() {
       <Route path="/processes/new" element={<ProtectedRoute><ProcessCreatePage /></ProtectedRoute>} />
       <Route path="/processes/:id" element={<ProtectedRoute><ProcessDetailPage /></ProtectedRoute>} />
       <Route path="/processes/:id/edit" element={<ProtectedRoute><ProcessEditPage /></ProtectedRoute>} />
-      <Route path="*" element={<Navigate to="/" replace />} />
+      <Route path="*" element={<Layout><NotFoundPage /></Layout>} />
     </Routes>
   );
 }
@@ -55,12 +58,14 @@ function AppRoutes() {
 export default function App() {
   return (
     <BrowserRouter>
-      <AuthProvider>
-        <NotificationsProvider>
-          <AppRoutes />
-          <Toaster />
-        </NotificationsProvider>
-      </AuthProvider>
+      <ErrorBoundary>
+        <AuthProvider>
+          <NotificationsProvider>
+            <AppRoutes />
+            <Toaster />
+          </NotificationsProvider>
+        </AuthProvider>
+      </ErrorBoundary>
     </BrowserRouter>
   );
 }
