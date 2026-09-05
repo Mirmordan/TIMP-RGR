@@ -6,6 +6,9 @@ export const config = {
   port: Number(process.env.PORT) || 3000,
   appAddress: process.env.APP_ADDRESS || 'localhost',
   apiPrefix: process.env.API_PREFIX || '/api/v1',
+  docs: {
+    enabled: process.env.NODE_ENV === 'production' ? process.env.SWAGGER_ENABLED === '1' : true,
+  },
   security: {
     jwtSecret: process.env.JWT_SECRET || 'dev-secret-change-me',
     jwtRefreshSecret: process.env.JWT_REFRESH_SECRET || 'dev-refresh-secret-change-me',

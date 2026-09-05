@@ -14,6 +14,28 @@ import { authRouter } from '../security/auth.routes';
 
 export const apiRouter = Router();
 
+/**
+ * @openapi
+ * /health:
+ *   get:
+ *     tags: [Health]
+ *     operationId: getHealth
+ *     summary: Проверка доступности API
+ *     description: Публичный эндпоинт без авторизации.
+ *     security: []
+ *     responses:
+ *       '200':
+ *         description: Сервис работает
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               required: [status]
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: ok
+ */
 apiRouter.get('/health', (req: Request, res: Response) => {
   res.status(200).json({ status: 'ok' });
 });

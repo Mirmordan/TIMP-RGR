@@ -67,7 +67,41 @@ async function authPayload(userId: string): Promise<{
   };
 }
 
-/** Логин: аутентификация + выдача сессии в cookies. */
+/**
+ * @openapi
+ * /auth/login:
+ *   post:
+ *     tags: [Auth]
+ *     operationId: login
+ *     summary: Вход по логину и паролю
+ *     description: Аутентификация + выдача сессии. Ставит httpOnly cookies access_token/refresh_token.
+ *     security: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/LoginRequest'
+ *     responses:
+ *       '200':
+ *         description: Успешный вход; cookies access_token/refresh_token установлены
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/AuthPayload'
+ *       '400':
+ *         description: Не указаны username или password
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       '401':
+ *         description: Неверный логин или пароль
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 authRouter.post('/login', async (req: Request, res: Response) => {
   try {
     const { username, password } = req.body;
@@ -93,7 +127,29 @@ authRouter.post('/login', async (req: Request, res: Response) => {
   }
 });
 
-/** Обновление сессии: читает refresh_token из cookie, выдаёт новую пару. */
+/**
+ * @openapi
+ * /auth/refresh:
+ *   post:
+ *     tags: [Auth]
+ *     operationId: refreshSession
+ *     summary: Обновление сессии
+ *     description: Читает refresh_token из cookie и выдаёт новую пару access_token/refresh_token.
+ *     security: []
+ *     responses:
+ *       '200':
+ *         description: Новая пара токенов установлена в cookies
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/AuthPayload'
+ *       '401':
+ *         description: Сессия не найдена или refresh-токен некорректен
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 authRouter.post('/refresh', async (req: Request, res: Response) => {
   try {
     const token = req.cookies?.refresh_token;
@@ -110,13 +166,55 @@ authRouter.post('/refresh', async (req: Request, res: Response) => {
   }
 });
 
-/** Выход: очистка cookies. */
+/**
+ * @openapi
+ * /auth/logout:
+ *   post:
+ *     tags: [Auth]
+ *     operationId: logout
+ *     summary: Выход из системы
+ *     description: Очищает httpOnly cookies access_token/refresh_token.
+ *     security: []
+ *     responses:
+ *       '200':
+ *         description: Cookies очищены
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               required: [ok]
+ *               properties:
+ *                 ok:
+ *                   type: boolean
+ *                   example: true
+ */
 authRouter.post('/logout', (_req: Request, res: Response) => {
   clearAuthCookies(res);
   res.json({ ok: true });
 });
 
-/** Текущий пользователь: читает access_token из cookie или Authorization header. */
+/**
+ * @openapi
+ * /auth/me:
+ *   get:
+ *     tags: [Auth]
+ *     operationId: getMe
+ *     summary: Текущий пользователь
+ *     description: Читает access_token из cookie access_token или заголовка Authorization Bearer.
+ *     responses:
+ *       '200':
+ *         description: Данные текущего пользователя и его capabilities
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/AuthPayload'
+ *       '401':
+ *         description: Требуется авторизация
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 authRouter.get('/me', authenticate, async (req: Request, res: Response) => {
   try {
     if (!req.user) {
@@ -129,7 +227,52 @@ authRouter.get('/me', authenticate, async (req: Request, res: Response) => {
   }
 });
 
-/** Профиль: обновление своих username/email (только для себя). */
+/**
+ * @openapi
+ * /auth/profile:
+ *   patch:
+ *     tags: [Auth]
+ *     operationId: updateProfile
+ *     summary: Обновление своего профиля
+ *     description: Позволяет изменить собственные username/email. Валидация значений — как при создании пользователя.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/ProfilePatch'
+ *     responses:
+ *       '200':
+ *         description: Профиль обновлён
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/AuthPayload'
+ *       '400':
+ *         description: Некорректные значения или не указано ни одного поля
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       '401':
+ *         description: Требуется авторизация
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       '404':
+ *         description: Пользователь не найден
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       '409':
+ *         description: username или email уже занят другим пользователем
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 authRouter.patch('/profile', authenticate, async (req: Request, res: Response) => {
   try {
     if (!req.user) {
@@ -144,7 +287,53 @@ authRouter.patch('/profile', authenticate, async (req: Request, res: Response) =
   }
 });
 
-/** Смена пароля: проверка текущего + перевыпуск сессии. */
+/**
+ * @openapi
+ * /auth/change-password:
+ *   post:
+ *     tags: [Auth]
+ *     operationId: changePassword
+ *     summary: Смена пароля
+ *     description: Проверяет текущий пароль, меняет на новый и перевыпускает пару токенов в cookies.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/ChangePasswordRequest'
+ *     responses:
+ *       '200':
+ *         description: Пароль изменён, новая пара токенов установлена в cookies
+ *         content:
+ *           application/json:
+ *             schema:
+ *               allOf:
+ *                 - type: object
+ *                   required: [ok]
+ *                   properties:
+ *                     ok:
+ *                       type: boolean
+ *                       example: true
+ *                 - $ref: '#/components/schemas/AuthPayload'
+ *       '400':
+ *         description: currentPassword не указан, новый пароль короче 8 символов или совпадает с текущим
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       '401':
+ *         description: Требуется авторизация или неверный текущий пароль
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       '404':
+ *         description: Пользователь не найден
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 authRouter.post('/change-password', authenticate, async (req: Request, res: Response) => {
   try {
     if (!req.user) {
