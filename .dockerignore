@@ -1,0 +1,32 @@
+# Зависимости (не в образ)
+node_modules
+**/node_modules
+
+# Артефакты сборки
+dist
+**/dist
+*.tsbuildinfo
+
+# Данные рантайма (гигабайты чанков/записей — НЕ в контекст)
+data
+data/**
+ffmpeg-manager/recordings/**
+media-manager/recordings/
+
+# Секреты: env задаётся в docker-compose.yml, .env в образ не берём
+.env
+**/.env
+.env.*
+
+# VCS и инструменты
+.git
+.gitignore
+.opencode/
+**/.opencode/
+.claude/
+
+# Логи и служебное
+*.log
+backups/
+AGENTS.md
+CLAUDE.md

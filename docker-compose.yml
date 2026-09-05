@@ -16,5 +16,71 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
 
+  # --- All-in-one приложение (backend Express + собранный frontend) ---
+  app:
+    build: .
+    container_name: timp-rgr-app-1
+    restart: unless-stopped
+    depends_on:
+      - db
+      - mtx
+      - ffmpegmanager
+    environment:
+      NODE_ENV: production
+      PORT: 5000
+      APP_ADDRESS: 0.0.0.0
+      # RLS-роль приложения (суперюзер ${DB_USER} обходит RLS → использовать нельзя)
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_DATABASE: ${DB_DATABASE}
+      DB_USER: ${DB_APP_USER:-timprgr_app}
+      DB_PASSWORD: ${DB_APP_PASSWORD:-timprgr_app_password}
+      # Медиа внутри compose-сети
+      MEDIA_MTX_API: http://mtx:9997
+      MEDIA_MTX_RECORD_ROOT: /data/chunks
+      MEDIA_RECORD_ROOT_HOST: /data/chunks
+      FFMPEG_MANAGER_API: http://ffmpegmanager:9999
+      FFMPEG_MANAGER_RECORD_ROOT: /data/chunks
+      JWT_SECRET: ${JWT_SECRET:-dev-secret-change-me}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-dev-refresh-secret-change-me}
+    ports:
+      # Чтобы в U10 поднять параллельно дев-режиму на тестовом порту:
+      #   APP_PUBLISH_PORT=15000 docker compose up -d app
+      - "${APP_PUBLISH_PORT:-5000}:5000"
+    volumes:
+      # Общий том медиа: бэкенд читает/удаляет чанки по /data/chunks
+      - ./data:/data
+
+  # --- ffmpeg-manager (запись Ivideon → .ts в общий том /data/chunks) ---
+  ffmpegmanager:
+    build: ./ffmpeg-manager
+    container_name: timp-rgr-ffmpegmanager-1
+    restart: unless-stopped
+    environment:
+      PORT: 9999
+      RECORD_ROOT: /data/chunks
+    ports:
+      # Аналогично app: FFMPEG_PUBLISH_PORT=19999 для параллельного теста
+      - "${FFMPEG_PUBLISH_PORT:-9999}:9999"
+    volumes:
+      - ./data:/data
+
+  # mediamtx: имя сервиса `mtx` — НЕ конфликтует с запущенным legacy
+  # (timp-rgr-mediamtx-1). Порты на хосте 8554/8888/9996-9998 при этом общие:
+  # либо legacy compose, либо этот стек — решает U10.
+  mtx:
+    image: bluenviron/mediamtx:latest
+    restart: unless-stopped
+    volumes:
+      - ./media-manager/mediamtx.yml:/mediamtx.yml:ro
+      - ./data:/data
+    ports:
+      - "8554:8554"   # RTSP
+      - "1935:1935"   # RTMP
+      - "8888:8888"   # HLS
+      - "9996:9996"   # Playback
+      - "9997:9997"   # Control API
+      - "9998:9998"   # Metrics
+
 volumes:
   pgdata:
