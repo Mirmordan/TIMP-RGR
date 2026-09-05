@@ -72,4 +72,42 @@ describe('segmentService.getSegmentWindowM3u8', () => {
     );
     expect(m3u8).toBe('');
   });
+
+  it('закрытый сегмент, окно за последним файлом → пустая строка (данные кончились раньше endedAt)', () => {
+    const dir = path.join(state.tmpBase, 'process_proc-2');
+    fs.mkdirSync(dir, { recursive: true });
+    for (const n of [
+      '2026-09-05_10-00-00-000000.ts',
+      '2026-09-05_10-00-10-000000.ts',
+      '2026-09-05_10-00-20-000000.ts',
+      '2026-09-05_10-00-30-000000.ts',
+    ]) {
+      fs.writeFileSync(path.join(dir, n), 'chunk');
+    }
+
+    const seg = makeSeg({
+      path: 'process_proc-2',
+      startedAt: new Date('2026-09-05T10:00:00.000Z'),
+      endedAt: new Date('2026-09-05T10:00:40.000Z'),
+    });
+    // Старт окна (10:00:41) — внутри endedAt, но позже последнего чанка (10:00:30).
+    const m3u8 = segmentService.getSegmentWindowM3u8(seg, 41);
+    expect(m3u8).toBe('');
+  });
+
+  it('закрытый сегмент, старт внутри данных → обычное VOD-окно от накрывающего чанка', () => {
+    const seg = makeSeg({
+      path: 'process_proc-2',
+      startedAt: new Date('2026-09-05T10:00:00.000Z'),
+      endedAt: new Date('2026-09-05T10:00:40.000Z'),
+    });
+    // Старт 10:00:15 → окно с чанка 10:00:10 до конца.
+    const m3u8 = segmentService.getSegmentWindowM3u8(seg, 15);
+    expect(m3u8).toContain('#EXT-X-PLAYLIST-TYPE:VOD');
+    expect(m3u8).toContain('#EXT-X-MEDIA-SEQUENCE:1');
+    expect(m3u8).toContain('#EXT-X-ENDLIST');
+    expect(m3u8).toContain('/api/v1/recordings/process_proc-2/2026-09-05_10-00-10-000000.ts');
+    expect(m3u8).toContain('/api/v1/recordings/process_proc-2/2026-09-05_10-00-30-000000.ts');
+    expect(m3u8).not.toContain('/api/v1/recordings/process_proc-2/2026-09-05_10-00-00-000000.ts');
+  });
 });

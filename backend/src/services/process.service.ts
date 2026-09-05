@@ -155,7 +155,6 @@ export const processService = {
         const openSeg = segments.find(s => s.endedAt === null);
         if (openSeg) {
           const dirName = mtxPathForProcess(processId);
-          const now = new Date();
           const files = segmentService.listFiles(dirName);
           // Считаем размер и количество файлов
           let sizeBytes = 0;
@@ -165,9 +164,16 @@ export const processService = {
               sizeBytes += stat.size;
             } catch { /* ignore */ }
           }
-          const durationS = (now.getTime() - new Date(openSeg.startedAt).getTime()) / 1000;
+          // Фактический конец данных — timestamp последнего .ts файла (запись могла
+          // оборваться задолго до остановки процесса); файлов нет — момент остановки.
+          const startedAtMs = new Date(openSeg.startedAt).getTime();
+          const lastFile = segmentService.lastFileTs(dirName);
+          const endedAt = lastFile
+            ? new Date(Math.max(lastFile.getTime(), startedAtMs))
+            : new Date();
+          const durationS = (endedAt.getTime() - startedAtMs) / 1000;
           try {
-            await segmentRepository.finalizeById(openSeg.id, now, files.length, Math.max(1, durationS), sizeBytes);
+            await segmentRepository.finalizeById(openSeg.id, endedAt, files.length, Math.max(1, durationS), sizeBytes);
           } catch {
             /* не удалось финализировать — ок */
           }

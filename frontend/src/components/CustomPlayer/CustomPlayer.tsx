@@ -292,68 +292,88 @@ export function CustomPlayer({
     const targetInWindow = withinSeg - windowStartS;
     const url = `/api/v1/segments/${seg.id}/playlist?start=${windowStartS}`;
 
-    if (Hls.isSupported()) {
-      const hls = new Hls({
-        enableWorker: true,
-        lowLatencyMode: true,
-        maxBufferLength: 30,
-        maxMaxBufferLength: 60,
-        backBufferLength: 90,
-      });
-      hls.loadSource(url);
-      hls.attachMedia(v);
+    // Окно за концом данных закрытого сегмента backend отвечает 404 (''). hls.js
+    // на 404-манифесте уходит в бесконечный NETWORK_ERROR-ретрай, поэтому манифест
+    // проверяем лёгким fetch до создания HLS: 404 → сразу гэп (оверлей «Запись
+    // отсутствует»), курсор остаётся на запрошенной позиции, а не прыгает в конец.
+    const mountPlayback = () => {
+      if (Hls.isSupported()) {
+        const hls = new Hls({
+          enableWorker: true,
+          lowLatencyMode: true,
+          maxBufferLength: 30,
+          maxMaxBufferLength: 60,
+          backBufferLength: 90,
+        });
+        hls.loadSource(url);
+        hls.attachMedia(v);
 
-      hls.on(Hls.Events.MANIFEST_PARSED, () => {
-        setLoading(false);
-        if (targetInWindow > 0.5) {
-          v.currentTime = targetInWindow;
-        }
-        if (autoPlay) {
-          v.play().then(() => setPlayingState(true)).catch(() => {});
-        }
-      });
-
-      hls.on(Hls.Events.ERROR, (_e, data) => {
-        if (!data.fatal) return;
-        if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
-          hls.startLoad(0);
-        } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
-          hls.recoverMediaError();
-        } else if (!hoverPreviewRef.current) {
-          // During hover-preview scrub errors must not surface a toast/overlay.
-          setError('Не удалось загрузить сегмент');
+        hls.on(Hls.Events.MANIFEST_PARSED, () => {
           setLoading(false);
-          setPlayingState(false);
-        }
-      });
+          if (targetInWindow > 0.5) {
+            v.currentTime = targetInWindow;
+          }
+          if (autoPlay) {
+            v.play().then(() => setPlayingState(true)).catch(() => {});
+          }
+        });
 
-      hlsRef.current = hls;
-    } else if (v.canPlayType('application/vnd.apple.mpegurl')) {
-      // Safari fallback: нативный HLS с тем же оконным плейлистом
-      const onLoadedMetadata = () => {
-        v.removeEventListener('loadedmetadata', onLoadedMetadata);
-        v.removeEventListener('error', onError);
+        hls.on(Hls.Events.ERROR, (_e, data) => {
+          if (!data.fatal) return;
+          if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+            hls.startLoad(0);
+          } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
+            hls.recoverMediaError();
+          } else if (!hoverPreviewRef.current) {
+            // During hover-preview scrub errors must not surface a toast/overlay.
+            setError('Не удалось загрузить сегмент');
+            setLoading(false);
+            setPlayingState(false);
+          }
+        });
+
+        hlsRef.current = hls;
+      } else if (v.canPlayType('application/vnd.apple.mpegurl')) {
+        // Safari fallback: нативный HLS с тем же оконным плейлистом
+        const onLoadedMetadata = () => {
+          v.removeEventListener('loadedmetadata', onLoadedMetadata);
+          v.removeEventListener('error', onError);
+          setLoading(false);
+          if (targetInWindow > 0.5) v.currentTime = targetInWindow;
+          if (autoPlay) {
+            v.play().then(() => setPlayingState(true)).catch(() => {});
+          }
+        };
+        const onError = () => {
+          v.removeEventListener('loadedmetadata', onLoadedMetadata);
+          v.removeEventListener('error', onError);
+          setLoading(false);
+          setError('Не удалось загрузить сегмент');
+          setPlayingState(false);
+        };
+        v.addEventListener('loadedmetadata', onLoadedMetadata);
+        v.addEventListener('error', onError);
+        v.src = url;
+        v.load();
+      } else {
+        setError('HLS не поддерживается');
         setLoading(false);
-        if (targetInWindow > 0.5) v.currentTime = targetInWindow;
-        if (autoPlay) {
-          v.play().then(() => setPlayingState(true)).catch(() => {});
+      }
+    };
+
+    fetch(url)
+      .then((res) => {
+        if (loadedSegRef.current !== seg) return; // устаревший запрос (повторный seek)
+        if (res.ok) {
+          mountPlayback();
+        } else {
+          enterGap(targetTL, false);
         }
-      };
-      const onError = () => {
-        v.removeEventListener('loadedmetadata', onLoadedMetadata);
-        v.removeEventListener('error', onError);
-        setLoading(false);
-        setError('Не удалось загрузить сегмент');
-        setPlayingState(false);
-      };
-      v.addEventListener('loadedmetadata', onLoadedMetadata);
-      v.addEventListener('error', onError);
-      v.src = url;
-      v.load();
-    } else {
-      setError('HLS не поддерживается');
-      setLoading(false);
-    }
+      })
+      .catch(() => {
+        // Сетевой сбой (не 404) — оставляем hls.js-ретраи как раньше.
+        if (loadedSegRef.current === seg) mountPlayback();
+      });
   }
 
   // --- Handle segment ended ---

@@ -161,6 +161,16 @@ function listFiles(segmentPath: string): string[] {
   return scanTsFiles(dirPath);
 }
 
+/** Timestamp последнего .ts файла в директории (мс) или null, если файлов нет. */
+function lastFileTsMs(dirPath: string): number | null {
+  const files = scanTsFiles(dirPath);
+  for (let i = files.length - 1; i >= 0; i--) {
+    const d = timestampFromFilename(files[i]!);
+    if (d) return d.getTime();
+  }
+  return null;
+}
+
 /**
  * Файлы, относящиеся к сегменту: .ts чанки из директории сегмента,
  * попадающие в окно покрытия [startedAt, endedAt].
@@ -240,6 +250,12 @@ function getSegmentWindowM3u8(seg: RecordingSegment, startOffsetS: number): stri
 
   const offsetMs = Math.max(0, startOffsetS) * 1000;
   const startTsMs = new Date(seg.startedAt).getTime() + offsetMs;
+
+  // Закрытый сегмент: старт окна позже последнего чанка на диске — данных в окне нет
+  // (запись могла оборваться задолго до endedAt). Пустая строка → роут отвечает 404,
+  // плеер уходит в гэп вместо клампа firstIndex к последнему файлу.
+  // Для открытых (EVENT) сегментов не трогаем: кламп оставляет живой хвост (live-edge).
+  if (!isOpen && startTsMs > files[files.length - 1]!.tsMs) return '';
 
   const durations = chunkDurations(files);
 
@@ -498,6 +514,14 @@ export const segmentService = {
   /** Список .ts файлов сегмента. */
   listFiles(segmentPath: string): string[] {
     return listFiles(segmentPath);
+  },
+
+  /** Timestamp последнего .ts файла директории записи (Date) или null. */
+  lastFileTs(dirName: string): Date | null {
+    const dirPath = findDirPath(dirName);
+    if (!fs.existsSync(dirPath)) return null;
+    const ts = lastFileTsMs(dirPath);
+    return ts === null ? null : new Date(ts);
   },
 
   async deleteById(id: string): Promise<boolean> {
