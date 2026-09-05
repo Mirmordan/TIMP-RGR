@@ -69,7 +69,7 @@ segmentRouter.get('/', async (req: Request, res: Response) => {
  *     tags: [Segments]
  *     operationId: getSegmentsByRange
  *     summary: Сегменты по временному диапазону
- *     description: Возвращает сегменты, пересекающиеся с диапазоном [from, to]. from и to обязательны.
+ *     description: Возвращает сегменты, пересекающиеся с окном [from, to], в пределах видимости пользователя (доступ ограничен RLS, как и у списка сегментов). from и to обязательны.
  *     parameters:
  *       - name: from
  *         in: query
@@ -109,7 +109,7 @@ segmentRouter.get('/', async (req: Request, res: Response) => {
  *             schema:
  *               $ref: '#/components/schemas/Error'
  */
-segmentRouter.get('/range', requirePermission('read'), async (req: Request, res: Response) => {
+segmentRouter.get('/range', async (req: Request, res: Response) => {
   const { from, to } = req.query;
   if (!from || !to) return res.status(400).json({ error: 'from и to обязательны' });
   const segments = await segmentService.getByTimeRange(from as string, to as string);
