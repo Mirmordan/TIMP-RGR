@@ -2,7 +2,7 @@ import express from 'express';
 import { spawn, execSync } from 'child_process';
 import { WebSocket } from 'ws';
 import { randomUUID } from 'crypto';
-import { mkdirSync, readdirSync, statSync, rmSync, writeFileSync, readFileSync, existsSync, unlinkSync } from 'fs';
+import { mkdirSync, readdirSync, statSync, rmSync, writeFileSync, readFileSync, existsSync, unlinkSync, renameSync } from 'fs';
 import { join } from 'path';
 import http from 'http';
 import https from 'https';
@@ -13,6 +13,7 @@ app.use(express.json());
 const PORT = process.env.PORT || 9999;
 const RECORD_ROOT = process.env.RECORD_ROOT || '/data/chunks';
 const paths = new Map();
+const STATE_FILE = join(RECORD_ROOT, '.ffm-paths.json');
 
 function timestamp() {
   const d = new Date();
@@ -192,12 +193,39 @@ function startGenericStream(name, opts) {
   };
 }
 
-// ===== API =====
+// ===== State persistence =====
 
-app.post('/v3/config/paths/add/:name', (req, res) => {
-  const { name } = req.params;
-  const conf = req.body;
-  if (paths.has(name)) return res.status(409).json({ status: 'error', error: 'path already exists' });
+function persistState() {
+  const state = [];
+  for (const [name, entry] of paths) {
+    state.push({ name, conf: entry.conf });
+  }
+  const tmpFile = `${STATE_FILE}.tmp`;
+  try {
+    writeFileSync(tmpFile, JSON.stringify(state, null, 2));
+    renameSync(tmpFile, STATE_FILE);
+  } catch (e) {
+    // Диск/права — не роняем API-операцию: карта paths в памяти остаётся
+    // источником истины рантайма, следующий успешный write синхронизирует файл.
+    console.error(`[fmgr] persistState failed (${e.message}) — runtime map остаётся истиной`);
+    try { rmSync(tmpFile, { force: true }); } catch {}
+  }
+}
+
+function readState() {
+  if (!existsSync(STATE_FILE)) return [];
+  try {
+    const parsed = JSON.parse(readFileSync(STATE_FILE, 'utf8'));
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (e) {
+    console.error(`[boot] state file corrupt (${e.message}), backing up to ${STATE_FILE}.bak`);
+    try { renameSync(STATE_FILE, `${STATE_FILE}.bak`); } catch {}
+    return [];
+  }
+}
+
+async function addPath(name, conf) {
+  if (paths.has(name)) return false;
 
   const recordDir = join(RECORD_ROOT, name);
   mkdirSync(recordDir, { recursive: true });
@@ -211,7 +239,23 @@ app.post('/v3/config/paths/add/:name', (req, res) => {
   }
 
   paths.set(name, entry);
-  res.json({ status: 'ok' });
+  return true;
+}
+
+// ===== API =====
+
+app.post('/v3/config/paths/add/:name', async (req, res) => {
+  const { name } = req.params;
+  const conf = req.body;
+  try {
+    const added = await addPath(name, conf);
+    if (!added) return res.status(409).json({ status: 'error', error: 'path already exists' });
+    persistState();
+    res.json({ status: 'ok' });
+  } catch (e) {
+    console.error(`[fmgr] add path '${name}' failed: ${e.message}`);
+    res.status(500).json({ status: 'error', error: e.message });
+  }
 });
 
 app.delete('/v3/config/paths/delete/:name', (req, res) => {
@@ -220,6 +264,7 @@ app.delete('/v3/config/paths/delete/:name', (req, res) => {
   if (!entry) return res.status(404).json({ status: 'error', error: 'not found' });
   if (entry.stream) entry.stream.stop();
   paths.delete(name);
+  persistState();
   res.json({ status: 'ok' });
 });
 
@@ -249,6 +294,32 @@ app.get('/v3/paths/list', (req, res) => {
 
 app.get('/health', (req, res) => res.json({ status: 'ok', paths: paths.size }));
 
-http.createServer(app).listen(PORT, () => {
-  console.log(`ffmpeg-manager listening on :${PORT}, record root: ${RECORD_ROOT}`);
+// ===== Boot: restore persisted paths before listening =====
+
+async function bootLoad() {
+  const saved = readState();
+  if (!saved.length) return;
+  for (const item of saved) {
+    if (!item || typeof item.name !== 'string' || typeof item.conf !== 'object' || item.conf === null) {
+      console.warn(`[boot] skip invalid state entry: ${JSON.stringify(item)}`);
+      continue;
+    }
+    try {
+      const added = await addPath(item.name, item.conf);
+      if (!added) {
+        console.warn(`[boot] path '${item.name}' already exists, skipping`);
+        continue;
+      }
+      const kind = item.conf._ivideon ? 'ivideon' : 'source';
+      console.log(`[boot] restored path ${item.name} (${kind})`);
+    } catch (e) {
+      console.error(`[boot] failed to restore path ${item.name}: ${e.message}`);
+    }
+  }
+}
+
+bootLoad().then(() => {
+  http.createServer(app).listen(PORT, () => {
+    console.log(`ffmpeg-manager listening on :${PORT}, record root: ${RECORD_ROOT}`);
+  });
 });
