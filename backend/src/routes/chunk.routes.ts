@@ -8,6 +8,52 @@ export const chunkRouter = Router();
 
 chunkRouter.use(authenticate);
 
+/**
+ * @openapi
+ * /chunks:
+ *   get:
+ *     tags: [Chunks]
+ *     operationId: listChunks
+ *     summary: Список чанков
+ *     description: Пагинированный список чанков записей с общим количеством.
+ *     parameters:
+ *       - name: limit
+ *         in: query
+ *         description: Максимум записей в ответе.
+ *         required: false
+ *         schema:
+ *           type: integer
+ *           default: 20
+ *       - name: offset
+ *         in: query
+ *         description: Сдвиг от начала списка.
+ *         required: false
+ *         schema:
+ *           type: integer
+ *           default: 0
+ *     responses:
+ *       '200':
+ *         description: Список чанков и общее количество
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               required: [chunks, total]
+ *               properties:
+ *                 chunks:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/Chunk'
+ *                 total:
+ *                   type: integer
+ *                   description: Общее количество чанков.
+ *       '401':
+ *         description: Требуется авторизация
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 chunkRouter.get('/', async (req: Request, res: Response) => {
   const limit = Number(req.query.limit) || 20;
   const offset = Number(req.query.offset) || 0;
@@ -15,6 +61,48 @@ chunkRouter.get('/', async (req: Request, res: Response) => {
   res.json(result);
 });
 
+/**
+ * @openapi
+ * /chunks/{id}:
+ *   get:
+ *     tags: [Chunks]
+ *     operationId: getChunk
+ *     summary: Чанк по ID
+ *     description: Возвращает чанк записи по UUID. Требуется право read на объект.
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         description: UUID чанка.
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *     responses:
+ *       '200':
+ *         description: Данные чанка
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Chunk'
+ *       '401':
+ *         description: Требуется авторизация
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       '403':
+ *         description: Нет доступа к объекту
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       '404':
+ *         description: Чанк не найден
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 chunkRouter.get('/:id', requirePermission('read'), async (req: Request, res: Response) => {
   const id = req.params.id as string;
   const chunk = await chunkService.getById(id);
@@ -22,6 +110,40 @@ chunkRouter.get('/:id', requirePermission('read'), async (req: Request, res: Res
   res.json(chunk);
 });
 
+/**
+ * @openapi
+ * /chunks:
+ *   post:
+ *     tags: [Chunks]
+ *     operationId: createChunk
+ *     summary: Создание чанка
+ *     description: Создаёт чанк записи. Валидирует обязательность processId и url; endedAt не может быть меньше startedAt.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/ChunkCreate'
+ *     responses:
+ *       '201':
+ *         description: Чанк создан
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Chunk'
+ *       '400':
+ *         description: processId/url не указаны, endedAt меньше startedAt или некорректные даты
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       '401':
+ *         description: Требуется авторизация
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 chunkRouter.post('/', async (req: Request, res: Response) => {
   try {
     const { processId, startedAt, endedAt, url } = req.body;
@@ -37,6 +159,60 @@ chunkRouter.post('/', async (req: Request, res: Response) => {
   }
 });
 
+/**
+ * @openapi
+ * /chunks/{id}:
+ *   put:
+ *     tags: [Chunks]
+ *     operationId: updateChunk
+ *     summary: Полная замена чанка
+ *     description: Перезаписывает чанк полным телом (processId, startedAt, endedAt, url) с той же валидацией, что и при создании. Требуется право write на объект.
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         description: UUID чанка.
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/ChunkPut'
+ *     responses:
+ *       '200':
+ *         description: Чанк обновлён
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Chunk'
+ *       '400':
+ *         description: processId/url не указаны или endedAt меньше startedAt
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       '401':
+ *         description: Требуется авторизация
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       '403':
+ *         description: Нет доступа к объекту
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       '404':
+ *         description: Чанк не найден
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 chunkRouter.put('/:id', requirePermission('write'), async (req: Request, res: Response) => {
   try {
     const id = req.params.id as string;
@@ -55,6 +231,60 @@ chunkRouter.put('/:id', requirePermission('write'), async (req: Request, res: Re
   }
 });
 
+/**
+ * @openapi
+ * /chunks/{id}:
+ *   patch:
+ *     tags: [Chunks]
+ *     operationId: patchChunk
+ *     summary: Частичное обновление чанка
+ *     description: Обновляет только переданные поля (processId/startedAt/endedAt/url). url не может быть пустым. Требуется право write на объект.
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         description: UUID чанка.
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/ChunkPatch'
+ *     responses:
+ *       '200':
+ *         description: Чанк обновлён
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Chunk'
+ *       '400':
+ *         description: url пуст или некорректные даты
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       '401':
+ *         description: Требуется авторизация
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       '403':
+ *         description: Нет доступа к объекту
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       '404':
+ *         description: Чанк не найден
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 chunkRouter.patch('/:id', requirePermission('write'), async (req: Request, res: Response) => {
   try {
     const id = req.params.id as string;
@@ -72,6 +302,44 @@ chunkRouter.patch('/:id', requirePermission('write'), async (req: Request, res: 
   }
 });
 
+/**
+ * @openapi
+ * /chunks/{id}:
+ *   delete:
+ *     tags: [Chunks]
+ *     operationId: deleteChunk
+ *     summary: Удаление чанка
+ *     description: Удаляет метаданные чанка; файлы на диске не затрагиваются. Требуется право delete на объект.
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         description: UUID чанка.
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *     responses:
+ *       '204':
+ *         description: Чанк удалён
+ *       '401':
+ *         description: Требуется авторизация
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       '403':
+ *         description: Нет доступа к объекту
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       '404':
+ *         description: Чанк не найден
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 chunkRouter.delete('/:id', requirePermission('delete'), async (req: Request, res: Response) => {
   const id = req.params.id as string;
   const deleted = await chunkService.deleteById(id);
