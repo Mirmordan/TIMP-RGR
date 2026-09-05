@@ -154,6 +154,34 @@
 .timecodesDel:hover {
   color: var(--danger);
 }
+.timecodesExport {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  padding: 2px;
+  border-radius: 3px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.15s, color 0.15s;
+  flex-shrink: 0;
+}
+.timecodesItem:hover .timecodesExport {
+  opacity: 1;
+}
+.timecodesItem:hover .timecodesExport:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.timecodesExport:hover:not(:disabled) {
+  color: var(--accent);
+}
+.timecodesExport:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
 .timecodesEmpty {
   padding: 16px 12px;
   text-align: center;
@@ -232,6 +260,21 @@
 .btn:hover {
   color: var(--text);
   background: rgba(255, 255, 255, 0.08);
+}
+.btn:disabled,
+.btn:disabled:hover {
+  color: var(--text-muted);
+  background: none;
+  opacity: 0.45;
+  cursor: default;
+}
+.spinner {
+  width: 12px;
+  height: 12px;
+  border: 2px solid rgba(255, 255, 255, 0.25);
+  border-top-color: currentColor;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
 }
 
 /* ─── Time ────────────────────────────────────── */
@@ -535,6 +578,10 @@
 @keyframes livePulse {
   0%, 100% { opacity: 0.5; }
   50% { opacity: 0.85; }
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
 }
 
 /* ─── Incident modal ─────────────────────────── */

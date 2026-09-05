@@ -1,6 +1,8 @@
 import { useRef, useEffect, useState, useMemo } from 'react';
 import Hls from 'hls.js';
 import { Button } from '../Button/Button';
+import { apiFetch } from '../../api';
+import { useNotify } from '../../notifications';
 import styles from './CustomPlayer.module.css';
 import type { RecordingIncident as Incident, TimelineData, TimelineSegment as Segment } from '../../types';
 
@@ -18,6 +20,7 @@ interface CustomPlayerProps {
 const LIVE_NET_RETRY_LIMIT = 6;
 
 export function CustomPlayer({
+  processId,
   liveUrl,
   timeline,
   incidents = [],
@@ -25,6 +28,7 @@ export function CustomPlayer({
   onUpdateIncident,
   onDeleteIncident,
 }: CustomPlayerProps) {
+  const { toast } = useNotify();
   const videoRef = useRef<HTMLVideoElement>(null);
   const hlsRef = useRef<Hls | null>(null);
   const trackRef = useRef<HTMLDivElement>(null);
@@ -86,6 +90,12 @@ export function CustomPlayer({
   const [editDesc, setEditDesc] = useState('');
   const [editSeverity, setEditSeverity] = useState<'info' | 'warning' | 'critical'>('info');
   const [editSaving, setEditSaving] = useState(false);
+
+  // --- Fragment export ---
+  // Ключ инициатора активного экспорта ('timeline' или id инцидента): параллельные
+  // выгрузки запрещены, показываем «в процессе» именно на нажатой кнопке.
+  const [exportingId, setExportingId] = useState<string | null>(null);
+  const exportingRef = useRef(false);
 
   // --- Sidebar ---
   const [timecodesTab, setTimecodesTab] = useState<'segments' | 'incidents'>('segments');
@@ -765,6 +775,44 @@ export function CustomPlayer({
     }
   }
 
+  // --- Fragment export (mp4 download) ---
+  async function downloadFragment(from: number, to: number, sourceKey: string) {
+    if (!processId || exportingRef.current) return;
+    exportingRef.current = true;
+    setExportingId(sourceKey);
+    try {
+      const res = await apiFetch(`/processes/${processId}/export?from=${from}&to=${to}`);
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        toast.error((data as { error?: string }).error || `Не удалось выгрузить фрагмент (${res.status})`);
+        return;
+      }
+      const blob = await res.blob();
+      const cd = res.headers.get('Content-Disposition') || '';
+      const m = /filename="?([^"]+)"?/i.exec(cd);
+      const filename = m?.[1] || `fragment_${from}-${to}.mp4`;
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 0);
+    } catch {
+      toast.error('Не удалось выгрузить фрагмент');
+    } finally {
+      exportingRef.current = false;
+      setExportingId(null);
+    }
+  }
+
+  function exportAround(timeS: number, sourceKey: string) {
+    const from = Math.max(0, timeS - 60);
+    const to = Math.min(totalDuration, timeS + 60);
+    downloadFragment(Math.round(from * 10) / 10, Math.round(to * 10) / 10, sourceKey);
+  }
+
   // --- Incident handlers ---
   async function saveIncident() {
     if (!onCreateIncident || !incidentTitle.trim()) return;
@@ -1059,6 +1107,22 @@ export function CustomPlayer({
                     </svg>
                   </button>
                 )}
+                <button
+                  className={styles.btn}
+                  onClick={() => exportAround(displayTime, 'timeline')}
+                  disabled={exportingId !== null}
+                  title="Скачать видеофрагмент ±60 секунд относительно текущего момента шкалы"
+                >
+                  {exportingId === 'timeline' ? (
+                    <span className={styles.spinner} />
+                  ) : (
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                      <polyline points="7 10 12 15 17 10" />
+                      <line x1="12" y1="15" x2="12" y2="3" />
+                    </svg>
+                  )}
+                </button>
                 <button className={styles.btn} onClick={toggleFullscreen} title="Полный экран">
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                     <polyline points="15 3 21 3 21 9" />
@@ -1254,6 +1318,32 @@ export function CustomPlayer({
                           </svg>
                         </button>
                       )}
+                      {(() => {
+                        const from = Math.max(0, inc.timeOffsetS - 60);
+                        const to = Math.min(totalDuration, inc.timeOffsetS + 60);
+                        const busy = exportingId === inc.id;
+                        return (
+                          <button
+                            className={styles.timecodesExport}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              exportAround(inc.timeOffsetS, inc.id);
+                            }}
+                            disabled={exportingId !== null}
+                            title={`Скачать фрагмент инцидента ±60с (${formatAbsoluteTime(from)} — ${formatAbsoluteTime(to)})`}
+                          >
+                            {busy ? (
+                              <span className={styles.spinner} />
+                            ) : (
+                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                                <polyline points="7 10 12 15 17 10" />
+                                <line x1="12" y1="15" x2="12" y2="3" />
+                              </svg>
+                            )}
+                          </button>
+                        );
+                      })()}
                     </div>
                   );
                 })}
