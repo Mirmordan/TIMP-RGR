@@ -220,9 +220,24 @@ function chunkDurations(files: { file: string; tsMs: number }[]): number[] {
  */
 function getSegmentWindowM3u8(seg: RecordingSegment, startOffsetS: number): string {
   const files = segmentFilesOf(seg);
-  if (files.length === 0) return '';
-
   const isOpen = seg.endedAt === null;
+
+  // Открытый сегмент без чанков: валидный пустой EVENT-плейлист — hls.js принимает
+  // такой манифест и поллит его, подхватывая появляющиеся .ts чанки живого DVR-хвоста.
+  // Закрытый сегмент без файлов — данных нет вовсе: сигнализируем пустой строкой ('').
+  if (files.length === 0) {
+    if (!isOpen) return '';
+    const pdt = new Date(seg.startedAt).toISOString().replace(/\.\d{3}Z$/, 'Z');
+    return [
+      '#EXTM3U',
+      '#EXT-X-VERSION:3',
+      '#EXT-X-TARGETDURATION:2',
+      '#EXT-X-PLAYLIST-TYPE:EVENT',
+      '#EXT-X-MEDIA-SEQUENCE:0',
+      `#EXT-X-PROGRAM-DATE-TIME:${pdt}`,
+    ].join('\n');
+  }
+
   const offsetMs = Math.max(0, startOffsetS) * 1000;
   const startTsMs = new Date(seg.startedAt).getTime() + offsetMs;
 
@@ -467,7 +482,9 @@ export const segmentService = {
     return {
       segments: timeline,
       totalDurationS,
-      start: sorted.length > 0 ? sorted[0]!.startedAt : new Date().toISOString(),
+      start: sorted.length > 0
+        ? sorted[0]!.startedAt
+        : (processStartedAt ? new Date(processStartedAt).toISOString() : new Date().toISOString()),
       end: running ? new Date().toISOString() : (sorted.length > 0 ? sorted[sorted.length - 1]!.endedAt : new Date().toISOString()),
       live: running,
     };

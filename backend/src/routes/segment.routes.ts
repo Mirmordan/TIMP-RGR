@@ -401,6 +401,9 @@ segmentRouter.get('/:id/playlist', requirePermission('read'), async (req: Reques
   const startOffsetS = Number.isFinite(rawStart) && rawStart > 0 ? rawStart : 0;
 
   const m3u8 = segmentService.getSegmentWindowM3u8(segment, startOffsetS);
+  // '' возвращается только для ЗАКРЫТОГО сегмента без файлов на диске (открытый без
+  // файлов отдаёт пустой EVENT-плейлист → 200, hls.js поллит его в ожидании чанков).
+  // Поэтому 404 здесь означает: закрытый сегмент, данных для воспроизведения нет.
   if (!m3u8) return res.status(404).json({ error: 'файлы не найдены' });
 
   res.setHeader('Content-Type', 'application/vnd.apple.mpegurl');
