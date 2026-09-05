@@ -51,6 +51,51 @@ function sendRbacError(res: Response, e: unknown): void {
 
 adminRouter.use(authenticate);
 
+/**
+ * @openapi
+ * /admin/users:
+ *   get:
+ *     tags: [Admin]
+ *     operationId: listAdminUsers
+ *     summary: Список пользователей (RBAC-панель)
+ *     description: Пагинированный список пользователей с их ролями. Требуется capability admin:read.
+ *     parameters:
+ *       - name: limit
+ *         in: query
+ *         description: Максимум записей в ответе.
+ *         required: false
+ *         schema:
+ *           type: integer
+ *           default: 20
+ *       - name: offset
+ *         in: query
+ *         description: Сдвиг от начала списка.
+ *         required: false
+ *         schema:
+ *           type: integer
+ *           default: 0
+ *     responses:
+ *       '200':
+ *         description: Массив пользователей с ролями
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 $ref: '#/components/schemas/RbacUserWithRoles'
+ *       '401':
+ *         description: Требуется авторизация
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       '403':
+ *         description: Недостаточно прав (нужна capability admin:read)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 adminRouter.get('/users', requireCapability('admin:read'), async (req: Request, res: Response) => {
   const limit = Number(req.query.limit) || 20;
   const offset = Number(req.query.offset) || 0;
@@ -58,6 +103,48 @@ adminRouter.get('/users', requireCapability('admin:read'), async (req: Request, 
   res.json(users);
 });
 
+/**
+ * @openapi
+ * /admin/users/{id}:
+ *   get:
+ *     tags: [Admin]
+ *     operationId: getAdminUser
+ *     summary: Пользователь с ролями по ID
+ *     description: Возвращает пользователя с его ролями. Требуется capability admin:read.
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         description: UUID пользователя.
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *     responses:
+ *       '200':
+ *         description: Данные пользователя
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/RbacUserWithRoles'
+ *       '401':
+ *         description: Требуется авторизация
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       '403':
+ *         description: Недостаточно прав (нужна capability admin:read)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       '404':
+ *         description: Пользователь не найден (в т.ч. неверный uuid)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 adminRouter.get('/users/:id', requireCapability('admin:read'), async (req: Request, res: Response) => {
   try {
     const id = req.params.id as string;
@@ -69,11 +156,83 @@ adminRouter.get('/users/:id', requireCapability('admin:read'), async (req: Reque
   }
 });
 
+/**
+ * @openapi
+ * /admin/roles:
+ *   get:
+ *     tags: [Admin]
+ *     operationId: listAdminRoles
+ *     summary: Список ролей
+ *     description: Все роли системы и кастомные, отсортированные по имени. Требуется capability admin:read.
+ *     responses:
+ *       '200':
+ *         description: Массив ролей
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 $ref: '#/components/schemas/RbacRole'
+ *       '401':
+ *         description: Требуется авторизация
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       '403':
+ *         description: Недостаточно прав (нужна capability admin:read)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 adminRouter.get('/roles', requireCapability('admin:read'), async (_req: Request, res: Response) => {
   const roles = await rbacRepository.findRoles();
   res.json(roles);
 });
 
+/**
+ * @openapi
+ * /admin/roles/{id}:
+ *   get:
+ *     tags: [Admin]
+ *     operationId: getAdminRole
+ *     summary: Роль по ID
+ *     description: Возвращает роль по UUID. Требуется capability admin:read.
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         description: UUID роли.
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *     responses:
+ *       '200':
+ *         description: Данные роли
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/RbacRole'
+ *       '401':
+ *         description: Требуется авторизация
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       '403':
+ *         description: Недостаточно прав (нужна capability admin:read)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       '404':
+ *         description: Роль не найдена (в т.ч. неверный uuid)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 adminRouter.get('/roles/:id', requireCapability('admin:read'), async (req: Request, res: Response) => {
   try {
     const id = req.params.id as string;
@@ -85,11 +244,85 @@ adminRouter.get('/roles/:id', requireCapability('admin:read'), async (req: Reque
   }
 });
 
+/**
+ * @openapi
+ * /admin/groups:
+ *   get:
+ *     tags: [Admin]
+ *     operationId: listAdminGroups
+ *     summary: Список групп объектов
+ *     description: Все группы объектов с количеством входящих в них объектов. Требуется capability admin:read.
+ *     responses:
+ *       '200':
+ *         description: Массив групп
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 $ref: '#/components/schemas/RbacGroup'
+ *       '401':
+ *         description: Требуется авторизация
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       '403':
+ *         description: Недостаточно прав (нужна capability admin:read)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 adminRouter.get('/groups', requireCapability('admin:read'), async (_req: Request, res: Response) => {
   const groups = await rbacRepository.findGroups();
   res.json(groups);
 });
 
+/**
+ * @openapi
+ * /admin/groups/{id}/objects:
+ *   get:
+ *     tags: [Admin]
+ *     operationId: getAdminGroupObjects
+ *     summary: Объекты группы
+ *     description: Список объектов, входящих в группу. Требуется capability admin:read.
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         description: UUID группы.
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *     responses:
+ *       '200':
+ *         description: Массив объектов группы
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 $ref: '#/components/schemas/RbacGroupObject'
+ *       '401':
+ *         description: Требуется авторизация
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       '403':
+ *         description: Недостаточно прав (нужна capability admin:read)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       '404':
+ *         description: Группа не найдена (в т.ч. неверный uuid)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 adminRouter.get('/groups/:id/objects', requireCapability('admin:read'), async (req: Request, res: Response) => {
   try {
     const id = req.params.id as string;
@@ -101,6 +334,36 @@ adminRouter.get('/groups/:id/objects', requireCapability('admin:read'), async (r
   }
 });
 
+/**
+ * @openapi
+ * /admin/permissions:
+ *   get:
+ *     tags: [Admin]
+ *     operationId: listAdminPermissions
+ *     summary: Список прав
+ *     description: Все права ролей на группы объектов. Требуется capability admin:read.
+ *     responses:
+ *       '200':
+ *         description: Массив прав
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 $ref: '#/components/schemas/RbacPermission'
+ *       '401':
+ *         description: Требуется авторизация
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       '403':
+ *         description: Недостаточно прав (нужна capability admin:read)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 adminRouter.get('/permissions', requireCapability('admin:read'), async (_req: Request, res: Response) => {
   const permissions = await rbacRepository.findPermissions();
   res.json(permissions);
@@ -108,6 +371,60 @@ adminRouter.get('/permissions', requireCapability('admin:read'), async (_req: Re
 
 // --- Мутации (Э3) ---
 
+/**
+ * @openapi
+ * /admin/users/{id}/roles:
+ *   put:
+ *     tags: [Admin]
+ *     operationId: setAdminUserRoles
+ *     summary: Замена ролей пользователя
+ *     description: Полностью заменяет набор ролей пользователя по именам. Себе роли менять нельзя, последнюю роль admin снять нельзя. Требуется capability admin:write.
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         description: UUID пользователя.
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/RoleAssign'
+ *     responses:
+ *       '200':
+ *         description: Обновлённый пользователь с ролями
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/RbacUserWithRoles'
+ *       '400':
+ *         description: roleNames не массив строк, неизвестная роль, нельзя менять свои роли или снять последнюю роль admin
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       '401':
+ *         description: Требуется авторизация
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       '403':
+ *         description: Недостаточно прав (нужна capability admin:write)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       '404':
+ *         description: Пользователь не найден
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 adminRouter.put('/users/:id/roles', requireCapability('admin:write'), async (req: Request, res: Response) => {
   try {
     const id = req.params.id as string;
@@ -122,6 +439,52 @@ adminRouter.put('/users/:id/roles', requireCapability('admin:write'), async (req
   }
 });
 
+/**
+ * @openapi
+ * /admin/roles:
+ *   post:
+ *     tags: [Admin]
+ *     operationId: createAdminRole
+ *     summary: Создание кастомной роли
+ *     description: Создаёт роль с проверкой имени по шаблону. Имя системных ролей (admin/operator/viewer) использовать нельзя. Требуется capability admin:write.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/NameInput'
+ *     responses:
+ *       '201':
+ *         description: Роль создана
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/RbacRole'
+ *       '400':
+ *         description: Имя не соответствует шаблону или занято системной ролью
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       '401':
+ *         description: Требуется авторизация
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       '403':
+ *         description: Недостаточно прав (нужна capability admin:write)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       '409':
+ *         description: Роль с таким именем уже существует
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 adminRouter.post('/roles', requireCapability('admin:write'), async (req: Request, res: Response) => {
   try {
     const role = await rbacService.createRole((req.body ?? {}).name, actorOf(req));
@@ -131,6 +494,66 @@ adminRouter.post('/roles', requireCapability('admin:write'), async (req: Request
   }
 });
 
+/**
+ * @openapi
+ * /admin/roles/{id}:
+ *   patch:
+ *     tags: [Admin]
+ *     operationId: patchAdminRole
+ *     summary: Переименование роли
+ *     description: Меняет имя кастомной роли. Системные роли переименовывать нельзя. Требуется capability admin:write.
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         description: UUID роли.
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/NameInput'
+ *     responses:
+ *       '200':
+ *         description: Обновлённая роль
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/RbacRole'
+ *       '400':
+ *         description: Системную роль менять нельзя или имя не соответствует шаблону
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       '401':
+ *         description: Требуется авторизация
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       '403':
+ *         description: Недостаточно прав (нужна capability admin:write)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       '404':
+ *         description: Роль не найдена
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       '409':
+ *         description: Роль с таким именем уже существует
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 adminRouter.patch('/roles/:id', requireCapability('admin:write'), async (req: Request, res: Response) => {
   try {
     const id = req.params.id as string;
@@ -141,6 +564,50 @@ adminRouter.patch('/roles/:id', requireCapability('admin:write'), async (req: Re
   }
 });
 
+/**
+ * @openapi
+ * /admin/roles/{id}:
+ *   delete:
+ *     tags: [Admin]
+ *     operationId: deleteAdminRole
+ *     summary: Удаление роли
+ *     description: Удаляет кастомную роль (связи с пользователями и правами сносятся каскадно). Системные роли удалять нельзя. Требуется capability admin:write.
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         description: UUID роли.
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *     responses:
+ *       '204':
+ *         description: Роль удалена
+ *       '400':
+ *         description: Системную роль удалять нельзя
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       '401':
+ *         description: Требуется авторизация
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       '403':
+ *         description: Недостаточно прав (нужна capability admin:write)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       '404':
+ *         description: Роль не найдена
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 adminRouter.delete('/roles/:id', requireCapability('admin:write'), async (req: Request, res: Response) => {
   try {
     const id = req.params.id as string;
@@ -153,6 +620,62 @@ adminRouter.delete('/roles/:id', requireCapability('admin:write'), async (req: R
 
 // --- Мутации (Э5): права ролей и группы объектов ---
 
+/**
+ * @openapi
+ * /admin/roles/{id}/permissions:
+ *   put:
+ *     tags: [Admin]
+ *     operationId: setAdminRolePermissions
+ *     summary: Замена прав роли
+ *     description: Полностью заменяет набор прав роли на группы объектов. Действия валидируются по чек-листу (read/write/delete/stream/list), все группы должны существовать. Требуется capability admin:write.
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         description: UUID роли.
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/PermissionEntries'
+ *     responses:
+ *       '200':
+ *         description: Актуальный список прав роли
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 $ref: '#/components/schemas/RbacPermission'
+ *       '400':
+ *         description: entries не массив объектов { groupId, action }, неизвестное действие или нет указанной группы
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       '401':
+ *         description: Требуется авторизация
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       '403':
+ *         description: Недостаточно прав (нужна capability admin:write)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       '404':
+ *         description: Роль не найдена
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 adminRouter.put('/roles/:id/permissions', requireCapability('admin:write'), async (req: Request, res: Response) => {
   try {
     const id = req.params.id as string;
@@ -163,6 +686,52 @@ adminRouter.put('/roles/:id/permissions', requireCapability('admin:write'), asyn
   }
 });
 
+/**
+ * @openapi
+ * /admin/groups:
+ *   post:
+ *     tags: [Admin]
+ *     operationId: createAdminGroup
+ *     summary: Создание группы объектов
+ *     description: Создаёт группу объектов с проверкой имени по шаблону (как у ролей). Требуется capability admin:write.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/NameInput'
+ *     responses:
+ *       '201':
+ *         description: Группа создана
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/RbacGroup'
+ *       '400':
+ *         description: Имя не соответствует шаблону
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       '401':
+ *         description: Требуется авторизация
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       '403':
+ *         description: Недостаточно прав (нужна capability admin:write)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       '409':
+ *         description: Группа с таким именем уже существует
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 adminRouter.post('/groups', requireCapability('admin:write'), async (req: Request, res: Response) => {
   try {
     const group = await rbacService.createGroup((req.body ?? {}).name, actorOf(req));
@@ -172,6 +741,66 @@ adminRouter.post('/groups', requireCapability('admin:write'), async (req: Reques
   }
 });
 
+/**
+ * @openapi
+ * /admin/groups/{id}:
+ *   patch:
+ *     tags: [Admin]
+ *     operationId: patchAdminGroup
+ *     summary: Переименование группы объектов
+ *     description: Меняет имя группы объектов с проверкой по шаблону. Требуется capability admin:write.
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         description: UUID группы.
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/NameInput'
+ *     responses:
+ *       '200':
+ *         description: Обновлённая группа
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/RbacGroup'
+ *       '400':
+ *         description: Имя не соответствует шаблону
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       '401':
+ *         description: Требуется авторизация
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       '403':
+ *         description: Недостаточно прав (нужна capability admin:write)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       '404':
+ *         description: Группа не найдена
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       '409':
+ *         description: Группа с таким именем уже существует
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 adminRouter.patch('/groups/:id', requireCapability('admin:write'), async (req: Request, res: Response) => {
   try {
     const id = req.params.id as string;
@@ -182,6 +811,50 @@ adminRouter.patch('/groups/:id', requireCapability('admin:write'), async (req: R
   }
 });
 
+/**
+ * @openapi
+ * /admin/groups/{id}:
+ *   delete:
+ *     tags: [Admin]
+ *     operationId: deleteAdminGroup
+ *     summary: Удаление группы объектов
+ *     description: Удаляет группу только если на ней не висит ни прав, ни объектов. Требуется capability admin:write.
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         description: UUID группы.
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *     responses:
+ *       '204':
+ *         description: Группа удалена
+ *       '401':
+ *         description: Требуется авторизация
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       '403':
+ *         description: Недостаточно прав (нужна capability admin:write)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       '404':
+ *         description: Группа не найдена
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       '409':
+ *         description: Группа используется (на ней висят права или объекты)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 adminRouter.delete('/groups/:id', requireCapability('admin:write'), async (req: Request, res: Response) => {
   try {
     const id = req.params.id as string;
@@ -192,6 +865,62 @@ adminRouter.delete('/groups/:id', requireCapability('admin:write'), async (req: 
   }
 });
 
+/**
+ * @openapi
+ * /admin/groups/{id}/objects:
+ *   put:
+ *     tags: [Admin]
+ *     operationId: setAdminGroupObjects
+ *     summary: Замена состава объектов группы
+ *     description: Полностью заменяет набор объектов группы. Все objectIds должны существовать. Требуется capability admin:write.
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         description: UUID группы.
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/ObjectIds'
+ *     responses:
+ *       '200':
+ *         description: Актуальный состав объектов группы
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 $ref: '#/components/schemas/RbacGroupObject'
+ *       '400':
+ *         description: objectIds не массив uuid-строк или среди них есть несуществующие объекты
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       '401':
+ *         description: Требуется авторизация
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       '403':
+ *         description: Недостаточно прав (нужна capability admin:write)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       '404':
+ *         description: Группа не найдена
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 adminRouter.put('/groups/:id/objects', requireCapability('admin:write'), async (req: Request, res: Response) => {
   try {
     const id = req.params.id as string;
@@ -204,6 +933,59 @@ adminRouter.put('/groups/:id/objects', requireCapability('admin:write'), async (
 
 // --- Мутации (P4): CRUD пользователей ---
 
+/**
+ * @openapi
+ * /admin/users:
+ *   post:
+ *     tags: [Admin]
+ *     operationId: createAdminUser
+ *     summary: Создание пользователя
+ *     description: Создаёт пользователя и выдаёт ему роль viewer. Если password не передан — генерируется временный и возвращается один раз в initialPassword. Требуется capability admin:write.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/AdminUserCreate'
+ *     responses:
+ *       '201':
+ *         description: Пользователь создан (initialPassword присутствует, только если пароль был сгенерирован)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               required: [user]
+ *               properties:
+ *                 user:
+ *                   $ref: '#/components/schemas/RbacUserWithRoles'
+ *                 initialPassword:
+ *                   type: string
+ *                   description: Временный пароль (возвращается только при генерации).
+ *       '400':
+ *         description: Невалидные username/email или password не является строкой
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       '401':
+ *         description: Требуется авторизация
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       '403':
+ *         description: Недостаточно прав (нужна capability admin:write)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       '409':
+ *         description: username или email уже занят
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 adminRouter.post('/users', requireCapability('admin:write'), async (req: Request, res: Response) => {
   try {
     const body = (req.body ?? {}) as { username?: unknown; email?: unknown; password?: unknown };
@@ -214,6 +996,68 @@ adminRouter.post('/users', requireCapability('admin:write'), async (req: Request
   }
 });
 
+/**
+ * @openapi
+ * /admin/users/{id}/password:
+ *   put:
+ *     tags: [Admin]
+ *     operationId: setAdminUserPassword
+ *     summary: Сброс/установка пароля пользователя
+ *     description: Задаёт пользователю новый пароль. Если password не передан — генерируется временный и возвращается один раз в initialPassword. Требуется capability admin:write.
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         description: UUID пользователя.
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/PasswordSet'
+ *     responses:
+ *       '200':
+ *         description: Пароль установлен (initialPassword присутствует, только если пароль был сгенерирован)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               required: [ok]
+ *               properties:
+ *                 ok:
+ *                   type: boolean
+ *                   example: true
+ *                 initialPassword:
+ *                   type: string
+ *                   description: Временный пароль (возвращается только при генерации).
+ *       '400':
+ *         description: password не является строкой или не проходит проверку сложности
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       '401':
+ *         description: Требуется авторизация
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       '403':
+ *         description: Недостаточно прав (нужна capability admin:write)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       '404':
+ *         description: Пользователь не найден
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 adminRouter.put('/users/:id/password', requireCapability('admin:write'), async (req: Request, res: Response) => {
   try {
     const id = req.params.id as string;
@@ -224,6 +1068,66 @@ adminRouter.put('/users/:id/password', requireCapability('admin:write'), async (
   }
 });
 
+/**
+ * @openapi
+ * /admin/users/{id}:
+ *   patch:
+ *     tags: [Admin]
+ *     operationId: patchAdminUser
+ *     summary: Редактирование пользователя
+ *     description: Обновляет username/email пользователя. Пароль через этот эндпоинт менять нельзя (отдельный эндпоинт). Требуется capability admin:write.
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         description: UUID пользователя.
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/AdminUserPatch'
+ *     responses:
+ *       '200':
+ *         description: Обновлённый пользователь с ролями
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/RbacUserWithRoles'
+ *       '400':
+ *         description: password в теле, не указаны username/email или невалидные значения
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       '401':
+ *         description: Требуется авторизация
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       '403':
+ *         description: Недостаточно прав (нужна capability admin:write)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       '404':
+ *         description: Пользователь не найден
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       '409':
+ *         description: username или email уже занят другим пользователем
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 adminRouter.patch('/users/:id', requireCapability('admin:write'), async (req: Request, res: Response) => {
   try {
     const id = req.params.id as string;
@@ -234,6 +1138,50 @@ adminRouter.patch('/users/:id', requireCapability('admin:write'), async (req: Re
   }
 });
 
+/**
+ * @openapi
+ * /admin/users/{id}:
+ *   delete:
+ *     tags: [Admin]
+ *     operationId: deleteAdminUser
+ *     summary: Удаление пользователя
+ *     description: Удаляет пользователя. Удалить себя нельзя, удалить последнего администратора нельзя. Требуется capability admin:write.
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         description: UUID пользователя.
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *     responses:
+ *       '204':
+ *         description: Пользователь удалён
+ *       '400':
+ *         description: Нельзя удалить себя или последнего администратора
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       '401':
+ *         description: Требуется авторизация
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       '403':
+ *         description: Недостаточно прав (нужна capability admin:write)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       '404':
+ *         description: Пользователь не найден
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 adminRouter.delete('/users/:id', requireCapability('admin:write'), async (req: Request, res: Response) => {
   try {
     const id = req.params.id as string;
@@ -246,6 +1194,75 @@ adminRouter.delete('/users/:id', requireCapability('admin:write'), async (req: R
 
 // --- U1: аудит-лог (GET под admin:read, очистка под admin:write) ---
 
+/**
+ * @openapi
+ * /admin/audit:
+ *   get:
+ *     tags: [Admin]
+ *     operationId: listAudit
+ *     summary: Аудит-лог
+ *     description: Пагинированный список записей аудита (сортировка по дате убывания) с фильтрами. Требуется capability admin:read.
+ *     parameters:
+ *       - name: limit
+ *         in: query
+ *         description: Максимум записей в ответе (до 200).
+ *         required: false
+ *         schema:
+ *           type: integer
+ *           default: 20
+ *       - name: offset
+ *         in: query
+ *         description: Сдвиг от начала списка.
+ *         required: false
+ *         schema:
+ *           type: integer
+ *           default: 0
+ *       - name: actor
+ *         in: query
+ *         description: Подстрока имени актора (частичное совпадение).
+ *         required: false
+ *         schema:
+ *           type: string
+ *       - name: action
+ *         in: query
+ *         description: Точное имя действия (например, role.delete).
+ *         required: false
+ *         schema:
+ *           type: string
+ *       - name: from
+ *         in: query
+ *         description: Нижняя граница created_at (ISO-дата/время).
+ *         required: false
+ *         schema:
+ *           type: string
+ *       - name: to
+ *         in: query
+ *         description: Верхняя граница created_at (ISO-дата/время, записи строго раньше).
+ *         required: false
+ *         schema:
+ *           type: string
+ *     responses:
+ *       '200':
+ *         description: Массив записей аудита
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 $ref: '#/components/schemas/AuditEntry'
+ *       '401':
+ *         description: Требуется авторизация
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       '403':
+ *         description: Недостаточно прав (нужна capability admin:read)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 adminRouter.get('/audit', requireCapability('admin:read'), async (req: Request, res: Response) => {
   try {
     const limit = Number(req.query.limit) || 20;
@@ -262,6 +1279,55 @@ adminRouter.get('/audit', requireCapability('admin:read'), async (req: Request, 
   }
 });
 
+/**
+ * @openapi
+ * /admin/audit:
+ *   delete:
+ *     tags: [Admin]
+ *     operationId: deleteAudit
+ *     summary: Очистка аудит-лога
+ *     description: Удаляет записи аудита старше указанного момента (before). Требуется capability admin:write.
+ *     parameters:
+ *       - name: before
+ *         in: query
+ *         required: true
+ *         description: Удаляются записи с created_at строго раньше этой ISO-даты.
+ *         schema:
+ *           type: string
+ *     responses:
+ *       '200':
+ *         description: Лог очищен
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               required: [ok, deleted]
+ *               properties:
+ *                 ok:
+ *                   type: boolean
+ *                   example: true
+ *                 deleted:
+ *                   type: integer
+ *                   description: Количество удалённых записей.
+ *       '400':
+ *         description: before не указан или не является ISO-датой
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       '401':
+ *         description: Требуется авторизация
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       '403':
+ *         description: Недостаточно прав (нужна capability admin:write)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 adminRouter.delete('/audit', requireCapability('admin:write'), async (req: Request, res: Response) => {
   try {
     const before = req.query.before;
