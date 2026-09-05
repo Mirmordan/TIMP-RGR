@@ -33,4 +33,10 @@ export const config = {
     apiUrl: process.env.FFMPEG_MANAGER_API || 'http://localhost:9999',
     recordRoot: process.env.FFMPEG_MANAGER_RECORD_ROOT || '/home/mirmordan/Projects/TIMP-RGR/ffmpeg-manager/recordings',
   },
+  watchdog: {
+    /** Grace-период «тишины» .ts (сек): после него running-запись с открытым сегментом помечается failed. */
+    stallGraceS: Number(process.env.WATCHDOG_STALL_GRACE_S) || 180,
+    /** Период тика watchdog (сек). */
+    tickS: Number(process.env.WATCHDOG_TICK_S) || 60,
+  },
 };

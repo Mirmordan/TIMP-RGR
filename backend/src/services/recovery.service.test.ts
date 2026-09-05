@@ -9,6 +9,7 @@ vi.mock('../config', () => ({
   config: {
     ffmpegManager: { apiUrl: state.ffmApi },
     mediaMTX: { apiUrl: state.mtxApi },
+    watchdog: { stallGraceS: 180, tickS: 60 },
   },
 }));
 

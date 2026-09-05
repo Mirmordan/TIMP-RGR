@@ -149,8 +149,8 @@ export const processService = {
       } catch {
         /* нет пути — ок */
       }
-      // Финализируем открытый сегмент при остановке
-      if (status === 'stopped') {
+      // Финализируем открытый сегмент при остановке/сбое (данные в него уже не пойдут)
+      if (status === 'stopped' || status === 'failed') {
         const segments = await segmentRepository.findByProcess(processId);
         const openSeg = segments.find(s => s.endedAt === null);
         if (openSeg) {

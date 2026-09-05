@@ -23,6 +23,7 @@ export const AUDIT_ACTIONS = [
   'group.members.set',
   'auth.login.failed',
   'auth.password.change',
+  'recording.watchdog.stalled',
 ] as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
