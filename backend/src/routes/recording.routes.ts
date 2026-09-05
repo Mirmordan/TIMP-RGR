@@ -22,11 +22,87 @@ function findRecordFile(processDir: string, filename: string): string | null {
 export const recordingRouter = Router();
 
 // Auth endpoint для nginx auth_request — только проверка аутентификации
+/**
+ * @openapi
+ * /recordings/auth:
+ *   get:
+ *     tags: [Recordings]
+ *     operationId: checkRecordingAuth
+ *     summary: Проверка аутентификации (nginx auth_request)
+ *     description: Служебный эндпоинт для nginx auth_request при раздаче .ts файлов. Проверяет валидность access_token из cookie или Bearer-заголовка, тело не возвращает.
+ *     responses:
+ *       '200':
+ *         description: Токен валиден
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               required: [ok]
+ *               properties:
+ *                 ok:
+ *                   type: boolean
+ *                   example: true
+ *       '401':
+ *         description: Требуется авторизация
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 recordingRouter.get('/auth', authenticate, (_req: Request, res: Response) => {
   res.status(200).json({ ok: true });
 });
 
 // Раздача .ts файлов с проверкой доступа
+/**
+ * @openapi
+ * /recordings/{processDir}/{filename}:
+ *   get:
+ *     tags: [Recordings]
+ *     operationId: getRecordingFile
+ *     summary: Раздача .ts файла записи
+ *     description: Отдаёт .ts чанк из каталога процесса (используется как источник HLS-плейлистов). Проверяет доступность процесса и существование файла.
+ *     parameters:
+ *       - name: processDir
+ *         in: path
+ *         required: true
+ *         description: Каталог записи, имя которого равно process_ + uuid процесса записи (например, process_xxx).
+ *         schema:
+ *           type: string
+ *           example: 'process_00000000-0000-0000-0000-000000000001'
+ *       - name: filename
+ *         in: path
+ *         required: true
+ *         description: Имя .ts файла внутри каталога записи.
+ *         schema:
+ *           type: string
+ *     responses:
+ *       '200':
+ *         description: Содержимое .ts файла
+ *         content:
+ *           video/mp2t:
+ *             schema:
+ *               type: string
+ *               format: binary
+ *       '400':
+ *         description: Невалидное имя файла (содержит ../ или не .ts) либо невалидный processDir
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       '401':
+ *         description: Требуется авторизация
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       '404':
+ *         description: Процесс или файл не найден
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 recordingRouter.get('/:processDir/:filename', authenticate, async (req: Request, res: Response) => {
   const processDir = req.params.processDir as string;
   const filename = req.params.filename as string;
