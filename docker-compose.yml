@@ -43,6 +43,8 @@ services:
       FFMPEG_MANAGER_RECORD_ROOT: /data/chunks
       JWT_SECRET: ${JWT_SECRET:-dev-secret-change-me}
       JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-dev-refresh-secret-change-me}
+      # Swagger UI в проде по умолчанию выключен: SWAGGER_ENABLED=1 docker compose up -d app
+      SWAGGER_ENABLED: ${SWAGGER_ENABLED:-0}
     ports:
       # Чтобы в U10 поднять параллельно дев-режиму на тестовом порту:
       #   APP_PUBLISH_PORT=15000 docker compose up -d app
