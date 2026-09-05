@@ -14,6 +14,9 @@ interface CustomPlayerProps {
   onDeleteIncident?: (id: string) => Promise<void>;
 }
 
+// Сколько подряд идущих fatal NETWORK_ERROR переживает live-режим до сдачи (оверлей).
+const LIVE_NET_RETRY_LIMIT = 6;
+
 export function CustomPlayer({
   liveUrl,
   timeline,
@@ -39,6 +42,9 @@ export function CustomPlayer({
 
   const liveSegment = useMemo(() => timeline.segments.find((s) => s.live), [timeline.segments]);
 
+  // Стабильный флаг авто-старта live (без объектов/массивов в deps эффекта).
+  const autoStartLive = timeline.live && recordedSegments.length === 0;
+
   // --- Core state ---
   const [playing, setPlaying] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -46,6 +52,8 @@ export function CustomPlayer({
   const [isLive, setIsLive] = useState(false);
   const [timelineTime, setTimelineTime] = useState(0);
   const [gapMode, setGapMode] = useState(false);
+  // Live-режим: открытый сегмент без чанков (пустой EVENT-плейлист) — «ждём данные».
+  const [liveWaiting, setLiveWaiting] = useState(false);
 
   // Refs for non-reactive access in callbacks/RAF
   const timelineTimeRef = useRef(0);
@@ -55,6 +63,8 @@ export function CustomPlayer({
   const windowAnchorRef = useRef(0);
   const gapTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const liveRef = useRef(false);
+  // Live-src текущего hls-инстанса: не пересоздаём плеер, пока источник не сменился.
+  const liveSrcRef = useRef<string | null>(null);
 
   // Hover-preview state: scrub within the loaded window while hovering the track.
   const hoverPreviewRef = useRef(false);
@@ -227,6 +237,7 @@ export function CustomPlayer({
     setTL(atTime);
     setPlayingState(false);
     setLoading(false);
+    setLiveWaiting(false);
     setError('');
     if (autoPlay) startGapPlayback(atTime);
   }
@@ -265,6 +276,7 @@ export function CustomPlayer({
     stopGap();
     setGap(false);
     setError('');
+    setLiveWaiting(false);
     setLoading(true);
     setPlayingState(false);
 
@@ -399,27 +411,48 @@ export function CustomPlayer({
     const video = videoRef.current;
     if (!video) return;
 
-    // Если есть открытый DB-сегмент — живьём играем его EVENT-плейлист
+    // Если есть открытый DB-сегмент — живьём играем хвост его EVENT-плейлиста
     // (без ENDLIST → hls.js live-режим, подхватывает дописанные .ts).
     // liveUrl (mediaMTX HLS) остаётся запасным путём, когда открытого сегмента нет.
     const backendLive = !!liveSegment;
-    const src = backendLive ? `/api/v1/segments/${liveSegment.id}/playlist` : liveUrl;
+    let src = '';
+    if (backendLive) {
+      const seg = liveSegment!;
+      // Guard: этот live-сегмент уже играет — не пересоздаём hls (поллинг таймлайна
+      // каждые 5 сек не должен убивать живой экземпляр после MANIFEST_PARSED).
+      if (hlsRef.current && liveSrcRef.current && liveSrcRef.current.indexOf(`/segments/${seg.id}/playlist`) !== -1) {
+        return;
+      }
+      // Якорь окна live: ~2 минуты от текущего момента (сек от startedAt сегмента).
+      // Строка src замораживается в liveSrcRef, поэтому при поллинге якорь не дрейфует.
+      const startedMs = new Date(seg.startedAt).getTime();
+      const elapsedS = Number.isFinite(startedMs) ? Math.floor((Date.now() - startedMs) / 1000) : 0;
+      const anchorS = Math.max(0, elapsedS - 120);
+      windowAnchorRef.current = anchorS;
+      src = `/api/v1/segments/${seg.id}/playlist?start=${anchorS}`;
+    } else if (hlsRef.current && liveSrcRef.current === liveUrl) {
+      return;
+    } else {
+      src = liveUrl;
+    }
     if (!src) {
       setError('Прямая трансляция недоступна');
       return;
     }
+    liveSrcRef.current = src;
 
     destroyHls();
     stopGap();
     setGap(false);
     setLoading(true);
+    setLiveWaiting(false);
     setError('');
     setPlayingState(false);
     if (backendLive) {
       loadedSegRef.current = liveSegment;
-      windowAnchorRef.current = 0;
     } else {
       loadedSegRef.current = null;
+      windowAnchorRef.current = 0;
     }
 
     if (Hls.isSupported()) {
@@ -432,23 +465,97 @@ export function CustomPlayer({
         startLevel: -1,
       });
 
+      // Состояние одного live-инстанса: подряд идущие fatal NETWORK_ERROR и факт старта.
+      let netErrorCount = 0;
+      let playbackStarted = false;
+      // Таймер переспроса пустого live-манифеста (чанки ещё не появились).
+      let emptyPollTimer: ReturnType<typeof setTimeout> | null = null;
+
+      const stopEmptyPoll = () => {
+        if (emptyPollTimer) {
+          clearTimeout(emptyPollTimer);
+          emptyPollTimer = null;
+        }
+      };
+
+      const tryPlay = () => {
+        if (playbackStarted) return;
+        playbackStarted = true;
+        stopEmptyPoll();
+        setLiveWaiting(false);
+        setLoading(false);
+        video.play().then(() => setPlayingState(true)).catch(() => {});
+      };
+
       hls.loadSource(src);
       hls.attachMedia(video);
 
       hls.on(Hls.Events.MANIFEST_PARSED, () => {
-        setLoading(false);
-        video.play().then(() => setPlayingState(true)).catch(() => {});
+        netErrorCount = 0;
+        stopEmptyPoll();
+        const frags = hls.levels[0]?.details?.fragments?.length ?? 0;
+        if (frags > 0) tryPlay();
+        else setLiveWaiting(true);
+      });
+
+      // Манифест перечитан (в т.ч. live-поллингом): как только в пустом EVENT-плейлисте
+      // появляются чанки — стартуем воспроизведение.
+      hls.on(Hls.Events.LEVEL_LOADED, (_e, data) => {
+        netErrorCount = 0;
+        stopEmptyPoll();
+        const frags = data.details?.fragments?.length ?? 0;
+        if (frags > 0) tryPlay();
+        else setLiveWaiting(true);
       });
 
       hls.on(Hls.Events.ERROR, (_e, data) => {
-        if (!data.fatal) return;
+        if (!data.fatal) {
+          // 200 пустой EVENT-манифест открытого сегмента: чанков ещё нет.
+          // hls.js сам перезапрашивает live-плейлист — не ретраим вручную.
+          if (data.details === Hls.ErrorDetails.LEVEL_EMPTY_ERROR) {
+            setLiveWaiting(true);
+          }
+          return;
+        }
+        // Пустой EVENT-манифест (0 чанков) hls.js эскалирует в fatal, пока нет
+        // предыдущего live-контекста — это НЕ сетевой сбой: пережидаем поллингом.
+        if (data.details === Hls.ErrorDetails.LEVEL_EMPTY_ERROR) {
+          setLiveWaiting(true);
+          if (!emptyPollTimer) {
+            emptyPollTimer = setTimeout(() => {
+              emptyPollTimer = null;
+              hls.startLoad();
+            }, 2000);
+          }
+          return;
+        }
         if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+          netErrorCount += 1;
+          if (netErrorCount >= LIVE_NET_RETRY_LIMIT) {
+            // Дальше не ретраим: destroy + оверлей; повторная попытка — кнопкой Live.
+            destroyHls();
+            liveSrcRef.current = null;
+            video.pause();
+            video.removeAttribute('src');
+            video.load();
+            loadedSegRef.current = null;
+            setLiveState(false);
+            setLiveWaiting(false);
+            setLoading(false);
+            setPlayingState(false);
+            setError('Прямая трансляция: сигнал не найден. Ожидание новых данных…');
+            return;
+          }
           hls.startLoad(0);
         } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
           hls.recoverMediaError();
         } else {
-          setError('Прямая трансляция недоступна');
+          destroyHls();
+          liveSrcRef.current = null;
+          setLiveWaiting(false);
           setLoading(false);
+          setPlayingState(false);
+          setError('Прямая трансляция недоступна');
         }
       });
 
@@ -465,14 +572,11 @@ export function CustomPlayer({
 
   // --- Init: auto-start live if needed ---
   useEffect(() => {
-    if (timeline.live && recordedSegments.length === 0) {
+    if (autoStartLive) {
       initLiveHls();
       setLiveState(true);
     }
-    return () => {
-      destroyHls();
-    };
-  }, [timeline.live, liveUrl, recordedSegments]);
+  }, [autoStartLive, liveUrl]);
 
   // --- Cleanup on unmount ---
   useEffect(() => {
@@ -620,6 +724,10 @@ export function CustomPlayer({
       setError('Прямая трансляция недоступна');
       return;
     }
+    // Явный переход в live: убиваем прежний (возможно зависший после ошибки) инстанс,
+    // чтобы initLiveHls гарантированно создал свежий, а не наткнулся на guard.
+    destroyHls();
+    liveSrcRef.current = null;
     setLiveState(true);
     setGap(false);
     loadedSegRef.current = null;
@@ -629,6 +737,9 @@ export function CustomPlayer({
   function goRecord() {
     setLiveState(false);
     setGap(false);
+    setLiveWaiting(false);
+    setLoading(false);
+    setError('');
     if (recordedSegments.length > 0) {
       loadSegment(recordedSegments[0]!, recordedSegments[0]!.startOffsetS, false);
     }
@@ -855,7 +966,11 @@ export function CustomPlayer({
       <div className={styles.playerLayout}>
         <div className={styles.playerMain}>
           <div className={styles.videoWrap}>
-            {loading && <div className={styles.overlay}>Загрузка...</div>}
+            {loading && (
+              <div className={`${styles.overlay} ${liveWaiting ? styles.gapOverlay : ''}`}>
+                {liveWaiting ? 'Запись идёт, ждём данные…' : 'Загрузка...'}
+              </div>
+            )}
             {showGapOverlay && <div className={`${styles.overlay} ${styles.gapOverlay}`}>Запись отсутствует</div>}
             {error && <div className={`${styles.overlay} ${styles.errorOverlay}`}>{error}</div>}
             <video ref={videoRef} className={styles.video} playsInline onClick={togglePlay} />
