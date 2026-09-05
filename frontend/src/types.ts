@@ -64,7 +64,7 @@ export interface TimelineSegment {
   fileCount: number;
   sizeBytes: string;
   startedAt: string;
-  endedAt: string;
+  endedAt: string | null;
   live: boolean;
 }
 

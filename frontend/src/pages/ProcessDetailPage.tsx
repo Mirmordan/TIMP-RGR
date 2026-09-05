@@ -256,7 +256,7 @@ export function ProcessDetailPage() {
                       {seg.fileCount} файлов · {formatSize(seg.sizeBytes)} · {formatDuration(seg.durationS)}
                     </span>
                     <span className={styles.segmentTime}>
-                      {new Date(seg.startedAt).toLocaleString('ru-RU')} — {new Date(seg.endedAt).toLocaleString('ru-RU')}
+                      {new Date(seg.startedAt).toLocaleString('ru-RU')} — {seg.endedAt ? new Date(seg.endedAt).toLocaleString('ru-RU') : '—'}
                     </span>
                   </div>
                 </div>
