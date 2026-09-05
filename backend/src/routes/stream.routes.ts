@@ -8,6 +8,52 @@ export const streamRouter = Router();
 
 streamRouter.use(authenticate);
 
+/**
+ * @openapi
+ * /streams:
+ *   get:
+ *     tags: [Streams]
+ *     operationId: listStreams
+ *     summary: Список потоков
+ *     description: Пагинированный список потоков с общим количеством.
+ *     parameters:
+ *       - name: limit
+ *         in: query
+ *         description: Максимум записей в ответе.
+ *         required: false
+ *         schema:
+ *           type: integer
+ *           default: 20
+ *       - name: offset
+ *         in: query
+ *         description: Сдвиг от начала списка.
+ *         required: false
+ *         schema:
+ *           type: integer
+ *           default: 0
+ *     responses:
+ *       '200':
+ *         description: Список потоков и общее количество
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               required: [streams, total]
+ *               properties:
+ *                 streams:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/Stream'
+ *                 total:
+ *                   type: integer
+ *                   description: Общее количество потоков.
+ *       '401':
+ *         description: Требуется авторизация
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 streamRouter.get('/', async (req: Request, res: Response) => {
   const limit = Number(req.query.limit) || 20;
   const offset = Number(req.query.offset) || 0;
@@ -15,6 +61,48 @@ streamRouter.get('/', async (req: Request, res: Response) => {
   res.json(result);
 });
 
+/**
+ * @openapi
+ * /streams/{id}:
+ *   get:
+ *     tags: [Streams]
+ *     operationId: getStream
+ *     summary: Поток по ID
+ *     description: Возвращает поток-источник по UUID. Требуется право read на объект.
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         description: UUID потока.
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *     responses:
+ *       '200':
+ *         description: Данные потока
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Stream'
+ *       '401':
+ *         description: Требуется авторизация
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       '403':
+ *         description: Нет доступа к объекту
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       '404':
+ *         description: Поток не найден
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 streamRouter.get('/:id', requirePermission('read'), async (req: Request, res: Response) => {
   const id = req.params.id as string;
   const stream = await streamService.getById(id);
@@ -22,6 +110,40 @@ streamRouter.get('/:id', requirePermission('read'), async (req: Request, res: Re
   res.json(stream);
 });
 
+/**
+ * @openapi
+ * /streams:
+ *   post:
+ *     tags: [Streams]
+ *     operationId: createStream
+ *     summary: Создание потока
+ *     description: Создаёт новый поток-источник записи.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/StreamCreate'
+ *     responses:
+ *       '201':
+ *         description: Поток создан
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Stream'
+ *       '400':
+ *         description: Не указан url или некорректен deviceId
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       '401':
+ *         description: Требуется авторизация
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 streamRouter.post('/', async (req: Request, res: Response) => {
   try {
     const { url, deviceId, sourceFingerprint } = req.body;
@@ -32,6 +154,60 @@ streamRouter.post('/', async (req: Request, res: Response) => {
   }
 });
 
+/**
+ * @openapi
+ * /streams/{id}:
+ *   put:
+ *     tags: [Streams]
+ *     operationId: updateStream
+ *     summary: Полная замена потока
+ *     description: Перезаписывает поток полным телом (url, deviceId, sourceFingerprint). Требуется право write на объект.
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         description: UUID потока.
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/StreamCreate'
+ *     responses:
+ *       '200':
+ *         description: Поток обновлён
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Stream'
+ *       '400':
+ *         description: Не указан url или некорректен deviceId
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       '401':
+ *         description: Требуется авторизация
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       '403':
+ *         description: Нет доступа к объекту
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       '404':
+ *         description: Поток не найден
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 streamRouter.put('/:id', requirePermission('write'), async (req: Request, res: Response) => {
   try {
     const id = req.params.id as string;
@@ -44,6 +220,60 @@ streamRouter.put('/:id', requirePermission('write'), async (req: Request, res: R
   }
 });
 
+/**
+ * @openapi
+ * /streams/{id}:
+ *   patch:
+ *     tags: [Streams]
+ *     operationId: patchStream
+ *     summary: Частичное обновление потока
+ *     description: Обновляет только переданные поля (url/deviceId/sourceFingerprint). Требуется право write на объект.
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         description: UUID потока.
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/StreamPatch'
+ *     responses:
+ *       '200':
+ *         description: Поток обновлён
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Stream'
+ *       '400':
+ *         description: url не может быть пустым
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       '401':
+ *         description: Требуется авторизация
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       '403':
+ *         description: Нет доступа к объекту
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       '404':
+ *         description: Поток не найден
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 streamRouter.patch('/:id', requirePermission('write'), async (req: Request, res: Response) => {
   try {
     const id = req.params.id as string;
@@ -55,6 +285,44 @@ streamRouter.patch('/:id', requirePermission('write'), async (req: Request, res:
   }
 });
 
+/**
+ * @openapi
+ * /streams/{id}:
+ *   delete:
+ *     tags: [Streams]
+ *     operationId: deleteStream
+ *     summary: Удаление потока
+ *     description: Удаляет поток вместе со связанными объектами. Требуется право delete на объект.
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         description: UUID потока.
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *     responses:
+ *       '204':
+ *         description: Поток удалён
+ *       '401':
+ *         description: Требуется авторизация
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       '403':
+ *         description: Нет доступа к объекту
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       '404':
+ *         description: Поток не найден
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 streamRouter.delete('/:id', requirePermission('delete'), async (req: Request, res: Response) => {
   const id = req.params.id as string;
   const deleted = await streamService.deleteById(id);
