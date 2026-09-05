@@ -506,6 +506,11 @@ export const segmentService = {
     };
   },
 
+  /** .ts чанки сегмента в окне покрытия [startedAt, endedAt] (по обоим record-root). */
+  segmentFilesOf(seg: RecordingSegment): { file: string; tsMs: number }[] {
+    return segmentFilesOf(seg);
+  },
+
   /** URL прямой трансляции (HLS из mediaMTX через nginx proxy). */
   getLiveUrl(mtxPath: string): string {
     return `/live/${mtxPath}/index.m3u8`;

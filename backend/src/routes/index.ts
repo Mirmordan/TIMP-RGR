@@ -10,6 +10,7 @@ import { userRouter } from './user.routes';
 import { incidentRouter } from './incident.routes';
 import { adminRouter } from './admin.routes';
 import { statsRouter } from './stats.routes';
+import { exportRouter } from './export.routes';
 import { authRouter } from '../security/auth.routes';
 
 export const apiRouter = Router();
@@ -45,6 +46,7 @@ apiRouter.use('/users', userRouter);
 apiRouter.use('/devices', deviceRouter);
 apiRouter.use('/streams', streamRouter);
 apiRouter.use('/processes', processRouter);
+apiRouter.use('/processes', exportRouter);
 apiRouter.use('/chunks', chunkRouter);
 apiRouter.use('/segments', segmentRouter);
 apiRouter.use('/recordings', recordingRouter);
