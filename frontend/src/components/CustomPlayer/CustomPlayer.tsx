@@ -855,7 +855,7 @@ export function CustomPlayer({
       if (!timeline.start) return null;
       const startDate = new Date(timeline.start);
       if (isNaN(startDate.getTime())) return null;
-      const target = new Date(Date.UTC(+yyyy, +mm - 1, +dd, +hh, +mi, +ss));
+      const target = new Date(+yyyy, +mm - 1, +dd, +hh, +mi, +ss);
       return (target.getTime() - startDate.getTime()) / 1000;
     }
 
@@ -865,7 +865,7 @@ export function CustomPlayer({
       if (!timeline.start) return null;
       const startDate = new Date(timeline.start);
       if (isNaN(startDate.getTime())) return null;
-      const target = new Date(Date.UTC(+yyyy, +mm - 1, +dd, +hh, +mi, 0));
+      const target = new Date(+yyyy, +mm - 1, +dd, +hh, +mi, 0);
       return (target.getTime() - startDate.getTime()) / 1000;
     }
 
@@ -878,7 +878,8 @@ export function CustomPlayer({
       if (!timeline.start) return null;
       const startDate = new Date(timeline.start);
       if (isNaN(startDate.getTime())) return null;
-      return (h * 3600 + min * 60 + s) - startDate.getTime() / 1000;
+      const target = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate(), h, min, s);
+      return (target.getTime() - startDate.getTime()) / 1000;
     }
 
     m = trimmed.match(/^(\d{1,2}):(\d{2})$/);
@@ -889,7 +890,8 @@ export function CustomPlayer({
       if (!timeline.start) return null;
       const startDate = new Date(timeline.start);
       if (isNaN(startDate.getTime())) return null;
-      return (h * 3600 + min * 60) - startDate.getTime() / 1000;
+      const target = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate(), h, min, 0);
+      return (target.getTime() - startDate.getTime()) / 1000;
     }
 
     const num = parseFloat(trimmed);

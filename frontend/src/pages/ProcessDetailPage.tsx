@@ -46,6 +46,19 @@ export function ProcessDetailPage() {
     return () => clearInterval(timer);
   }, [id, process?.status]);
 
+  useEffect(() => {
+    if (!id || process?.status !== 'running') return;
+    const timer = setInterval(() => {
+      apiFetch(`/processes/${id}`)
+        .then(r => (r.ok ? r.json() : null))
+        .then(data => {
+          if (data?.status && data.status !== process?.status) refresh();
+        })
+        .catch(() => {});
+    }, 15000);
+    return () => clearInterval(timer);
+  }, [id, process?.status, refresh]);
+
   async function patchStatus(newStatus: string) {
     setActionLoading(true);
     try {
