@@ -4,6 +4,7 @@ import { Layout, Card, StatusBadge } from '../components/Layout/Layout';
 import { DetailHeader, InfoRow, DetailGrid, styles } from '../components/Layout/DetailPage';
 import { Button } from '../components/Button/Button';
 import { CustomPlayer } from '../components/CustomPlayer/CustomPlayer';
+import { LiveViewer } from '../components/LiveViewer/LiveViewer';
 import { Skeleton } from '../components/Skeleton/Skeleton';
 import { useEntity } from '../hooks/useEntity';
 import { apiFetch } from '../api';
@@ -21,6 +22,13 @@ export function ProcessDetailPage() {
   const [timeline, setTimeline] = useState<TimelineData | null>(null);
   const [incidents, setIncidents] = useState<Incident[]>([]);
   const [timelineVersion, setTimelineVersion] = useState(0);
+  // Ручной уход из LiveViewer в архивный CustomPlayer (клик по сегменту) и обратно.
+  const [forceArchive, setForceArchive] = useState(false);
+
+  // Новый запуск записи → снова LiveViewer по умолчанию.
+  useEffect(() => {
+    if (process && process.status !== 'running') setForceArchive(false);
+  }, [process?.status]);
 
   useEffect(() => {
     if (!id) return;
@@ -155,6 +163,8 @@ export function ProcessDetailPage() {
 
   const isRunning = process.status === 'running';
   const hasSegments = timeline && timeline.segments.length > 0;
+  const openLiveSeg = timeline?.segments.find(s => s.endedAt === null) ?? null;
+  const liveViewerShown = isRunning && !!openLiveSeg && !forceArchive;
 
   const mtxPath = `process_${id}`;
   const liveUrl = `/live/${mtxPath}/index.m3u8`;
@@ -195,20 +205,31 @@ export function ProcessDetailPage() {
       </Card>
 
       <div className={styles.playerSection}>
-        <h2 className={styles.sectionTitle}>
-          {isRunning ? 'Прямая трансляция' : 'Просмотр записи'}
-        </h2>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 'var(--space-4)' }}>
+          <h2 className={styles.sectionTitle} style={{ marginTop: 0, marginBottom: 0 }}>
+            {isRunning ? 'Прямая трансляция' : 'Просмотр записи'}
+          </h2>
+          {isRunning && !!openLiveSeg && forceArchive && (
+            <Button variant="danger" size="sm" onClick={() => setForceArchive(false)}>
+              ● LIVE
+            </Button>
+          )}
+        </div>
         {timeline ? (
           (hasSegments || isRunning) ? (
-            <CustomPlayer
-              processId={id!}
-              liveUrl={liveUrl}
-              timeline={timeline}
-              incidents={incidents}
-              onCreateIncident={handleCreateIncident}
-              onUpdateIncident={handleUpdateIncident}
-              onDeleteIncident={handleDeleteIncident}
-            />
+            liveViewerShown ? (
+              <LiveViewer processId={id!} />
+            ) : (
+              <CustomPlayer
+                processId={id!}
+                liveUrl={liveUrl}
+                timeline={timeline}
+                incidents={incidents}
+                onCreateIncident={handleCreateIncident}
+                onUpdateIncident={handleUpdateIncident}
+                onDeleteIncident={handleDeleteIncident}
+              />
+            )
           ) : (
             <div className={styles.noSegments}>Запись отсутствует</div>
           )
@@ -223,7 +244,12 @@ export function ProcessDetailPage() {
           <div className={styles.segmentList}>
             {timeline!.segments.filter(s => !s.live).map((seg, i) => (
               <Card key={seg.id}>
-                <div className={styles.segmentRow}>
+                <div
+                  className={styles.segmentRow}
+                  style={liveViewerShown ? { cursor: 'pointer' } : undefined}
+                  onClick={liveViewerShown ? () => setForceArchive(true) : undefined}
+                  title={liveViewerShown ? 'Открыть в плеере записи' : undefined}
+                >
                   <div className={styles.segmentInfo}>
                     <span className={styles.segmentLabel}>Сегмент {i + 1}</span>
                     <span className={styles.segmentMeta}>

@@ -1,0 +1,236 @@
+.root {
+  background: #000;
+  border-radius: var(--radius);
+  overflow: hidden;
+  border: 1px solid var(--border-light);
+  user-select: none;
+  display: flex;
+  flex-direction: column;
+}
+.root:fullscreen {
+  border-radius: 0;
+  height: 100vh;
+}
+
+/* ─── Top bar: LIVE badge + edge clock ─────── */
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 10px;
+  background: var(--surface-1);
+  border-bottom: 1px solid var(--border-light);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  flex-shrink: 0;
+}
+.liveBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  color: var(--danger);
+  text-transform: uppercase;
+}
+.liveDot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--danger);
+  box-shadow: 0 0 6px rgba(232, 93, 117, 0.7);
+  animation: livePulse 1.5s ease-in-out infinite;
+}
+.topClock {
+  margin-left: auto;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
+}
+
+/* ─── Video area (16:9) ────────────────────── */
+.videoBox {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  background: #000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+.root:fullscreen .videoBox {
+  flex: 1 1 auto;
+  aspect-ratio: auto;
+  min-height: 0;
+}
+.video {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+  cursor: pointer;
+}
+
+/* ─── Overlays ─────────────────────────────── */
+.overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 16px;
+  background: rgba(0, 0, 0, 0.62);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  text-align: center;
+}
+.noSignal {
+  color: var(--danger);
+  cursor: pointer;
+}
+.noSignalHint {
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  color: var(--text-dim);
+  text-transform: none;
+}
+.spinner {
+  width: 22px;
+  height: 22px;
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+.noSignal .spinner {
+  border-top-color: var(--danger);
+}
+
+/* Autoplay blocked: big play button */
+.playBtn {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  background: rgba(58, 175, 169, 0.18);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, transform 0.15s;
+  backdrop-filter: blur(2px);
+}
+.playBtn:hover {
+  background: rgba(58, 175, 169, 0.35);
+  border-color: var(--accent);
+  transform: scale(1.05);
+}
+.playLabel {
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+/* ─── Controls bar ─────────────────────────── */
+.controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  background: var(--surface-1);
+  border-top: 1px solid var(--border-light);
+  min-height: 38px;
+  flex-shrink: 0;
+}
+.btn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 3px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.15s, background 0.15s;
+  flex-shrink: 0;
+}
+.btn:hover {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.08);
+}
+.rightBtns {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+.liveGo {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--danger);
+  background: rgba(232, 93, 117, 0.12);
+  border: 1px solid rgba(232, 93, 117, 0.45);
+  border-radius: 4px;
+  padding: 3px 8px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.liveGo:hover {
+  background: rgba(232, 93, 117, 0.25);
+  color: var(--danger);
+}
+
+/* ─── Ended / waiting screens ──────────────── */
+.centerState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 48px 16px;
+  background: var(--surface-1);
+  font-family: var(--font-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  text-align: center;
+}
+.centerStateTitle {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+.centerStateSub {
+  font-size: 10px;
+  color: var(--text-dim);
+  letter-spacing: 0.05em;
+  text-transform: none;
+  max-width: 420px;
+  line-height: 1.5;
+}
+.endedDot {
+  font-size: 13px;
+  color: var(--text-dim);
+}
+
+@keyframes livePulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.25; }
+}
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
