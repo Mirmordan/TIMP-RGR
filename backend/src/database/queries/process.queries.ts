@@ -16,6 +16,15 @@ export const processQueries = {
 
   count: `SELECT COUNT(*)::int AS "total" FROM recording_processes`,
 
+  /** Все процессы со статусом running + URL источника (recording_streams.url). */
+  findRunningWithStream: `SELECT p.object_id AS "id", p.stream_id AS "streamId",
+                                 p.started_at AS "startedAt", p.status,
+                                 s.url AS "streamUrl"
+                          FROM recording_processes p
+                          JOIN recording_streams s ON s.object_id = p.stream_id
+                          WHERE p.status = 'running'
+                          ORDER BY p.started_at`,
+
   insert: `INSERT INTO objects DEFAULT VALUES
            RETURNING id AS "objectId"`,
 

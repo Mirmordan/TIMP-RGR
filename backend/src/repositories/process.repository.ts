@@ -2,6 +2,15 @@ import type { RecordingProcess } from '../types';
 import { queryAs, inUserContext } from '../security/dbBridge';
 import { processQueries } from '../database/queries/process.queries';
 
+/** Процесс записи со статусом running + URL источника (для стартовой реконсиляции). */
+export interface RunningProcessWithStream {
+  id: string;
+  streamId: string;
+  startedAt: Date;
+  status: string;
+  streamUrl: string;
+}
+
 export const processRepository = {
   async findById(id: string): Promise<RecordingProcess | null> {
     const { rows } = await queryAs<RecordingProcess>(processQueries.findById, [id]);
@@ -16,6 +25,12 @@ export const processRepository = {
   async count(): Promise<number> {
     const { rows } = await queryAs<{ total: number }>(processQueries.count);
     return rows[0]?.total ?? 0;
+  },
+
+  /** Процессы со статусом running вместе с URL их recording_streams (для reconcile). */
+  async findRunningWithStream(): Promise<RunningProcessWithStream[]> {
+    const { rows } = await queryAs<RunningProcessWithStream>(processQueries.findRunningWithStream);
+    return rows;
   },
 
   async create(streamId: string, startedAt: Date, status: string): Promise<RecordingProcess> {

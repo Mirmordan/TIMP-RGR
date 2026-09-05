@@ -90,12 +90,12 @@ export const mediaManager = {
     }
   },
 
-  /** Удалить путь (остановить поток). */
-  async removePath(name: string, source?: string): Promise<void> {
-    const apiBase = (source && isIvideonUrl(source))
+  /** Удалить путь (остановить поток). apiBase — явное указание сервиса (для путей-сирот, чей источник уже неизвестен). */
+  async removePath(name: string, source?: string, apiBase?: string): Promise<void> {
+    const base = apiBase ?? ((source && isIvideonUrl(source))
       ? config.ffmpegManager.apiUrl
-      : config.mediaMTX.apiUrl;
-    await request(`${apiBase}/v3/config/paths/delete/${encodeURIComponent(name)}`, { method: 'DELETE' });
+      : config.mediaMTX.apiUrl);
+    await request(`${base}/v3/config/paths/delete/${encodeURIComponent(name)}`, { method: 'DELETE' });
   },
 
   /** Есть ли путь онлайн (поток поднят). */
