@@ -838,17 +838,14 @@ export function CustomPlayer({
 
   const hourMarkers = useMemo(() => {
     const markers: { time: number; clock: string; date: string }[] = [];
-    if (recordedSegments.length === 0) return markers;
-    const first = recordedSegments[0]!.startOffsetS;
-    const last = recordedSegments[recordedSegments.length - 1]!.startOffsetS +
-      recordedSegments[recordedSegments.length - 1]!.durationS;
+    if (timeline.totalDurationS <= 0) return markers;
     const count = 6;
     for (let i = 0; i < count; i++) {
-      const t = first + ((last - first) * i) / (count - 1);
+      const t = (timeline.totalDurationS * i) / (count - 1);
       markers.push({ time: t, clock: formatAbsoluteClock(t), date: formatAbsoluteDate(t) });
     }
     return markers;
-  }, [recordedSegments]);
+  }, [timeline.totalDurationS, timeline.start]);
 
   const incidentCount = incidents.length;
   const segmentCount = recordedSegments.length;
