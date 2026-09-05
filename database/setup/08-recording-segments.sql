@@ -35,3 +35,7 @@ CREATE POLICY segments_write ON recording_segments
 
 CREATE POLICY segments_delete ON recording_segments
     FOR DELETE USING (has_permission(object_id, 'delete'));
+
+-- Права приложения: таблица создаётся после 06-app-role.sql (алфавитный порядок),
+-- поэтому GRANT выдан здесь — как в живой БД (там timprgr_app имеет полный ALL на сегментах).
+GRANT SELECT, INSERT, UPDATE, DELETE, REFERENCES, TRIGGER, TRUNCATE ON recording_segments TO timprgr_app;
