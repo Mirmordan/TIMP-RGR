@@ -267,6 +267,7 @@ function startGenericStream(name, opts) {
     ffmpeg = proc;
     registerProc(proc, live);
     proc.stderr.on('data', () => {});
+    proc.on('error', () => { if (ffmpeg === proc) ffmpeg = null; });
     proc.on('close', () => {
       // close только своего процесса затирает ссылку (идемпотентность по identity)
       if (ffmpeg === proc) ffmpeg = null;
