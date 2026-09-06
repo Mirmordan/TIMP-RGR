@@ -8,7 +8,6 @@ import { pool } from '../database/connection';
 import {
   can,
   hasCapability,
-  roleHasCapability,
   invalidateUser,
   invalidateObject,
 } from './acl';
@@ -18,13 +17,13 @@ const poolQuery = pool.query as unknown as Mock;
 const IS_ADMIN_RE = /r\.name = 'admin'/;
 const PERMS_RE = /FROM permissions p/;
 const OBJ_GROUPS_RE = /object_id = \$1/;
-const ROLES_RE = /AS "role"/;
+const CAPABILITIES_RE = /role_capabilities/;
 
 interface SeedRows {
   adminExists?: boolean;
   perms?: Array<{ groupId: string; action: string }>;
   objGroups?: string[];
-  roles?: string[];
+  capabilities?: string[];
 }
 
 /** Настроить pool.query: отдаём строки в зависимости от текста SQL. */
@@ -40,8 +39,10 @@ function seed(rows: SeedRows = {}): void {
     if (OBJ_GROUPS_RE.test(text)) {
       return Promise.resolve({ rows: (rows.objGroups ?? []).map((g) => ({ groupId: g })) });
     }
-    if (ROLES_RE.test(text)) {
-      return Promise.resolve({ rows: (rows.roles ?? []).map((r) => ({ role: r })) });
+    if (CAPABILITIES_RE.test(text)) {
+      return Promise.resolve({
+        rows: (rows.capabilities ?? []).map((capability) => ({ capability })),
+      });
     }
     return Promise.resolve({ rows: [] });
   });
@@ -91,27 +92,30 @@ describe('acl.can', () => {
 });
 
 describe('acl.hasCapability', () => {
-  it('admin → true через isAdmin-запрос без чтения ролей', async () => {
+  it('admin → true через isAdmin-запрос без чтения role_capabilities', async () => {
     seed({ adminExists: true });
     await expect(hasCapability('cap-adm', 'admin:write')).resolves.toBe(true);
     expect(queryCount()).toBe(1);
   });
 
-  it('не-админ: capability ищется по ролям (viewer не имеет → false)', async () => {
-    seed({ roles: ['viewer'] });
-    await expect(hasCapability('cap-v', 'role:assign')).resolves.toBe(false);
+  it('не-админ: capability берётся из union role_capabilities по ролям юзера', async () => {
+    seed({ capabilities: ['user:read', 'user:create'] });
+    await expect(hasCapability('cap-hr', 'user:read')).resolves.toBe(true);
+    await expect(hasCapability('cap-hr', 'admin:write')).resolves.toBe(false);
   });
 
-  it('не-админ c ролью admin в getUserRoles → true по ROLE_CAPABILITIES', async () => {
-    seed({ roles: ['admin'] });
-    await expect(hasCapability('cap-o', 'user:delete')).resolves.toBe(true);
+  it('юзер без спец-прав (role_capabilities пусто) → false', async () => {
+    seed({ capabilities: [] });
+    await expect(hasCapability('cap-v', 'user:read')).resolves.toBe(false);
   });
-});
 
-describe('roleHasCapability', () => {
-  it('берёт набор из ROLE_CAPABILITIES по роли', () => {
-    expect(roleHasCapability('admin', 'role:assign')).toBe(true);
-    expect(roleHasCapability('viewer', 'role:assign')).toBe(false);
-    expect(roleHasCapability('operator', 'user:read')).toBe(false);
+  it('invalidateUser сбрасывает кеш спец-прав → повторный запрос идёт в БД', async () => {
+    seed({ capabilities: ['user:delete'] });
+    await hasCapability('cap-o', 'user:delete');
+    const afterFirst = queryCount();
+
+    invalidateUser('cap-o');
+    await hasCapability('cap-o', 'user:delete');
+    expect(queryCount()).toBe(afterFirst + 2); // isAdmin + снова union
   });
 });

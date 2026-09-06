@@ -2,6 +2,7 @@ import { Router } from 'express';
 import type { Request, Response } from 'express';
 import { statsService } from '../services/stats.service';
 import { authenticate } from '../security/middleware/authenticate';
+import { requireCapability } from '../security/middleware/requireCapability';
 
 export const statsRouter = Router();
 
@@ -125,7 +126,7 @@ statsRouter.get('/incidents', async (req: Request, res: Response) => {
  *     tags: [Stats]
  *     operationId: getDisk
  *     summary: Статистика по диску
- *     description: Размер чанков записей и свободное/общее место на разделе (кэшируется на 60 секунд). Не ограничено RLS.
+ *     description: Размер чанков записей и свободное/общее место на разделе (кэшируется на 60 секунд). Не ограничено RLS. Требуется capability admin:read.
  *     responses:
  *       '200':
  *         description: Данные о диске
@@ -139,8 +140,14 @@ statsRouter.get('/incidents', async (req: Request, res: Response) => {
  *           application/json:
  *             schema:
  *               $ref: '#/components/schemas/Error'
+ *       '403':
+ *         description: Недостаточно прав (нужна capability admin:read)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  */
-statsRouter.get('/disk', async (_req: Request, res: Response) => {
+statsRouter.get('/disk', requireCapability('admin:read'), async (_req: Request, res: Response) => {
   const disk = await statsService.getDisk();
   res.json(disk);
 });

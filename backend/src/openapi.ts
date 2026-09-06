@@ -90,8 +90,11 @@ const definition = {
           user: { $ref: '#/components/schemas/AuthUser' },
           capabilities: {
             type: 'array',
-            items: { type: 'string' },
-            description: 'Системные capabilities по роли.',
+            items: {
+              type: 'string',
+              enum: ['admin:read', 'admin:write', 'user:create', 'user:read', 'user:update', 'user:delete'],
+            },
+            description: 'Актуальные system capabilities пользователя (union по его ролям из role_capabilities).',
           },
         },
       },
@@ -729,6 +732,35 @@ const definition = {
           targetType: { type: 'string', nullable: true, description: 'Тип объекта действия.' },
           targetId: { type: 'string', nullable: true, description: 'UUID объекта действия.' },
           details: { type: 'object', description: 'Произвольные дополнительные данные события.' },
+        },
+      },
+      CapabilityInfo: {
+        type: 'object',
+        description: 'Запись каталога system capabilities: код + человекочитаемая подпись.',
+        required: ['code', 'label', 'description'],
+        properties: {
+          code: {
+            type: 'string',
+            enum: ['admin:read', 'admin:write', 'user:create', 'user:read', 'user:update', 'user:delete'],
+            description: 'Код спец-права (хранится в role_capabilities.capability).',
+          },
+          label: { type: 'string', description: 'Короткая подпись для UI.' },
+          description: { type: 'string', description: 'Что даёт спец-право.' },
+        },
+      },
+      CapabilityCodes: {
+        type: 'object',
+        description: 'Полный новый набор system capabilities роли (заменяет текущий).',
+        required: ['capabilities'],
+        properties: {
+          capabilities: {
+            type: 'array',
+            description: 'Коды спец-прав роли.',
+            items: {
+              type: 'string',
+              enum: ['admin:read', 'admin:write', 'user:create', 'user:read', 'user:update', 'user:delete'],
+            },
+          },
         },
       },
       RoleAssign: {

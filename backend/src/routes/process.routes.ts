@@ -3,6 +3,7 @@ import type { Request, Response } from 'express';
 import { processService } from '../services/process.service';
 import { authenticate } from '../security/middleware/authenticate';
 import { requirePermission } from '../security/middleware/requirePermission';
+import { requireCapability } from '../security/middleware/requireCapability';
 
 export const processRouter = Router();
 
@@ -124,7 +125,7 @@ processRouter.get('/:id', requirePermission('read'), async (req: Request, res: R
  *     tags: [Processes]
  *     operationId: createProcess
  *     summary: Создание процесса записи
- *     description: Создаёт процесс записи. Если status=running (по умолчанию) — поднимает поток-источник в mediaMTX и открывает сегмент записи без endedAt.
+ *     description: Создаёт процесс записи. Если status=running (по умолчанию) — поднимает поток-источник в mediaMTX и открывает сегмент записи без endedAt. Требуется capability admin:write.
  *     requestBody:
  *       required: true
  *       content:
@@ -150,8 +151,14 @@ processRouter.get('/:id', requirePermission('read'), async (req: Request, res: R
  *           application/json:
  *             schema:
  *               $ref: '#/components/schemas/Error'
+ *       '403':
+ *         description: Недостаточно прав (нужна capability admin:write)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  */
-processRouter.post('/', async (req: Request, res: Response) => {
+processRouter.post('/', requireCapability('admin:write'), async (req: Request, res: Response) => {
   try {
     const { streamId, status, startedAt } = req.body;
     const finalStatus = status || 'running';

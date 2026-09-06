@@ -17,6 +17,7 @@ export const AUDIT_ACTIONS = [
   'role.rename',
   'role.delete',
   'role.perms.set',
+  'role.caps.set',
   'group.create',
   'group.rename',
   'group.delete',

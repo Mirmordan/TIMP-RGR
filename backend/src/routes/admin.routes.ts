@@ -7,6 +7,7 @@ import type { AuditActor } from '../services/audit.service';
 import { AuthError } from '../security/auth.service';
 import { authenticate } from '../security/middleware/authenticate';
 import { requireCapability } from '../security/middleware/requireCapability';
+import { CAPABILITY_CATALOG } from '../security/capabilities';
 
 /**
  * Эндпоинты /admin для панели RBAC.
@@ -681,6 +682,170 @@ adminRouter.put('/roles/:id/permissions', requireCapability('admin:write'), asyn
     const id = req.params.id as string;
     const permissions = await rbacService.replaceRolePermissions(id, actorOf(req), (req.body ?? {}).entries);
     res.json(permissions);
+  } catch (e) {
+    sendRbacError(res, e);
+  }
+});
+
+// --- Спец-права (system capabilities) ролей ---
+
+/**
+ * @openapi
+ * /admin/capabilities:
+ *   get:
+ *     tags: [Admin]
+ *     operationId: listCapabilities
+ *     summary: Каталог спец-прав системы
+ *     description: Статический каталог доступных system capabilities (код + человекочитаемая подпись). Требуется capability admin:read.
+ *     responses:
+ *       '200':
+ *         description: Массив записей каталога спец-прав
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 $ref: '#/components/schemas/CapabilityInfo'
+ *       '401':
+ *         description: Требуется авторизация
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       '403':
+ *         description: Недостаточно прав (нужна capability admin:read)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
+adminRouter.get('/capabilities', requireCapability('admin:read'), (_req: Request, res: Response) => {
+  res.json(CAPABILITY_CATALOG);
+});
+
+/**
+ * @openapi
+ * /admin/roles/{id}/capabilities:
+ *   get:
+ *     tags: [Admin]
+ *     operationId: getRoleCapabilities
+ *     summary: Спец-права роли
+ *     description: Возвращает коды system capabilities, выданные роли. Требуется capability admin:read.
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         description: UUID роли.
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *     responses:
+ *       '200':
+ *         description: Массив кодов спец-прав роли
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 type: string
+ *                 enum: [admin:read, admin:write, user:create, user:read, user:update, user:delete]
+ *       '401':
+ *         description: Требуется авторизация
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       '403':
+ *         description: Недостаточно прав (нужна capability admin:read)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       '404':
+ *         description: Роль не найдена (в т.ч. неверный uuid)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
+adminRouter.get('/roles/:id/capabilities', requireCapability('admin:read'), async (req: Request, res: Response) => {
+  try {
+    const id = req.params.id as string;
+    const role = await rbacRepository.findRoleById(id);
+    if (!role) return res.status(404).json({ error: 'роль не найдена' });
+    const capabilities = await rbacRepository.findRoleCapabilities(id);
+    res.json(capabilities);
+  } catch {
+    res.status(404).json({ error: 'роль не найдена' });
+  }
+});
+
+/**
+ * @openapi
+ * /admin/roles/{id}/capabilities:
+ *   put:
+ *     tags: [Admin]
+ *     operationId: setRoleCapabilities
+ *     summary: Замена спец-прав роли
+ *     description: Полностью заменяет набор system capabilities кастомной роли. Системные роли (admin/operator/viewer) неизменяемы — это защищает систему от понижения последнего активного администратора. Коды валидируются по каталогу спец-прав. Требуется capability admin:write.
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         description: UUID роли.
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/CapabilityCodes'
+ *     responses:
+ *       '200':
+ *         description: Актуальный список спец-прав роли
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 type: string
+ *                 enum: [admin:read, admin:write, user:create, user:read, user:update, user:delete]
+ *       '400':
+ *         description: capabilities не массив строк, неизвестный код или системную роль менять нельзя
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       '401':
+ *         description: Требуется авторизация
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       '403':
+ *         description: Недостаточно прав (нужна capability admin:write)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       '404':
+ *         description: Роль не найдена
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
+adminRouter.put('/roles/:id/capabilities', requireCapability('admin:write'), async (req: Request, res: Response) => {
+  try {
+    const id = req.params.id as string;
+    const capabilities = await rbacService.replaceRoleCapabilities(
+      id,
+      actorOf(req),
+      (req.body ?? {}).capabilities,
+    );
+    res.json(capabilities);
   } catch (e) {
     sendRbacError(res, e);
   }

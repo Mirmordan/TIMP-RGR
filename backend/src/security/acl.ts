@@ -1,7 +1,6 @@
 import { pool } from '../database/connection';
 import { Cache } from './permissionCache';
-import { ROLE_CAPABILITIES } from './types';
-import type { ObjectAction, Role } from './types';
+import type { ObjectAction } from './types';
 
 /**
  * Application-level Access Control List.
@@ -21,6 +20,8 @@ const userGroupsCache = new Cache<Map<string, Set<ObjectAction>>>(2000, 5 * 60_0
 const objectGroupsCache = new Cache<string[]>(2000, 5 * 60_000);
 // userId -> boolean (admin)
 const adminCache = new Cache<boolean>(2000, 5 * 60_000);
+// userId -> Set<Capability>  (union спец-прав по всем ролям юзера из role_capabilities)
+const userCapabilitiesCache = new Cache<Set<string>>(2000, 5 * 60_000);
 
 async function isAdmin(userId: string): Promise<boolean> {
   const cached = adminCache.get(userId);
@@ -101,37 +102,44 @@ export async function can(
   return false;
 }
 
-async function getUserRoles(userId: string): Promise<Role[]> {
-  const { rows } = await pool.query<{ role: string }>(
-    `SELECT r.name AS "role"
+/**
+ * Union спец-прав пользователя: DISTINCT по ролям из user_roles JOIN
+ * role_capabilities. Хранится в кеше (инвалидируется invalidateUser).
+ */
+async function getUserCapabilities(userId: string): Promise<Set<string>> {
+  const cached = userCapabilitiesCache.get(userId);
+  if (cached) return cached;
+  const { rows } = await pool.query<{ capability: string }>(
+    `SELECT DISTINCT rc.capability AS "capability"
      FROM user_roles ur
-     JOIN roles r ON r.id = ur.role_id
+     JOIN role_capabilities rc ON rc.role_id = ur.role_id
      WHERE ur.user_id = $1`,
     [userId],
   );
-  return rows.map((r) => r.role) as Role[];
+  const set = new Set(rows.map((r) => r.capability));
+  userCapabilitiesCache.set(userId, set);
+  return set;
 }
 
 /**
  * Есть ли у юзера глобальный capability (системная операция).
+ * Источник прав — таблица role_capabilities (union по ролям юзера);
+ * роль admin дополнительно даёт полный набор (RLS/ACL-семантика is_admin).
  */
 export async function hasCapability(
   userId: string,
   capability: string,
 ): Promise<boolean> {
   if (await isAdmin(userId)) return true;
-  const roles = await getUserRoles(userId);
-  return roles.some((role) => roleHasCapability(role, capability));
-}
-
-export function roleHasCapability(role: Role, capability: string): boolean {
-  return ROLE_CAPABILITIES[role]?.includes(capability as never) ?? false;
+  const caps = await getUserCapabilities(userId);
+  return caps.has(capability);
 }
 
 // --- Инвалидация кеша (вызывать после изменений RBAC) ---
 export function invalidateUser(userId: string): void {
   userGroupsCache.del(userId);
   adminCache.del(userId);
+  userCapabilitiesCache.del(userId);
 }
 
 export function invalidateObject(objectId: string): void {

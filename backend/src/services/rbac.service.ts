@@ -5,6 +5,7 @@ import { authService, assertEmail, assertPassword, assertUsername } from '../sec
 import { userRepository } from '../repositories/user.repository';
 import { OBJECT_ACTIONS } from '../security/types';
 import type { ObjectAction } from '../security/types';
+import { isCapability } from '../security/capabilities';
 import { auditService } from './audit.service';
 import type { AuditActor } from './audit.service';
 import type {
@@ -215,6 +216,45 @@ export const rbacService = {
     });
 
     return rbacRepository.findPermissionsByRole(id);
+  },
+
+  /**
+   * Полностью заменить набор спец-прав (system capabilities) роли.
+   * Системные роли (admin/operator/viewer) неизменяемы: набор зафиксирован
+   * сидом role_capabilities — это не даёт «понизить» активных админов
+   * (админ-роль всегда сохраняет admin:read/admin:write и остальных).
+   * Коды валидируются по CAPABILITIES (совпадает с CHECK в БД). После
+   * записи инвалидируется кеш спец-прав всех пользователей роли.
+   */
+  async replaceRoleCapabilities(id: string, actor: AuditActor, capabilities: unknown): Promise<string[]> {
+    const role = await rbacRepository.findRoleById(id);
+    if (!role) throw new HttpError(404, 'роль не найдена');
+    if (SYSTEM_ROLE_NAMES.includes(role.name)) {
+      throw new HttpError(400, 'системные роли неизменяемы');
+    }
+
+    if (!Array.isArray(capabilities) || capabilities.some((c: unknown) => typeof c !== 'string')) {
+      throw new HttpError(400, 'capabilities должен быть массивом строк');
+    }
+    const codes = [...new Set(capabilities as string[])];
+    for (const code of codes) {
+      if (!isCapability(code)) throw new HttpError(400, `неизвестная capability: ${code}`);
+    }
+
+    const affected = await rbacRepository.findUsersByRole(id);
+    await rbacRepository.replaceRoleCapabilities(id, codes);
+    for (const userId of affected) invalidateUser(userId);
+
+    await auditService.logAudit({
+      actorId: actor.id,
+      actorName: actor.username,
+      action: 'role.caps.set',
+      targetType: 'role',
+      targetId: id,
+      details: { capabilities: codes },
+    });
+
+    return rbacRepository.findRoleCapabilities(id);
   },
 
   /** Создать группу объектов (имя валидируется тем же regex, что и роли). */

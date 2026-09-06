@@ -4,7 +4,7 @@ import type { Capability } from '../types';
 
 /**
  * Проверяет глобальную capability (системную операцию управления,
- * напр. user:create, group:delete, permission:grant).
+ * напр. admin:read, admin:write, user:create).
  * Должен идти ПОСЛЕ authenticate.
  */
 export function requireCapability(capability: Capability) {

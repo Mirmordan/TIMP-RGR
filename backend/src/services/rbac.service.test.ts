@@ -20,6 +20,10 @@ vi.mock('../repositories/rbac.repository', () => ({
     renameRole: vi.fn(),
     deleteRole: vi.fn(),
     replaceRolePermissions: vi.fn(),
+    findRoleCapabilities: vi.fn(),
+    findCapabilitiesByUser: vi.fn(),
+    findUsersByRole: vi.fn(),
+    replaceRoleCapabilities: vi.fn(),
     findGroupById: vi.fn(),
     findGroupByName: vi.fn(),
     countGroupUsage: vi.fn(),
@@ -273,5 +277,57 @@ describe('rbacService.createUser (парольная политика)', () => {
 
     expect(result.initialPassword).toBeUndefined();
     expect(rbacRepository.createUserWithViewerRole).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('rbacService.replaceRoleCapabilities', () => {
+  it('роль не найдена → 404', async () => {
+    (rbacRepository.findRoleById as unknown as Mock).mockResolvedValue(null);
+    await expectHttpError(rbacService.replaceRoleCapabilities('r-missing', ACTOR, ['user:read']), 404);
+  });
+
+  it('системную роль (admin) менять нельзя → 400 — защита от понижения админов', async () => {
+    (rbacRepository.findRoleById as unknown as Mock).mockResolvedValue(role('r-admin', 'admin'));
+    await expectHttpError(
+      rbacService.replaceRoleCapabilities('r-admin', ACTOR, ['user:read']),
+      400,
+    );
+    expect(rbacRepository.replaceRoleCapabilities).not.toHaveBeenCalled();
+  });
+
+  it('не массив → 400', async () => {
+    (rbacRepository.findRoleById as unknown as Mock).mockResolvedValue(role('r1', 'custom-role'));
+    await expectHttpError(rbacService.replaceRoleCapabilities('r1', ACTOR, 'user:read'), 400);
+  });
+
+  it('неизвестный код capability → 400', async () => {
+    (rbacRepository.findRoleById as unknown as Mock).mockResolvedValue(role('r1', 'custom-role'));
+    await expectHttpError(
+      rbacService.replaceRoleCapabilities('r1', ACTOR, ['user:read', 'role:assign']),
+      400,
+    );
+  });
+
+  it('happy path: дедупликация, инвалидация holder-ов, аудит, возврат актуального списка', async () => {
+    (rbacRepository.findRoleById as unknown as Mock).mockResolvedValue(role('r1', 'custom-role'));
+    (rbacRepository.findUsersByRole as unknown as Mock).mockResolvedValue(['u1', 'u2']);
+    (rbacRepository.replaceRoleCapabilities as unknown as Mock).mockResolvedValue(undefined);
+    (rbacRepository.findRoleCapabilities as unknown as Mock).mockResolvedValue(['user:create', 'user:read']);
+
+    const result = await rbacService.replaceRoleCapabilities('r1', ACTOR, ['user:read', 'user:read']);
+
+    expect(rbacRepository.replaceRoleCapabilities).toHaveBeenCalledWith('r1', ['user:read']);
+    expect(invalidateUser).toHaveBeenCalledWith('u1');
+    expect(invalidateUser).toHaveBeenCalledWith('u2');
+    expect(result).toEqual(['user:create', 'user:read']);
+    const logAudit = auditService.logAudit as unknown as Mock;
+    expect(logAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'role.caps.set',
+        targetType: 'role',
+        targetId: 'r1',
+        details: { capabilities: ['user:read'] },
+      }),
+    );
   });
 });

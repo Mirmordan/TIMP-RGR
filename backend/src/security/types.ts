@@ -5,7 +5,9 @@ export const ROLES: Role[] = ['admin', 'operator', 'viewer'];
 /**
  * Глобальные capability (системные операции управления).
  * В отличие от object-ACL (read/write/delete/stream/list на группах объектов),
- * эти capability связаны с управлением самой системой и выдаются по роли.
+ * эти capability связаны с управлением самой системой. Набор совпадает с
+ * CHECK (capability IN (...)) в таблице role_capabilities и содержит только
+ * коды, реально проверяемые requireCapability в коде.
  */
 export type Capability =
   | 'admin:read'
@@ -13,14 +15,7 @@ export type Capability =
   | 'user:create'
   | 'user:read'
   | 'user:update'
-  | 'user:delete'
-  | 'group:create'
-  | 'group:read'
-  | 'group:update'
-  | 'group:delete'
-  | 'permission:grant'
-  | 'permission:revoke'
-  | 'role:assign';
+  | 'user:delete';
 
 /**
  * Объектные действия для ACL на группах объектов.
@@ -29,29 +24,6 @@ export type Capability =
 export type ObjectAction = 'read' | 'write' | 'delete' | 'stream' | 'list';
 
 export const OBJECT_ACTIONS: ObjectAction[] = ['read', 'write', 'delete', 'stream', 'list'];
-
-/**
- * Роль -> набор системных capability.
- */
-export const ROLE_CAPABILITIES: Record<Role, Capability[]> = {
-  admin: [
-    'admin:read',
-    'admin:write',
-    'user:create',
-    'user:read',
-    'user:update',
-    'user:delete',
-    'group:create',
-    'group:read',
-    'group:update',
-    'group:delete',
-    'permission:grant',
-    'permission:revoke',
-    'role:assign',
-  ],
-  operator: [],
-  viewer: [],
-};
 
 /** Payload access-токена (короткоживущий). */
 export interface AccessTokenPayload {

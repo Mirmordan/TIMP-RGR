@@ -3,6 +3,7 @@ import type { Request, Response } from 'express';
 import { chunkService } from '../services/chunk.service';
 import { authenticate } from '../security/middleware/authenticate';
 import { requirePermission } from '../security/middleware/requirePermission';
+import { requireCapability } from '../security/middleware/requireCapability';
 
 export const chunkRouter = Router();
 
@@ -117,13 +118,13 @@ chunkRouter.get('/:id', requirePermission('read'), async (req: Request, res: Res
  *     tags: [Chunks]
  *     operationId: createChunk
  *     summary: Создание чанка
- *     description: Создаёт чанк записи. Валидирует обязательность processId и url; endedAt не может быть меньше startedAt.
+ *     description: Создаёт чанк записи. Требуется capability admin:write.
  *     requestBody:
  *       required: true
  *       content:
  *         application/json:
  *           schema:
- *             $ref: '#/components/schemas/ChunkCreate'
+ *             $ref: '#/components/schemas/ChunkPut'
  *     responses:
  *       '201':
  *         description: Чанк создан
@@ -132,7 +133,7 @@ chunkRouter.get('/:id', requirePermission('read'), async (req: Request, res: Res
  *             schema:
  *               $ref: '#/components/schemas/Chunk'
  *       '400':
- *         description: processId/url не указаны, endedAt меньше startedAt или некорректные даты
+ *         description: processId/url не указаны или endedAt меньше startedAt
  *         content:
  *           application/json:
  *             schema:
@@ -143,8 +144,14 @@ chunkRouter.get('/:id', requirePermission('read'), async (req: Request, res: Res
  *           application/json:
  *             schema:
  *               $ref: '#/components/schemas/Error'
+ *       '403':
+ *         description: Недостаточно прав (нужна capability admin:write)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  */
-chunkRouter.post('/', async (req: Request, res: Response) => {
+chunkRouter.post('/', requireCapability('admin:write'), async (req: Request, res: Response) => {
   try {
     const { processId, startedAt, endedAt, url } = req.body;
     const chunk = await chunkService.create(

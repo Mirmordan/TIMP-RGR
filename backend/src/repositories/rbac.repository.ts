@@ -1,6 +1,7 @@
 import { pool } from '../database/connection';
 import type { PoolClient } from 'pg';
 import { queryAs } from '../security/dbBridge';
+import type { Capability } from '../security/types';
 
 /**
  * Доступ к RBAC-таблицам (users, roles, user_roles, groups,
@@ -191,6 +192,55 @@ export const rbacRepository = {
       [id],
     );
     return rows[0] ?? null;
+  },
+
+  // --- Спец-права (role_capabilities) ---
+
+  /** Коды спец-прав роли (все, включая пустой набор). */
+  async findRoleCapabilities(roleId: string): Promise<string[]> {
+    const { rows } = await pool.query<{ capability: string }>(
+      `SELECT capability
+       FROM role_capabilities
+       WHERE role_id = $1
+       ORDER BY capability`,
+      [roleId],
+    );
+    return rows.map((r) => r.capability);
+  },
+
+  /** Union спец-прав пользователя по всем его ролям (для /auth/me). */
+  async findCapabilitiesByUser(userId: string): Promise<Capability[]> {
+    const { rows } = await pool.query<{ capability: Capability }>(
+      `SELECT DISTINCT rc.capability AS "capability"
+       FROM role_capabilities rc
+       JOIN user_roles ur ON ur.role_id = rc.role_id
+       WHERE ur.user_id = $1
+       ORDER BY rc.capability`,
+      [userId],
+    );
+    return rows.map((r) => r.capability);
+  },
+
+  /** Пользователи, которым выдана роль (для инвалидации кеша при смене прав роли). */
+  async findUsersByRole(roleId: string): Promise<string[]> {
+    const { rows } = await pool.query<{ userId: string }>(
+      'SELECT user_id AS "userId" FROM user_roles WHERE role_id = $1',
+      [roleId],
+    );
+    return rows.map((r) => r.userId);
+  },
+
+  /** Заменить набор спец-прав роли (транзакция: DELETE + INSERT). */
+  async replaceRoleCapabilities(roleId: string, capabilities: string[]): Promise<void> {
+    await withTransaction(async (client) => {
+      await client.query('DELETE FROM role_capabilities WHERE role_id = $1', [roleId]);
+      for (const capability of capabilities) {
+        await client.query(
+          'INSERT INTO role_capabilities (role_id, capability) VALUES ($1, $2)',
+          [roleId, capability],
+        );
+      }
+    });
   },
 
   async findRoleByName(name: string): Promise<RbacRole | null> {

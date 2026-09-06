@@ -3,6 +3,7 @@ import type { Request, Response } from 'express';
 import { deviceService } from '../services/device.service';
 import { authenticate } from '../security/middleware/authenticate';
 import { requirePermission } from '../security/middleware/requirePermission';
+import { requireCapability } from '../security/middleware/requireCapability';
 
 export const deviceRouter = Router();
 
@@ -124,7 +125,7 @@ deviceRouter.get('/:id', requirePermission('read'), async (req: Request, res: Re
  *     tags: [Devices]
  *     operationId: createDevice
  *     summary: Создание устройства
- *     description: Создаёт новое устройство записи.
+ *     description: Создаёт новое устройство записи. Требуется capability admin:write.
  *     requestBody:
  *       required: true
  *       content:
@@ -150,8 +151,14 @@ deviceRouter.get('/:id', requirePermission('read'), async (req: Request, res: Re
  *           application/json:
  *             schema:
  *               $ref: '#/components/schemas/Error'
+ *       '403':
+ *         description: Недостаточно прав (нужна capability admin:write)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  */
-deviceRouter.post('/', async (req: Request, res: Response) => {
+deviceRouter.post('/', requireCapability('admin:write'), async (req: Request, res: Response) => {
   try {
     const { name, type } = req.body;
     const device = await deviceService.create(name, type);

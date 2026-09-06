@@ -3,9 +3,9 @@ import type { Request, Response } from 'express';
 import { authService, AuthError } from './auth.service';
 import { authenticate } from './middleware/authenticate';
 import { userRepository } from '../repositories/user.repository';
+import { rbacRepository } from '../repositories/rbac.repository';
 import { pool } from '../database/connection';
 import { auditService } from '../services/audit.service';
-import { ROLE_CAPABILITIES } from './types';
 import type { Role, Capability } from './types';
 
 export const authRouter = Router();
@@ -45,14 +45,15 @@ async function fetchRole(userId: string): Promise<Role> {
   return (rows[0]?.role as Role) || 'viewer';
 }
 
-/** Единая форма сессионного ответа: полный user из БД + capabilities по роли. */
+/** Единая форма сессионного ответа: полный user из БД + актуальные capabilities (union по ролям). */
 async function authPayload(userId: string): Promise<{
   user: { id: string; username: string; email: string; createdAt: string; role: Role };
   capabilities: Capability[];
 }> {
-  const [user, role] = await Promise.all([
+  const [user, role, capabilities] = await Promise.all([
     userRepository.findById(userId),
     fetchRole(userId),
+    rbacRepository.findCapabilitiesByUser(userId),
   ]);
   if (!user) throw new Error('пользователь не найден');
   return {
@@ -63,7 +64,7 @@ async function authPayload(userId: string): Promise<{
       createdAt: user.createdAt.toISOString(),
       role,
     },
-    capabilities: ROLE_CAPABILITIES[role],
+    capabilities,
   };
 }
 
