@@ -20,7 +20,8 @@ export const streamRepository = {
 
   async create(url: string, deviceId?: string, sourceFingerprint?: string): Promise<RecordingStream> {
     return inUserContext(async (client) => {
-      const { rows: objRows } = await client.query<{ objectId: string }>(streamQueries.insert);
+      // Супертип потока: type='stream', parent_id = устройство (если привязано).
+      const { rows: objRows } = await client.query<{ objectId: string }>(streamQueries.insert, [deviceId ?? null]);
       const objectId = objRows[0]?.objectId;
       if (!objectId) throw new Error('объект не создан');
       const { rows } = await client.query<RecordingStream>(streamQueries.insertStream, [objectId, url, deviceId ?? null, sourceFingerprint ?? null]);
@@ -29,16 +30,29 @@ export const streamRepository = {
   },
 
   async put(id: string, url: string, deviceId?: string, sourceFingerprint?: string): Promise<RecordingStream | null> {
-    const { rows } = await queryAs<RecordingStream>(streamQueries.put, [url, deviceId ?? null, sourceFingerprint ?? null, id]);
-    return rows[0] ?? null;
+    return inUserContext(async (client) => {
+      const { rows } = await client.query<RecordingStream>(streamQueries.putStream, [url, deviceId ?? null, sourceFingerprint ?? null, id]);
+      const stream = rows[0];
+      if (!stream) return null;
+      // Синхронизируем родителя в супертипе при смене устройства потока.
+      await client.query(streamQueries.setParent, [deviceId ?? null, id]);
+      return stream;
+    });
   },
 
   async patch(id: string, patch: { url?: string; deviceId?: string; sourceFingerprint?: string }): Promise<RecordingStream | null> {
-    const { rows } = await queryAs<RecordingStream>(
-      streamQueries.patch,
-      [patch.url ?? null, patch.deviceId ?? null, patch.sourceFingerprint ?? null, id],
-    );
-    return rows[0] ?? null;
+    return inUserContext(async (client) => {
+      const { rows } = await client.query<RecordingStream>(
+        streamQueries.patchStream,
+        [patch.url ?? null, patch.deviceId ?? null, patch.sourceFingerprint ?? null, id],
+      );
+      const stream = rows[0];
+      if (!stream) return null;
+      if (patch.deviceId !== undefined) {
+        await client.query(streamQueries.setParent, [patch.deviceId ?? null, id]);
+      }
+      return stream;
+    });
   },
 
   async deleteById(id: string): Promise<boolean> {

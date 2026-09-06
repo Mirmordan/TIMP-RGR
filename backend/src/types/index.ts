@@ -18,14 +18,27 @@ export interface UserInput {
   username?: string;
   email?: string;
   password?: string;
-}export interface RecordingDevice {
+}
+
+/**
+ * Общие поля супертипа objects, наследуемые доменными сущностями.
+ * name/description — эффективные (резолвятся по цепочке parent_id);
+ * parentObjectId — id родительского объекта (objects.parent_id).
+ */
+export interface CommonObjectMeta {
+  name?: string | null;
+  description?: string | null;
+  parentObjectId?: string | null;
+}
+
+export interface RecordingDevice extends CommonObjectMeta {
   id: string;
   name: string;
   type: string;
   createdAt: Date;
 }
 
-export interface RecordingStream {
+export interface RecordingStream extends CommonObjectMeta {
   id: string;
   url: string;
   deviceId?: string;
@@ -33,7 +46,7 @@ export interface RecordingStream {
   createdAt: Date;
 }
 
-export interface RecordingProcess {
+export interface RecordingProcess extends CommonObjectMeta {
   id: string;
   streamId: string;
   startedAt: Date;
@@ -42,7 +55,7 @@ export interface RecordingProcess {
   createdAt: Date;
 }
 
-export interface RecordingChunk {
+export interface RecordingChunk extends CommonObjectMeta {
   id: string;
   processId: string;
   startedAt: Date;
@@ -51,7 +64,7 @@ export interface RecordingChunk {
   createdAt: Date;
 }
 
-export interface RecordingSegment {
+export interface RecordingSegment extends CommonObjectMeta {
   id: string;
   processId: string;
   streamId: string;

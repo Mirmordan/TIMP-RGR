@@ -41,7 +41,8 @@ export const processRepository = {
 
   async create(streamId: string, startedAt: Date, status: string): Promise<RecordingProcess> {
     return inUserContext(async (client) => {
-      const { rows: objRows } = await client.query<{ objectId: string }>(processQueries.insert);
+      // Супертип процесса: type='process', parent_id = поток.
+      const { rows: objRows } = await client.query<{ objectId: string }>(processQueries.insert, [streamId]);
       const objectId = objRows[0]?.objectId;
       if (!objectId) throw new Error('объект не создан');
       const { rows } = await client.query<RecordingProcess>(processQueries.insertProcess, [
@@ -52,25 +53,38 @@ export const processRepository = {
   },
 
   async put(id: string, streamId: string, startedAt: Date, endedAt: Date | null, status: string): Promise<RecordingProcess | null> {
-    const { rows } = await queryAs<RecordingProcess>(processQueries.put, [
-      streamId, startedAt.toISOString(), endedAt?.toISOString() ?? null, status, id,
-    ]);
-    return rows[0] ?? null;
+    return inUserContext(async (client) => {
+      const { rows } = await client.query<RecordingProcess>(processQueries.putProcess, [
+        streamId, startedAt.toISOString(), endedAt?.toISOString() ?? null, status, id,
+      ]);
+      const process = rows[0];
+      if (!process) return null;
+      // Синхронизируем родителя в супертипе при смене потока.
+      await client.query(processQueries.setParent, [streamId, id]);
+      return process;
+    });
   },
 
   async patch(id: string, patch: { streamId?: string; startedAt?: Date; endedAt?: Date; endedAtClear?: boolean; status?: string }): Promise<RecordingProcess | null> {
-    const { rows } = await queryAs<RecordingProcess>(
-      processQueries.patch,
-      [
-        patch.streamId ?? null,
-        patch.startedAt?.toISOString() ?? null,
-        patch.endedAtClear ?? false,
-        patch.endedAt?.toISOString() ?? null,
-        patch.status ?? null,
-        id,
-      ],
-    );
-    return rows[0] ?? null;
+    return inUserContext(async (client) => {
+      const { rows } = await client.query<RecordingProcess>(
+        processQueries.patchProcess,
+        [
+          patch.streamId ?? null,
+          patch.startedAt?.toISOString() ?? null,
+          patch.endedAtClear ?? false,
+          patch.endedAt?.toISOString() ?? null,
+          patch.status ?? null,
+          id,
+        ],
+      );
+      const process = rows[0];
+      if (!process) return null;
+      if (patch.streamId !== undefined) {
+        await client.query(processQueries.setParent, [patch.streamId ?? null, id]);
+      }
+      return process;
+    });
   },
 
   async deleteById(id: string): Promise<boolean> {

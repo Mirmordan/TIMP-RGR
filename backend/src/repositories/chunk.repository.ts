@@ -20,7 +20,8 @@ export const chunkRepository = {
 
   async create(processId: string, startedAt: Date, endedAt: Date, url: string): Promise<RecordingChunk> {
     return inUserContext(async (client) => {
-      const { rows: objRows } = await client.query<{ objectId: string }>(chunkQueries.insert);
+      // Супертип чанка: type='chunk', parent_id = процесс.
+      const { rows: objRows } = await client.query<{ objectId: string }>(chunkQueries.insert, [processId]);
       const objectId = objRows[0]?.objectId;
       if (!objectId) throw new Error('объект не создан');
       const { rows } = await client.query<RecordingChunk>(chunkQueries.insertChunk, [
@@ -31,24 +32,36 @@ export const chunkRepository = {
   },
 
   async put(id: string, processId: string, startedAt: Date, endedAt: Date, url: string): Promise<RecordingChunk | null> {
-    const { rows } = await queryAs<RecordingChunk>(chunkQueries.put, [
-      processId, startedAt.toISOString(), endedAt.toISOString(), url, id,
-    ]);
-    return rows[0] ?? null;
+    return inUserContext(async (client) => {
+      const { rows } = await client.query<RecordingChunk>(chunkQueries.put, [
+        processId, startedAt.toISOString(), endedAt.toISOString(), url, id,
+      ]);
+      const chunk = rows[0];
+      if (!chunk) return null;
+      await client.query(chunkQueries.setParent, [processId, id]);
+      return chunk;
+    });
   },
 
   async patch(id: string, patch: { processId?: string; startedAt?: Date; endedAt?: Date; url?: string }): Promise<RecordingChunk | null> {
-    const { rows } = await queryAs<RecordingChunk>(
-      chunkQueries.patch,
-      [
-        patch.processId ?? null,
-        patch.startedAt?.toISOString() ?? null,
-        patch.endedAt?.toISOString() ?? null,
-        patch.url ?? null,
-        id,
-      ],
-    );
-    return rows[0] ?? null;
+    return inUserContext(async (client) => {
+      const { rows } = await client.query<RecordingChunk>(
+        chunkQueries.patch,
+        [
+          patch.processId ?? null,
+          patch.startedAt?.toISOString() ?? null,
+          patch.endedAt?.toISOString() ?? null,
+          patch.url ?? null,
+          id,
+        ],
+      );
+      const chunk = rows[0];
+      if (!chunk) return null;
+      if (patch.processId !== undefined) {
+        await client.query(chunkQueries.setParent, [patch.processId, id]);
+      }
+      return chunk;
+    });
   },
 
   async deleteById(id: string): Promise<boolean> {

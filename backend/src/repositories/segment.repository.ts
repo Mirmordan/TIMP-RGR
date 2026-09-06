@@ -44,7 +44,8 @@ export const segmentRepository = {
     sizeBytes: number;
   }): Promise<RecordingSegment> {
     return inUserContext(async (client) => {
-      const { rows: objRows } = await client.query<{ objectId: string }>(segmentQueries.insert);
+      // Супертип сегмента: type='segment', parent_id = процесс.
+      const { rows: objRows } = await client.query<{ objectId: string }>(segmentQueries.insert, [data.processId]);
       const objectId = objRows[0]?.objectId;
       if (!objectId) throw new Error('объект не создан');
       const { rows } = await client.query<RecordingSegment>(segmentQueries.insertSegment, [

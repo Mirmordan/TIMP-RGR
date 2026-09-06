@@ -28,8 +28,11 @@ describe('поиск q: SQL-параметры списочных репозит
     await deviceRepository.count('Вход');
     expect(queryAs).toHaveBeenCalledWith(deviceQueries.count, ['Вход']);
 
-    expect(deviceQueries.findAll).toContain("d.name ILIKE '%' || $3 || '%'");
-    expect(deviceQueries.count).toContain("d.name ILIKE '%' || $1 || '%'");
+    // q ищет по общему objects.name/description (эффективному названию устройства).
+    expect(deviceQueries.findAll).toContain('JOIN objects o ON o.id = d.object_id');
+    expect(deviceQueries.findAll).toContain("COALESCE(NULLIF(o.name, ''), d.name) ILIKE '%' || $3 || '%'");
+    expect(deviceQueries.findAll).toContain("o.description ILIKE '%' || $3 || '%'");
+    expect(deviceQueries.count).toContain("COALESCE(NULLIF(o.name, ''), d.name) ILIKE '%' || $1 || '%'");
 
     await deviceRepository.findAll(20, 0);
     expect(queryAs).toHaveBeenCalledWith(deviceQueries.findAll, [20, 0, null]);
@@ -37,7 +40,7 @@ describe('поиск q: SQL-параметры списочных репозит
     expect(queryAs).toHaveBeenCalledWith(deviceQueries.count, [null]);
   });
 
-  it('stream: q ищет по s.url ИЛИ имени устройства (LEFT JOIN recording_devices)', async () => {
+  it('stream: q ищет по url ИЛИ эффективному названию (objects.name → имя устройства)', async () => {
     await streamRepository.findAll(10, 0, 'камера');
     expect(queryAs).toHaveBeenCalledWith(streamQueries.findAll, [10, 0, 'камера']);
     await streamRepository.count('камера');
@@ -45,7 +48,8 @@ describe('поиск q: SQL-параметры списочных репозит
 
     expect(streamQueries.findAll).toContain('LEFT JOIN recording_devices d ON d.object_id = s.device_id');
     expect(streamQueries.findAll).toContain("s.url ILIKE '%' || $3 || '%'");
-    expect(streamQueries.findAll).toContain("d.name ILIKE '%' || $3 || '%'");
+    expect(streamQueries.findAll).toContain("COALESCE(NULLIF(o.name, ''), d.name) ILIKE '%' || $3 || '%'");
+    expect(streamQueries.findAll).toContain("o.description ILIKE '%' || $3 || '%'");
     expect(streamQueries.count).toContain("s.url ILIKE '%' || $1 || '%'");
 
     await streamRepository.findAll(10, 0);
@@ -54,7 +58,7 @@ describe('поиск q: SQL-параметры списочных репозит
     expect(queryAs).toHaveBeenCalledWith(streamQueries.count, [null]);
   });
 
-  it('process: q ищет по id процесса, url потока и имени устройства', async () => {
+  it('process: q ищет по id процесса, url потока и эффективному названию (objects процесса или устройства)', async () => {
     await processRepository.findAll(10, 0, 'ivideon');
     expect(queryAs).toHaveBeenCalledWith(processQueries.findAll, [10, 0, 'ivideon']);
     await processRepository.count('ivideon');
@@ -64,7 +68,9 @@ describe('поиск q: SQL-параметры списочных репозит
     expect(processQueries.findAll).toContain('LEFT JOIN recording_devices d ON d.object_id = s.device_id');
     expect(processQueries.findAll).toContain("p.object_id::text ILIKE '%' || $3 || '%'");
     expect(processQueries.findAll).toContain("s.url ILIKE '%' || $3 || '%'");
-    expect(processQueries.count).toContain("d.name ILIKE '%' || $1 || '%'");
+    expect(processQueries.findAll).toContain("COALESCE(NULLIF(po.name, ''), d.name) ILIKE '%' || $3 || '%'");
+    expect(processQueries.findAll).toContain("po.description ILIKE '%' || $3 || '%'");
+    expect(processQueries.count).toContain("COALESCE(NULLIF(po.name, ''), d.name) ILIKE '%' || $1 || '%'");
 
     await processRepository.findAll(10, 0);
     expect(queryAs).toHaveBeenCalledWith(processQueries.findAll, [10, 0, null]);

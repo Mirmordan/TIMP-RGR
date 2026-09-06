@@ -23,7 +23,10 @@ export const incidentRepository = {
     createdBy: string;
   }): Promise<RecordingIncident> {
     return inUserContext(async (client) => {
-      const { rows: objRows } = await client.query<{ objectId: string }>(incidentQueries.insert);
+      // Common metadata инцидента (title/description/parent-process) пишем в objects.
+      const { rows: objRows } = await client.query<{ objectId: string }>(incidentQueries.insert, [
+        data.title, data.description ?? null, data.processId,
+      ]);
       const objectId = objRows[0]?.objectId;
       if (!objectId) throw new Error('объект не создан');
       const { rows } = await client.query<RecordingIncident>(incidentQueries.insertIncident, [
@@ -36,14 +39,33 @@ export const incidentRepository = {
   },
 
   async deleteById(id: string): Promise<boolean> {
-    const result = await queryAs(incidentQueries.deleteById, [id]);
-    return (result.rowCount ?? 0) > 0;
+    return inUserContext(async (client) => {
+      // recording_incidents.object_id не FK на objects: удаляем и доменную строку,
+      // и супертип — иначе остаётся orphan (инцидент без объекта / объект без строки).
+      const del = await client.query(incidentQueries.deleteIncident, [id]);
+      if ((del.rowCount ?? 0) === 0) return false;
+      await client.query(incidentQueries.deleteObject, [id]);
+      return true;
+    });
   },
 
   async updateById(id: string, patch: { title?: string; description?: string | null; severity?: string; timeOffsetS?: number }): Promise<RecordingIncident | null> {
-    const { rows } = await queryAs<RecordingIncident>(incidentQueries.updateById, [
-      id, patch.title ?? null, patch.description ?? null, patch.severity ?? null, patch.timeOffsetS ?? null,
-    ]);
-    return rows[0] ?? null;
+    return inUserContext(async (client) => {
+      // Текущее эффективное значение (из objects, с fallback на зеркальные столбцы).
+      const cur = (await client.query<RecordingIncident>(incidentQueries.findById, [id])).rows[0];
+      if (!cur) return null;
+      // Итоговые значения общих полей (семантика PATCH как у recording_incidents:
+      // description не задан — сброс в NULL; title не задан — остаётся прежним).
+      const title = patch.title ?? cur.title;
+      const description = patch.description !== undefined ? patch.description : null;
+      const { rows } = await client.query<RecordingIncident>(incidentQueries.updateById, [
+        id, patch.title ?? null, patch.description ?? null, patch.severity ?? null, patch.timeOffsetS ?? null,
+      ]);
+      const updated = rows[0] ?? null;
+      if (updated) {
+        await client.query(incidentQueries.setMeta, [title, description, id]);
+      }
+      return updated;
+    });
   },
 };

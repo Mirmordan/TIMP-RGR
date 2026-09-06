@@ -1,60 +1,67 @@
+/**
+ * SELECT сегмента с общими метаданными супертипа. Резолюция name/description
+ * fail-closed: собственное — objects сегмента; унаследованное — только через
+ * RLS-доменные таблицы (recording_processes → recording_streams →
+ * recording_devices). Невидимый пользователю родитель не отдаёт метаданных.
+ * parentObjectId = s.process_id (уже видимое поле сегмента).
+ */
+const segmentNameExpr = "COALESCE(NULLIF(o.name, ''), NULLIF(po.name, ''), d.name)";
+const segmentDescExpr = "COALESCE(NULLIF(o.description, ''), po.description)";
+
+const segmentJoins = `
+  JOIN objects o ON o.id = s.object_id
+  LEFT JOIN recording_processes p ON p.object_id = s.process_id
+  LEFT JOIN objects po ON po.id = p.object_id
+  LEFT JOIN recording_streams st ON st.object_id = p.stream_id
+  LEFT JOIN recording_devices d ON d.object_id = st.device_id
+`;
+
+const segmentSelect = `
+  s.object_id AS "id", s.process_id AS "processId",
+  s.stream_id AS "streamId", s.path,
+  s.started_at AS "startedAt", s.ended_at AS "endedAt",
+  s.file_count AS "fileCount", s.duration_s AS "durationS",
+  s.size_bytes AS "sizeBytes",
+  ${segmentNameExpr} AS "name",
+  ${segmentDescExpr} AS "description",
+  s.process_id AS "parentObjectId",
+  o.created_at AS "createdAt"
+`;
+
 export const segmentQueries = {
-  findById: `SELECT s.object_id AS "id", s.process_id AS "processId",
-                    s.stream_id AS "streamId", s.path,
-                    s.started_at AS "startedAt", s.ended_at AS "endedAt",
-                    s.file_count AS "fileCount", s.duration_s AS "durationS",
-                    s.size_bytes AS "sizeBytes",
-                    o.created_at AS "createdAt"
+  findById: `SELECT ${segmentSelect}
              FROM recording_segments s
-             JOIN objects o ON o.id = s.object_id
+             ${segmentJoins}
              WHERE s.object_id = $1`,
 
-  findAll: `SELECT s.object_id AS "id", s.process_id AS "processId",
-                   s.stream_id AS "streamId", s.path,
-                   s.started_at AS "startedAt", s.ended_at AS "endedAt",
-                   s.file_count AS "fileCount", s.duration_s AS "durationS",
-                   s.size_bytes AS "sizeBytes",
-                   o.created_at AS "createdAt"
+  findAll: `SELECT ${segmentSelect}
             FROM recording_segments s
-            JOIN objects o ON o.id = s.object_id
+            ${segmentJoins}
             ORDER BY s.started_at DESC
             LIMIT $1 OFFSET $2`,
 
   count: `SELECT COUNT(*)::int AS "total" FROM recording_segments`,
 
-  findByTimeRange: `SELECT s.object_id AS "id", s.process_id AS "processId",
-                           s.stream_id AS "streamId", s.path,
-                           s.started_at AS "startedAt", s.ended_at AS "endedAt",
-                           s.file_count AS "fileCount", s.duration_s AS "durationS",
-                           s.size_bytes AS "sizeBytes",
-                           o.created_at AS "createdAt"
+  findByTimeRange: `SELECT ${segmentSelect}
                     FROM recording_segments s
-                    JOIN objects o ON o.id = s.object_id
+                    ${segmentJoins}
                     WHERE s.started_at <= $2 AND s.ended_at >= $1
                     ORDER BY s.started_at`,
 
-  findByProcess: `SELECT s.object_id AS "id", s.process_id AS "processId",
-                         s.stream_id AS "streamId", s.path,
-                         s.started_at AS "startedAt", s.ended_at AS "endedAt",
-                         s.file_count AS "fileCount", s.duration_s AS "durationS",
-                         s.size_bytes AS "sizeBytes",
-                         o.created_at AS "createdAt"
+  findByProcess: `SELECT ${segmentSelect}
                   FROM recording_segments s
-                  JOIN objects o ON o.id = s.object_id
+                  ${segmentJoins}
                   WHERE s.process_id = $1`,
 
-  findByStream: `SELECT s.object_id AS "id", s.process_id AS "processId",
-                        s.stream_id AS "streamId", s.path,
-                        s.started_at AS "startedAt", s.ended_at AS "endedAt",
-                        s.file_count AS "fileCount", s.duration_s AS "durationS",
-                        s.size_bytes AS "sizeBytes",
-                        o.created_at AS "createdAt"
+  findByStream: `SELECT ${segmentSelect}
                  FROM recording_segments s
-                 JOIN objects o ON o.id = s.object_id
+                 ${segmentJoins}
                  WHERE s.stream_id = $1
                  ORDER BY s.started_at DESC`,
 
-  insert: `INSERT INTO objects DEFAULT VALUES RETURNING id AS "objectId"`,
+  // Супертип сегмента: type='segment', parent_id = процесс.
+  insert: `INSERT INTO objects (type, parent_id) VALUES ('segment', $1)
+           RETURNING id AS "objectId"`,
 
   insertSegment: `INSERT INTO recording_segments
                   (object_id, process_id, stream_id, path, started_at, ended_at, file_count, duration_s, size_bytes)

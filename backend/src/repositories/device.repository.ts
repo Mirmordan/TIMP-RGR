@@ -20,7 +20,8 @@ export const deviceRepository = {
 
   async create(name: string, type: string): Promise<RecordingDevice> {
     return inUserContext(async (client) => {
-      const { rows: objRows } = await client.query<{ objectId: string }>(deviceQueries.insert);
+      // Common metadata (name) пишем в objects.type/name — супертип устройства.
+      const { rows: objRows } = await client.query<{ objectId: string }>(deviceQueries.insert, [name]);
       const objectId = objRows[0]?.objectId;
       if (!objectId) throw new Error('объект не создан');
       const { rows } = await client.query<RecordingDevice>(deviceQueries.insertDevice, [objectId, name, type]);
@@ -29,16 +30,26 @@ export const deviceRepository = {
   },
 
   async put(id: string, name: string, type: string): Promise<RecordingDevice | null> {
-    const { rows } = await queryAs<RecordingDevice>(deviceQueries.put, [name, type, id]);
-    return rows[0] ?? null;
+    return inUserContext(async (client) => {
+      const { rows } = await client.query<RecordingDevice>(deviceQueries.putDevice, [name, type, id]);
+      const device = rows[0];
+      if (!device) return null;
+      await client.query(deviceQueries.setMeta, [name, null, id]);
+      return device;
+    });
   },
 
   async patch(id: string, patch: { name?: string; type?: string }): Promise<RecordingDevice | null> {
-    const { rows } = await queryAs<RecordingDevice>(
-      deviceQueries.patch,
-      [patch.name ?? null, patch.type ?? null, id],
-    );
-    return rows[0] ?? null;
+    return inUserContext(async (client) => {
+      const { rows } = await client.query<RecordingDevice>(
+        deviceQueries.patchDevice,
+        [patch.name ?? null, patch.type ?? null, id],
+      );
+      const device = rows[0];
+      if (!device) return null;
+      await client.query(deviceQueries.setMeta, [patch.name ?? null, null, id]);
+      return device;
+    });
   },
 
   async deleteById(id: string): Promise<boolean> {
