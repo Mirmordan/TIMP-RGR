@@ -210,7 +210,7 @@ export function ProcessDetailPage() {
       <div className={styles.playerSection}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 'var(--space-4)' }}>
           <h2 className={styles.sectionTitle} style={{ marginTop: 0, marginBottom: 0 }}>
-            {isRunning ? 'Прямая трансляция' : 'Просмотр записи'}
+            {isRunning && !forceArchive ? 'Прямая трансляция' : 'Просмотр записи'}
           </h2>
           {isRunning && (
             <div className={viewStyles.viewToggle}>

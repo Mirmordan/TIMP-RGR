@@ -8,6 +8,13 @@ import type { TimelineData, TimelineSegment as Segment } from '../../types';
 // Preroll: сколько чанков (≈TARGETDURATION 2с) держаться за live-edge,
 // чтобы старт не упирался ровно в последний (ещё пишущийся) чанк.
 const LIVE_SYNC_DURATION_COUNT = 2;
+// LIVE_TAIL_S: окно EVENT-плейлиста открытого сегмента — стартуем за N секунд до
+// живого хвоста (?start=anchor), чтобы манифест оставался маленьким и hls.js
+// корректно синкался к edge, а не начинал с чанка 0 многотысячного манифеста.
+const LIVE_TAIL_S = 120;
+// LIVE_REANCHOR_AFTER_S: когда с момента создания инстанса отыграло больше этого
+// времени, окно (?start= заморожен) снова выросло — «мягкий» ре-якорь к хвосту.
+const LIVE_REANCHOR_AFTER_S = 600;
 const TIMELINE_POLL_MS = 5000;
 // Watch-цикл recovery: каждые WATCH_MS проверяем «живость» воспроизведения.
 const WATCH_MS = 2000;
@@ -29,6 +36,12 @@ export function LiveViewer({ processId }: LiveViewerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const hlsRef = useRef<Hls | null>(null);
   const segIdRef = useRef<string | null>(null);
+  // anchor (сек от startedAt сегмента) активного инстанса: старт окна ?start=,
+  // база таймкода «в эфире» в 1с-тикере.
+  const anchorRef = useRef(0);
+  // Ре-якорь в полёте (destroy + новый инстанс): до MANIFEST_PARSED/LEVEL_LOADED
+  // не триггерим повторный ре-якорь и не мешаем recovery-счётчиками.
+  const reAnchoringRef = useRef(false);
   const emptyPollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const userPausedRef = useRef(false);
   const autoplayBlockedRef = useRef(false);
@@ -114,13 +127,14 @@ export function LiveViewer({ processId }: LiveViewerProps) {
         setEdgeClock(`${hh}:${mm}:${ss}`);
       }
 
-      // Абсолютное время видимого кадра = startedAt открытого сегмента + video.currentTime.
+      // Абсолютное время видимого кадра = startedAt открытого сегмента +
+      // (anchor окна инстанса + video.currentTime).
       const startedAt = openSegStartedAtRef.current;
       const v = videoRef.current;
       if (startedAt && v && v.currentTime > 0 && !noSignalRef.current && !emptyWaitRef.current) {
         const startMs = new Date(startedAt).getTime();
         if (Number.isFinite(startMs)) {
-          const frameMs = startMs + v.currentTime * 1000;
+          const frameMs = startMs + (anchorRef.current + v.currentTime) * 1000;
           const d = new Date(frameMs);
           const date = `${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')}.${d.getFullYear()}`;
           const clock = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}`;
@@ -193,8 +207,19 @@ export function LiveViewer({ processId }: LiveViewerProps) {
     setLoading(true);
     setPlaying(false);
 
-    const base = `/api/v1/segments/${segId}/playlist`;
-    const src = cacheBust ? `${base}?t=${Date.now()}` : base;
+    // Окно EVENT-плейлиста открытого сегмента: манифест от чанка, накрывающего
+    // startedAt + anchor (anchor отстаёт от живого хвоста на LIVE_TAIL_S).
+    // Query заморожен на время жизни инстанса → firstIndex стабилен, hls.js видит
+    // небольшой живой манифест и синкается к edge вместо старта с чанка 0.
+    let anchorS = 0;
+    if (openSeg && openSeg.id === segId) {
+      const segStartMs = new Date(openSeg.startedAt).getTime();
+      if (Number.isFinite(segStartMs)) {
+        anchorS = Math.max(0, Math.floor((Date.now() - segStartMs) / 1000) - LIVE_TAIL_S);
+      }
+    }
+    anchorRef.current = anchorS;
+    const src = `/api/v1/segments/${segId}/playlist?start=${anchorS}${cacheBust ? `&t=${Date.now()}` : ''}`;
 
     if (Hls.isSupported()) {
       const hls = new Hls({
@@ -215,6 +240,7 @@ export function LiveViewer({ processId }: LiveViewerProps) {
       const giveUp = () => {
         // Fatal за лимитом: гасим инстанс — сторожевик (или клик по оверлею)
         // пересоздаст его с cache-buster'ом через RETRY_AFTER_FATAL_MS.
+        reAnchoringRef.current = false;
         setNoSignal(true);
         setLoading(false);
         setPlaying(false);
@@ -226,6 +252,7 @@ export function LiveViewer({ processId }: LiveViewerProps) {
       };
 
       hls.on(Hls.Events.MANIFEST_PARSED, () => {
+        reAnchoringRef.current = false;
         resetHealth();
         setLoading(false);
         setEmptyWait(false);
@@ -233,6 +260,7 @@ export function LiveViewer({ processId }: LiveViewerProps) {
       });
 
       hls.on(Hls.Events.LEVEL_LOADED, (_e, data) => {
+        reAnchoringRef.current = false;
         resetHealth();
         const frags = data?.details?.fragments?.length ?? 0;
         setLoading(false);
@@ -333,8 +361,23 @@ export function LiveViewer({ processId }: LiveViewerProps) {
 
       if (healthy) {
         stallStreakRef.current = 0;
+        // Окно EVENT-плейлиста (?start= заморожен) с момента создания инстанса
+        // отыграло > LIVE_REANCHOR_AFTER_S и снова выросло — «мягкий» ре-якорь:
+        // destroy + пересоздание от свежего хвоста (новый anchor от текущего
+        // now и ТЕКУЩЕГО открытого сегмента). До MANIFEST_PARSED/LEVEL_LOADED
+        // нового инстанса флаг reAnchoringRef не даёт долбить повторно.
+        if (!reAnchoringRef.current && openSeg && v.currentTime > LIVE_REANCHOR_AFTER_S) {
+          reAnchoringRef.current = true;
+          stallStreakRef.current = 0;
+          fatalNetRef.current = 0;
+          retryAtRef.current = 0;
+          startHlsRef.current(openSeg.id, false);
+        }
         return;
       }
+
+      // Ре-якорь в полёте (новый инстанс грузится): не мешаем recovery-счётчиками.
+      if (reAnchoringRef.current) return;
 
       stallStreakRef.current += 1;
       if (stallStreakRef.current >= STALL_RECREATE_CYCLES) {
