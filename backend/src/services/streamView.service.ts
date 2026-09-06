@@ -21,6 +21,9 @@ import { mediaManager } from '../media/mediaManager';
 export const VIEW_TTL_S = 90;
 const VIEW_TTL_MS = VIEW_TTL_S * 1000;
 
+/** Задержка перед фактическим removePath при stopView (grace для StrictMode double-mount). */
+export const PENDING_CLOSE_MS = 10000;
+
 export type StreamViewResult = {
   hlsUrl: string;
   source: 'process' | 'view';
@@ -30,6 +33,8 @@ export type StreamViewResult = {
 interface Session {
   timer: ReturnType<typeof setTimeout>;
   streamUrl: string;
+  /** Не-null когда stopView запланировал удаление; openView отменяет этот таймер. */
+  closeTimer?: ReturnType<typeof setTimeout>;
 }
 
 /** view_<streamId> — имя пути в медиа-сервисе (uuid полностью, безопасно). */
@@ -67,6 +72,7 @@ function clearSession(name: string): void {
   const session = sessions.get(name);
   if (!session) return;
   clearTimeout(session.timer);
+  if (session.closeTimer) clearTimeout(session.closeTimer);
   sessions.delete(name);
 }
 
@@ -74,12 +80,22 @@ async function expireSession(name: string, timer: ReturnType<typeof setTimeout>)
   const session = sessions.get(name);
   // Устаревший таймер (после refresh от нового POST) — не гасим свежую сессию.
   if (!session || session.timer !== timer) return;
+  if (session.closeTimer) clearTimeout(session.closeTimer);
   clearTimeout(session.timer);
   sessions.delete(name);
   await removeViewPath(name, session.streamUrl);
 }
 
-/** Поднять view-путь (если ещё нет) и продлить TTL-сессию. */
+/** Таймер отложенного удаления (stopView). Если TTL истекает раньше — expireSession возьмёт верх. */
+async function closeSession(name: string, closeTimer: ReturnType<typeof setTimeout>): Promise<void> {
+  const session = sessions.get(name);
+  if (!session || session.closeTimer !== closeTimer) return;
+  clearTimeout(session.timer);
+  sessions.delete(name);
+  await removeViewPath(name, session.streamUrl);
+}
+
+/** Поднять view-путь (если ещё нет) и продлить TTL-сессию. Отменяет pending close. */
 async function ensureViewPath(streamId: string, streamUrl: string, sourceFingerprint?: string): Promise<void> {
   const name = viewName(streamId);
   if (!sessions.has(name)) {
@@ -93,17 +109,25 @@ async function ensureViewPath(streamId: string, streamUrl: string, sourceFingerp
     }
   }
   const prev = sessions.get(name);
-  if (prev) clearTimeout(prev.timer);
+  if (prev) {
+    clearTimeout(prev.timer);
+    // Отменяем запланированное удаление (stopView).
+    if (prev.closeTimer) {
+      clearTimeout(prev.closeTimer);
+      delete prev.closeTimer;
+    }
+  }
   const timer = setTimeout(() => { void expireSession(name, timer); }, VIEW_TTL_MS);
   sessions.set(name, { timer, streamUrl });
 }
 
-/** Остановить живую view-сессию потока (переход на process-путь записи). */
+/** Остановить живую view-сессию потока (переход на process-путь записи или немедленный стоп). */
 async function stopSession(streamId: string): Promise<void> {
   const name = viewName(streamId);
   const session = sessions.get(name);
   if (!session) return; // записи живут на process-пути — view-сессии нет
   clearTimeout(session.timer);
+  if (session.closeTimer) clearTimeout(session.closeTimer);
   sessions.delete(name);
   await removeViewPath(name, session.streamUrl);
 }
@@ -141,13 +165,32 @@ export const streamViewService = {
     };
   },
 
-  /** Немедленный stop view-сессии (DELETE /streams/:id/view). Идемпотентен. */
+  /**
+   * Остановить view-сессию потока с отложенным removePath (PENDING_CLOSE_MS).
+   * Повторный POST /view отменяет отложенное удаление (через ensureViewPath).
+   * Идемпотентен: если сессии нет — 204 без removePath.
+   */
   async stopView(streamId: string): Promise<void> {
-    await stopSession(streamId);
+    const name = viewName(streamId);
+    const session = sessions.get(name);
+    if (!session) return;
+    // Уже запланировано закрытие — повторный DELETE идемпотентен.
+    if (session.closeTimer) return;
+    const closeTimer = setTimeout(() => { void closeSession(name, closeTimer); }, PENDING_CLOSE_MS);
+    session.closeTimer = closeTimer;
   },
 
   /** Кол-во живых view-сессий (для тестов/диагностики). */
   activeSessions(): number {
     return sessions.size;
+  },
+
+  /** Сброс Map (только для тестов). */
+  _resetSessions(): void {
+    for (const [, s] of sessions) {
+      clearTimeout(s.timer);
+      if (s.closeTimer) clearTimeout(s.closeTimer);
+    }
+    sessions.clear();
   },
 };

@@ -13,6 +13,7 @@ import { DeviceDetailPage } from './pages/DeviceDetailPage';
 import { DeviceEditPage } from './pages/DeviceEditPage';
 import { StreamsPage } from './pages/StreamsPage';
 import { StreamDetailPage } from './pages/StreamDetailPage';
+import { StreamLivePage } from './pages/StreamLivePage';
 import { StreamEditPage } from './pages/StreamEditPage';
 import { ProcessesPage } from './pages/ProcessesPage';
 import { ProcessDetailPage } from './pages/ProcessDetailPage';
@@ -42,6 +43,7 @@ function AppRoutes() {
       <Route path="/devices/:id" element={<ProtectedRoute><DeviceDetailPage /></ProtectedRoute>} />
       <Route path="/devices/:id/edit" element={<ProtectedRoute><DeviceEditPage /></ProtectedRoute>} />
       <Route path="/streams" element={<ProtectedRoute><StreamsPage /></ProtectedRoute>} />
+      <Route path="/streams/:id/live" element={<ProtectedRoute><StreamLivePage /></ProtectedRoute>} />
       <Route path="/streams/:id" element={<ProtectedRoute><StreamDetailPage /></ProtectedRoute>} />
       <Route path="/streams/:id/edit" element={<ProtectedRoute><StreamEditPage /></ProtectedRoute>} />
       <Route path="/processes" element={<ProtectedRoute><ProcessesPage /></ProtectedRoute>} />

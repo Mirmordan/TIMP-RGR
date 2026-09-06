@@ -1,9 +1,9 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import Hls from 'hls.js';
 import { Button } from '../Button/Button';
 import { apiFetch } from '../../api';
 import styles from './LiveViewer.module.css';
-import type { TimelineData, TimelineSegment as Segment } from '../../types';
+import type { TimelineData, TimelineSegment as Segment, StreamViewResult } from '../../types';
 
 // Живой HLS ffmpeg-manager'а (2с-сегменты, скользящее окно list_size 8, no-store).
 // Источник не зависит от «открытого» VOD-сегмента — таймлайн-полл ниже нужен
@@ -17,6 +17,13 @@ const EDGE_PREROLL_S = 2;
 // — без лимита многочасовой эфир накапливает гигабайты в памяти вкладки.
 const BACK_BUFFER_S = 30;
 const TIMELINE_POLL_MS = 5000;
+// Heartbeat view-сессии (просмотр потока без записи): каждый POST продлевает TTL=90с
+// на бэкенде — держим интервал заметно меньше TTL.
+const VIEW_HEARTBEAT_MS = 30000;
+// После POST /streams/:id/view ждём, пока манифест реально появится (ffm/MTX пишет ~5-8с).
+// Перед стартом hls.js крутим poll, чтобы не получить 404 на первом же loadSource.
+const VIEW_MANIFEST_POLL_MS = 1000;
+const VIEW_MANIFEST_POLL_MAX = 15;
 // Watch-цикл recovery: каждые WATCH_MS проверяем «живость» воспроизведения.
 const WATCH_MS = 2000;
 // N плохих циклов подряд → hls.recoverMediaError().
@@ -28,11 +35,31 @@ const FATAL_NET_LIMIT = 3;
 // Пауза перед автоматической попыткой пересоздать инстанс после fatal-сдачи.
 const RETRY_AFTER_FATAL_MS = 8000;
 
-interface LiveViewerProps {
-  processId: string;
+/** Поллить HLS-манифест пока не отдаст 200 или кончатся попытки. */
+async function pollManifest(url: string, isCancelled: () => boolean): Promise<boolean> {
+  for (let i = 0; i < VIEW_MANIFEST_POLL_MAX; i++) {
+    if (isCancelled()) return false;
+    try {
+      const r = await fetch(url, { cache: 'no-store' });
+      if (r.ok) return true;
+    } catch {
+      // сетевой сбой — продолжаем поллить
+    }
+    await new Promise(r => setTimeout(r, VIEW_MANIFEST_POLL_MS));
+  }
+  return false;
 }
 
-export function LiveViewer({ processId }: LiveViewerProps) {
+interface LiveViewerProps {
+  /** Режим записи: HLS живого process-пути + timeline-гейт «эфир/завершён». */
+  processId?: string;
+  /** Режим просмотра потока без записи: POST /streams/:id/view → hlsUrl + heartbeat. */
+  view?: { streamId: string };
+}
+
+export function LiveViewer({ processId, view }: LiveViewerProps) {
+  const isViewMode = !!view;
+  const viewStreamId = view?.streamId ?? null;
   const rootRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const hlsRef = useRef<Hls | null>(null);
@@ -49,6 +76,8 @@ export function LiveViewer({ processId }: LiveViewerProps) {
   const retryAtRef = useRef(0);
   const lastChunkTsRef = useRef<number | null>(null);
   const startHlsRef = useRef<(cacheBust: boolean) => void>(() => {});
+  // Токен открытия view-сессии: защищает от гонки retry vs stale-ответа.
+  const openSessionTokenRef = useRef(0);
 
   // timeline.live (процесс running) и открытый (endedAt === null) сегмент — источник истины.
   const [isLive, setIsLive] = useState(true);
@@ -59,6 +88,9 @@ export function LiveViewer({ processId }: LiveViewerProps) {
   const [emptyWait, setEmptyWait] = useState(false); // ffm-HLS ещё нет (404) / пуст
   const [noSignal, setNoSignal] = useState(false); // fatal network/other за лимитом
   const [autoplayBlocked, setAutoplayBlocked] = useState(false);
+  // View-режим: hlsUrl приходит с бэкенда (POST /streams/:id/view); пока его нет — HLS не стартуем.
+  const [viewHlsUrl, setViewHlsUrl] = useState<string | null>(null);
+  const [viewOpening, setViewOpening] = useState(() => isViewMode);
   const [muted, setMuted] = useState(true);
   const [edgeClock, setEdgeClock] = useState('');
   const [liveTimeLabel, setLiveTimeLabel] = useState('');
@@ -73,10 +105,12 @@ export function LiveViewer({ processId }: LiveViewerProps) {
   }, [noSignal, emptyWait]);
 
   // Активная live-секция (video смонтировано): нужно для зачистки по unmount.
-  const liveActive = isLive && !waiting && !!openSeg;
+  // View-режим активируется сразу по получении hlsUrl — timeline-гейта у него нет.
+  const liveActive = isViewMode ? !!viewHlsUrl : isLive && !waiting && !!openSeg;
 
   // --- Поллинг таймлайна: ловим конец трансляции / появление открытого сегмента ---
   useEffect(() => {
+    if (isViewMode || !processId) return;
     let cancelled = false;
 
     const load = async () => {
@@ -105,7 +139,63 @@ export function LiveViewer({ processId }: LiveViewerProps) {
       cancelled = true;
       clearInterval(timer);
     };
-  }, [processId]);
+  }, [processId, isViewMode]);
+
+  // --- View-режим: открыть/продлить view-сессию (POST /streams/:id/view) ---
+  const openViewSession = useCallback(async () => {
+    if (!viewStreamId) return;
+    const token = ++openSessionTokenRef.current;
+    setViewOpening(true);
+    setNoSignal(false);
+    setEmptyWait(false);
+    try {
+      const res = await apiFetch(`/streams/${viewStreamId}/view`, { method: 'POST' });
+      if (token !== openSessionTokenRef.current) return;
+      if (!res.ok) {
+        // 404/403/401/5xx: сессию не открыли — noSignal-оверлей, повтор по клику.
+        setViewOpening(false);
+        setNoSignal(true);
+        return;
+      }
+      const data = (await res.json()) as StreamViewResult;
+      if (token !== openSessionTokenRef.current) return;
+
+      // Манифест может появиться не сразу (ffm/MTX пишет первые .ts несколько секунд).
+      // Полим hlsUrl пока не отдаст 200, или до исчерпания попыток.
+      const manifestReady = await pollManifest(data.hlsUrl, () => token !== openSessionTokenRef.current);
+      if (token !== openSessionTokenRef.current) return;
+      if (!manifestReady) {
+        setViewOpening(false);
+        setNoSignal(true);
+        return;
+      }
+
+      setViewHlsUrl(data.hlsUrl);
+      setViewOpening(false);
+    } catch {
+      // Сетевой сбой: как 404 — noSignal-оверлей с повтором.
+      if (token !== openSessionTokenRef.current) return;
+      setViewOpening(false);
+      setNoSignal(true);
+    }
+  }, [viewStreamId]);
+
+  // --- View-режим: первичный POST + heartbeat (TTL 90с) + stop на unmount ---
+  useEffect(() => {
+    if (!isViewMode || !viewStreamId) return;
+    void openViewSession();
+    const hb = setInterval(() => {
+      // Heartbeat: продлеваем TTL; тело ответа не нужно.
+      apiFetch(`/streams/${viewStreamId}/view`, { method: 'POST' }).catch(() => {});
+    }, VIEW_HEARTBEAT_MS);
+    return () => {
+      // Уход со страницы: гасим heartbeat, инвалидируем in-flight open и
+      // fire-forget DELETE останавливает view-путь на бэкенде (идемпотентно).
+      openSessionTokenRef.current += 1;
+      clearInterval(hb);
+      apiFetch(`/streams/${viewStreamId}/view`, { method: 'DELETE' }).catch(() => {});
+    };
+  }, [isViewMode, viewStreamId, openViewSession]);
 
   // --- 1с-тикер: edge clock + статус/отставание эфира ---
   useEffect(() => {
@@ -221,10 +311,17 @@ export function LiveViewer({ processId }: LiveViewerProps) {
     setLoading(true);
     setPlaying(false);
 
-    // Нативный живой HLS ffmpeg-manager'а. query-bust не влияет на express.static
-    // (отдаёт тот же файл), но no-store уже гарантирует свежий манифест на каждый
-    // реквест — ?t= оставлен как страховка и для новой media-сессии после recreate.
-    const src = `/hls/process_${processId}/index.m3u8${cacheBust ? `?t=${Date.now()}` : ''}`;
+    // Нативный живой HLS (process-путь записи / view-путь просмотра). query-bust не
+    // влияет на express.static (отдаёт тот же файл), но no-store уже гарантирует
+    // свежий манифест на каждый реквест — ?t= оставлен как страховка и для новой
+    // media-сессии после recreate. view-режим берёт hlsUrl из ответа бэкенда.
+    let src: string;
+    if (isViewMode) {
+      if (!viewHlsUrl) return;
+      src = cacheBust ? `${viewHlsUrl}?t=${Date.now()}` : viewHlsUrl;
+    } else {
+      src = `/hls/process_${processId}/index.m3u8${cacheBust ? `?t=${Date.now()}` : ''}`;
+    }
 
     if (Hls.isSupported()) {
       const hls = new Hls({
@@ -488,36 +585,45 @@ export function LiveViewer({ processId }: LiveViewerProps) {
   }
 
   function retryNow() {
+    if (isViewMode && !viewHlsUrl) {
+      // View-сессия не открылась — повторяем POST /streams/:id/view.
+      void openViewSession();
+      return;
+    }
     startHls(true);
   }
 
-  // Трансляция завершена (процесс не running): родитель вскоре размонтирует
-  // LiveViewer и покажет архив в CustomPlayer — кнопка лишь подтверждает это.
-  if (!isLive) {
-    return (
-      <div className={styles.root}>
-        <div className={styles.centerState}>
-          <span className={styles.endedDot}>●</span>
-          <div className={styles.centerStateTitle}>Трансляция завершена</div>
-          <div className={styles.centerStateSub}>Идёт переход к просмотру записи…</div>
-          <Button variant="outline" size="sm" onClick={() => {}}>
-            Смотреть запись
-          </Button>
+  // Process-режим: «эфир/завершён» решается по таймлайну. View-режим таймлайна не
+  // имеет — сразу рендерим плеер, его состоянием управляют оверлеи.
+  if (!isViewMode) {
+    // Трансляция завершена (процесс не running): родитель вскоре размонтирует
+    // LiveViewer и покажет архив в CustomPlayer — кнопка лишь подтверждает это.
+    if (!isLive) {
+      return (
+        <div className={styles.root}>
+          <div className={styles.centerState}>
+            <span className={styles.endedDot}>●</span>
+            <div className={styles.centerStateTitle}>Трансляция завершена</div>
+            <div className={styles.centerStateSub}>Идёт переход к просмотру записи…</div>
+            <Button variant="outline" size="sm" onClick={() => {}}>
+              Смотреть запись
+            </Button>
+          </div>
         </div>
-      </div>
-    );
-  }
+      );
+    }
 
-  if (waiting || !openSeg) {
-    return (
-      <div className={styles.root}>
-        <div className={styles.centerState}>
-          <span className={styles.spinner} />
-          <div className={styles.centerStateTitle}>Запись начинается</div>
-          <div className={styles.centerStateSub}>Ожидание первого сегмента…</div>
+    if (waiting || !openSeg) {
+      return (
+        <div className={styles.root}>
+          <div className={styles.centerState}>
+            <span className={styles.spinner} />
+            <div className={styles.centerStateTitle}>Запись начинается</div>
+            <div className={styles.centerStateSub}>Ожидание первого сегмента…</div>
+          </div>
         </div>
-      </div>
-    );
+      );
+    }
   }
 
   return (
@@ -549,6 +655,13 @@ export function LiveViewer({ processId }: LiveViewerProps) {
           </div>
         )}
 
+        {!noSignal && !autoplayBlocked && viewOpening && !viewHlsUrl && (
+          <div className={styles.overlay}>
+            <span className={styles.spinner} />
+            Подключение…
+          </div>
+        )}
+
         {!noSignal && autoplayBlocked && (
           <div className={styles.overlay} onClick={startFromOverlay}>
             <span className={styles.playBtn}>
@@ -570,7 +683,7 @@ export function LiveViewer({ processId }: LiveViewerProps) {
         {!noSignal && !autoplayBlocked && !loading && !playing && emptyWait && (
           <div className={styles.overlay}>
             <span className={styles.spinner} />
-            Запись идёт, ждём данные…
+            {isViewMode ? 'Ждём сигнал…' : 'Запись идёт, ждём данные…'}
           </div>
         )}
       </div>

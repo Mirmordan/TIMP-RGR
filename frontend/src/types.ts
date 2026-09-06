@@ -57,6 +57,13 @@ export interface RecordingIncident {
   createdBy?: string;
 }
 
+/** Ответ POST /streams/:id/view — открытие view-сессии (просмотр потока без записи). */
+export interface StreamViewResult {
+  hlsUrl: string;
+  source: 'process' | 'view';
+  ttlS: number;
+}
+
 export interface TimelineSegment {
   id: string;
   startOffsetS: number;

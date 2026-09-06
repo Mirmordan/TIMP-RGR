@@ -39,6 +39,7 @@ export function StreamDetailPage() {
         subtitle={stream.url.length > 60 ? stream.url.slice(0, 60) + '...' : stream.url}
         actions={
           <>
+            <Button variant="success" onClick={() => navigate(`/streams/${id}/live`)}>▶ Смотреть эфир</Button>
             <Button variant="primary" onClick={() => navigate('edit')}>Редактировать</Button>
             <Button variant="danger" onClick={handleDelete} disabled={deleting}>Удалить</Button>
           </>

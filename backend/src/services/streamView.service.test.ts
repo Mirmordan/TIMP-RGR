@@ -23,7 +23,7 @@ vi.mock('../repositories/process.repository', () => ({
 
 import { streamRepository } from '../repositories/stream.repository';
 import { processRepository } from '../repositories/process.repository';
-import { streamViewService, viewName, VIEW_TTL_S } from './streamView.service';
+import { streamViewService, viewName, VIEW_TTL_S, PENDING_CLOSE_MS } from './streamView.service';
 
 const findStream = streamRepository.findById as unknown as Mock;
 const findRunning = processRepository.findRunningByStreamId as unknown as Mock;
@@ -103,9 +103,7 @@ beforeEach(() => {
 });
 
 afterEach(async () => {
-  for (const sid of usedStreamIds) {
-    try { await streamViewService.stopView(sid); } catch { /* ignore */ }
-  }
+  streamViewService._resetSessions();
   vi.unstubAllGlobals();
   vi.clearAllTimers();
   vi.useRealTimers();
@@ -197,7 +195,7 @@ describe('streamViewService.openView', () => {
     expect(streamViewService.activeSessions()).toBe(0);
   });
 
-  it('DELETE (stopView) → немедленный removePath, Map пуста, повторного TTL-удаления нет', async () => {
+  it('DELETE (stopView) → отложенный removePath через PENDING_CLOSE_MS, Map пуста после', async () => {
     const sid = 'stream-5';
     usedStreamIds.push(sid);
     findStream.mockResolvedValue(hlsStream(sid));
@@ -208,12 +206,19 @@ describe('streamViewService.openView', () => {
 
     await streamViewService.stopView(sid);
 
+    // Пока pending — removePath ещё не вызван, сессия жива.
+    expect(countDeletes()).toBe(0);
+    expect(streamViewService.activeSessions()).toBe(1);
+
+    // По истечении PENDING_CLOSE_MS → removePath + выход из Map.
+    await vi.advanceTimersByTimeAsync(PENDING_CLOSE_MS);
+
     expect(countDeletes()).toBe(1);
     expect(requests.find(r => r.url.includes('/v3/config/paths/delete/'))!.url)
       .toBe(`${state.mtxApi}/v3/config/paths/delete/${viewName(sid)}`);
     expect(streamViewService.activeSessions()).toBe(0);
 
-    // таймер снят — по истечении TTL удаления не будет.
+    // таймер TTL снят — по истечении удаления не будет.
     await vi.advanceTimersByTimeAsync((VIEW_TTL_S + 10) * 1000);
     expect(countDeletes()).toBe(1);
   });
@@ -265,5 +270,51 @@ describe('streamViewService.openView', () => {
     expect(result!.source).toBe('view');
     expect(countDeletes()).toBe(0);
     expect(streamViewService.activeSessions()).toBe(1);
+  });
+
+  it('pending-close отменяется повторным POST (openView)', async () => {
+    const sid = 'stream-8';
+    usedStreamIds.push(sid);
+    findStream.mockResolvedValue(ivideonStream(sid));
+    findRunning.mockResolvedValue(null);
+
+    await streamViewService.openView(sid);
+    expect(streamViewService.activeSessions()).toBe(1);
+
+    // stopView → планирует закрытие.
+    await streamViewService.stopView(sid);
+    expect(countDeletes()).toBe(0);
+    expect(streamViewService.activeSessions()).toBe(1);
+
+    // POST (openView) — отменяет pending close, продлевает TTL.
+    await streamViewService.openView(sid);
+    expect(countDeletes()).toBe(0);
+    expect(streamViewService.activeSessions()).toBe(1);
+
+    // TTL-удаление не случится раньше TTL.
+    await vi.advanceTimersByTimeAsync(VIEW_TTL_S * 1000 - 1000);
+    expect(countDeletes()).toBe(0);
+  });
+
+  it('pending-close срабатывает по PENDING_CLOSE_MS, removePath однократно', async () => {
+    const sid = 'stream-9';
+    usedStreamIds.push(sid);
+    findStream.mockResolvedValue(hlsStream(sid));
+    findRunning.mockResolvedValue(null);
+
+    await streamViewService.openView(sid);
+    expect(streamViewService.activeSessions()).toBe(1);
+
+    await streamViewService.stopView(sid);
+    expect(countDeletes()).toBe(0);
+
+    // Достигли PENDING_CLOSE_MS → removePath.
+    await vi.advanceTimersByTimeAsync(PENDING_CLOSE_MS);
+    expect(countDeletes()).toBe(1);
+    expect(streamViewService.activeSessions()).toBe(0);
+
+    // Повторное продвижение не даёт второго removePath.
+    await vi.advanceTimersByTimeAsync(PENDING_CLOSE_MS);
+    expect(countDeletes()).toBe(1);
   });
 });
