@@ -18,6 +18,7 @@ export function DeviceEditPage() {
   const [type, setType] = useState('');
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     if (device) {
@@ -25,6 +26,19 @@ export function DeviceEditPage() {
       setType(device.type);
     }
   }, [device]);
+
+  async function handleDelete() {
+    if (!confirm('Удалить устройство?')) return;
+    setDeleting(true);
+    try {
+      const r = await apiFetch(`/devices/${id}`, { method: 'DELETE' });
+      if (!r.ok) throw new Error('Ошибка удаления');
+      navigate('/devices');
+    } catch {
+      alert('Не удалось удалить');
+      setDeleting(false);
+    }
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -52,7 +66,13 @@ export function DeviceEditPage() {
 
   return (
     <Layout>
-      <DetailHeader title="Редактирование устройства" onBack={`../${id}`} />
+      <DetailHeader
+        title="Редактирование устройства"
+        onBack={`../${id}`}
+        actions={
+          <Button variant="danger" onClick={handleDelete} disabled={deleting}>Удалить</Button>
+        }
+      />
       <Card>
         <form className={styles.form} onSubmit={handleSubmit}>
           <div className={styles.field}>

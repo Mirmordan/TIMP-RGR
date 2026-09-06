@@ -1,30 +1,57 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { Layout, Card } from '../components/Layout/Layout';
 import { DetailHeader, styles } from '../components/Layout/DetailPage';
 import { Button } from '../components/Button/Button';
+import { SearchSelect, type SearchSelectItem } from '../components/SearchSelect/SearchSelect';
 import { apiFetch } from '../api';
-import type { RecordingStream as Stream } from '../types';
+import type { RecordingStream as Stream, RecordingDevice as Device } from '../types';
 
 type StartMode = 'running' | 'stopped';
+
+function urlTail(url: string): string {
+  return url.length > 28 ? '…' + url.slice(-28) : url;
+}
+function urlShort(url: string): string {
+  return url.length > 40 ? url.slice(0, 40) + '…' : url;
+}
 
 export function ProcessCreatePage() {
   const navigate = useNavigate();
   const [streams, setStreams] = useState<Stream[]>([]);
-  const [streamId, setStreamId] = useState('');
+  const [devices, setDevices] = useState<Device[]>([]);
+  const [streamId, setStreamId] = useState<string | null>(null);
   const [startMode, setStartMode] = useState<StartMode>('running');
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    apiFetch('/streams?limit=100').then(async r => {
-      if (r.ok) {
-        const d = await r.json();
-        setStreams(d.streams ?? d);
-        if (d.streams?.length) setStreamId(d.streams[0].id);
-      }
+    apiFetch('/streams?limit=200').then(async r => {
+      if (!r.ok) return;
+      const d = await r.json();
+      const list: Stream[] = d.streams ?? d;
+      setStreams(list);
+      if (list.length) setStreamId(prev => prev ?? list[0].id);
+    });
+    apiFetch('/devices?limit=200').then(async r => {
+      if (!r.ok) return;
+      const d = await r.json();
+      setDevices(d.devices ?? d);
     });
   }, []);
+
+  const streamItems = useMemo<SearchSelectItem[]>(() => {
+    const byId = new Map(devices.map(dev => [dev.id, dev]));
+    return streams.map(s => {
+      const dev = s.deviceId ? byId.get(s.deviceId) : undefined;
+      return {
+        value: s.id,
+        label: dev?.name ?? urlShort(s.url),
+        sublabel: urlTail(s.url),
+        search: `${dev?.name ?? ''} ${s.url} ${s.id}`,
+      };
+    });
+  }, [streams, devices]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -57,12 +84,13 @@ export function ProcessCreatePage() {
         <form className={styles.form} onSubmit={handleSubmit}>
           <div className={styles.field}>
             <label className={styles.label}>Поток</label>
-            <select className={styles.input} value={streamId} onChange={e => setStreamId(e.target.value)} required>
-              <option value="" disabled>Выберите поток</option>
-              {streams.map(s => (
-                <option key={s.id} value={s.id}>{s.id.slice(0, 8)}... ({s.url.slice(0, 40)}...)</option>
-              ))}
-            </select>
+            <SearchSelect
+              items={streamItems}
+              value={streamId}
+              onChange={v => setStreamId(v)}
+              placeholder="Выберите поток"
+              ariaLabel="Поток"
+            />
           </div>
 
           <div className={styles.field}>

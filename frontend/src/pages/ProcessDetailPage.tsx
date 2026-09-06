@@ -86,20 +86,6 @@ export function ProcessDetailPage() {
     }
   }
 
-  async function handleDelete() {
-    if (!confirm('Удалить запись?')) return;
-    setActionLoading(true);
-    try {
-      const r = await apiFetch(`/processes/${id}`, { method: 'DELETE' });
-      if (!r.ok) throw new Error('Ошибка удаления');
-      navigate('/processes');
-    } catch {
-      alert('Не удалось удалить');
-    } finally {
-      setActionLoading(false);
-    }
-  }
-
   async function handleCreateIncident(data: { title: string; description?: string; timeOffsetS: number; severity: string }) {
     const r = await apiFetch('/incidents', {
       method: 'POST',
@@ -187,7 +173,6 @@ export function ProcessDetailPage() {
               </Button>
             )}
             <Button variant="outline" onClick={() => navigate('edit')}>Редактировать</Button>
-            <Button variant="danger" onClick={handleDelete} disabled={actionLoading}>Удалить</Button>
           </>
         }
       />

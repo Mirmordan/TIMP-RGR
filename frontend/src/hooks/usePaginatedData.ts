@@ -24,7 +24,8 @@ export function usePaginatedData<T>(endpoint: string, pageSize = 10): UsePaginat
     setLoading(true);
 
     const offset = (page - 1) * pageSize;
-    apiFetch(`${endpoint}?limit=${pageSize}&offset=${offset}`)
+    const sep = endpoint.includes('?') ? '&' : '?';
+    apiFetch(`${endpoint}${sep}limit=${pageSize}&offset=${offset}`)
       .then(r => r.json())
       .then(data => {
         if (cancelled) return;
