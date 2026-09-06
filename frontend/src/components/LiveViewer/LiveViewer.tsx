@@ -5,29 +5,17 @@ import { apiFetch } from '../../api';
 import styles from './LiveViewer.module.css';
 import type { TimelineData, TimelineSegment as Segment } from '../../types';
 
-// Preroll: сколько чанков (≈TARGETDURATION 2с) держаться за live-edge,
-// чтобы старт не упирался ровно в последний (ещё пишущийся) чанк.
-// LIVE_SYNC_S: абсолютная отсечка синхронизации hls.js от live-edge (сек).
-// Используется вместо liveSyncDurationCount т.к. TARGETDURATION хвоста раздут
-// гэпами реконнектов (~57с) — count-вариант уводил плеер на 100с+ от эфира.
-const LIVE_SYNC_S = 2;
-// LIVE_MAX_LATENCY_S: отставание от края, после которого hls сам перескакивает
-// на liveSync-позицию (иначе drift растёт до окна).
-const LIVE_MAX_LATENCY_S = 6;
-// LIVE_CATCHUP_GAP_S: порог жёсткого догона в 2с-тикере. maxLatency у hls мягкая
-// и на EVENT-окне сходится к ~40с; при разрыве больше этого — сами прыгаем на
-// liveSyncPosition (преролл 2с сохраняется).
-const LIVE_CATCHUP_GAP_S = 15;
+// Живой HLS ffmpeg-manager'а (2с-сегменты, скользящее окно list_size 8, no-store).
+// Источник не зависит от «открытого» VOD-сегмента — таймлайн-полл ниже нужен
+// только чтобы решать «эфир vs завершён» и держать LiveViewer включённым.
+// LIVE_SYNC_COUNT: liveSyncDurationCount — держимся в ~3 сегментах (≈6с) от края.
+const LIVE_SYNC_COUNT = 3;
+// EDGE_PREROLL_S: отступ от seekable.end при прыжке в живой край (кнопка LIVE):
+// не упираться ровно в последний, ещё пишущийся чанк.
+const EDGE_PREROLL_S = 2;
 // BACK_BUFFER_S: сколько сыгранного буфера держать в MSE. Дефолт hls.js = Infinity
 // — без лимита многочасовой эфир накапливает гигабайты в памяти вкладки.
 const BACK_BUFFER_S = 30;
-// LIVE_TAIL_S: окно EVENT-плейлиста открытого сегмента — стартуем за N секунд до
-// живого хвоста (?start=anchor), чтобы манифест оставался маленьким и hls.js
-// корректно синкался к edge, а не начинал с чанка 0 многотысячного манифеста.
-const LIVE_TAIL_S = 120;
-// LIVE_REANCHOR_AFTER_S: когда с момента создания инстанса отыграло больше этого
-// времени, окно (?start= заморожен) снова выросло — «мягкий» ре-якорь к хвосту.
-const LIVE_REANCHOR_AFTER_S = 600;
 const TIMELINE_POLL_MS = 5000;
 // Watch-цикл recovery: каждые WATCH_MS проверяем «живость» воспроизведения.
 const WATCH_MS = 2000;
@@ -35,7 +23,7 @@ const WATCH_MS = 2000;
 const STALL_RECOVER_CYCLES = 5;
 // Ещё N плохих циклов после recovery → destroy + пересоздание инстанса с ?t=Date.now().
 const STALL_RECREATE_CYCLES = 10;
-// Подряд fatal NETWORK_ERROR на инстансе → оверлей «нет сигнала» и destroy.
+// Подряд fatal NETWORK_ERROR (не 404) на инстансе → оверлей «нет сигнала» и destroy.
 const FATAL_NET_LIMIT = 3;
 // Пауза перед автоматической попыткой пересоздать инстанс после fatal-сдачи.
 const RETRY_AFTER_FATAL_MS = 8000;
@@ -48,19 +36,11 @@ export function LiveViewer({ processId }: LiveViewerProps) {
   const rootRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const hlsRef = useRef<Hls | null>(null);
-  const segIdRef = useRef<string | null>(null);
-  // anchor (сек от startedAt сегмента) активного инстанса: старт окна ?start=,
-  // база таймкода «в эфире» в 1с-тикере.
-  const anchorRef = useRef(0);
-  // Ре-якорь в полёте (destroy + новый инстанс): до MANIFEST_PARSED/LEVEL_LOADED
-  // не триггерим повторный ре-якорь и не мешаем recovery-счётчиками.
-  const reAnchoringRef = useRef(false);
-  // Разовый принудительный синк к liveSync-позиции на первом манифесте инстанса
-  // (EVENT-окно: hls может стартануть с начала окна, пока details ещё «не живые»).
-  // PDT текущего играемого чанка: media-таймлайн EVENT растянут фиктивными
-  // EXTINF гэпов записи — таймкод «в эфире» считаем от реального PROGRAM-DATE-TIME.
+  // PDT текущего играемого фрагмента: точный таймкод «в эфире» считаем от реального
+  // PROGRAM-DATE-TIME (в манифесте ffm его пока нет — путь «спит» до добавления
+  // hls_flags program_date_time). media-таймлайн для таймкода не годится: слайдинг
+  // окна и пересоздания ffm-HLS рвут соответствие media-time ↔ wall-clock.
   const fragMetaRef = useRef<{ pdtMs: number; start: number } | null>(null);
-  const edgeSeekRef = useRef(false);
   const emptyPollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const userPausedRef = useRef(false);
   const autoplayBlockedRef = useRef(false);
@@ -68,7 +48,7 @@ export function LiveViewer({ processId }: LiveViewerProps) {
   const fatalNetRef = useRef(0);
   const retryAtRef = useRef(0);
   const lastChunkTsRef = useRef<number | null>(null);
-  const startHlsRef = useRef<(segId: string, cacheBust: boolean) => void>(() => {});
+  const startHlsRef = useRef<(cacheBust: boolean) => void>(() => {});
 
   // timeline.live (процесс running) и открытый (endedAt === null) сегмент — источник истины.
   const [isLive, setIsLive] = useState(true);
@@ -76,30 +56,26 @@ export function LiveViewer({ processId }: LiveViewerProps) {
   const [waiting, setWaiting] = useState(false); // running, но открытого сегмента ещё нет
   const [playing, setPlaying] = useState(false);
   const [loading, setLoading] = useState(false); // манифест грузится / пересоздание
-  const [emptyWait, setEmptyWait] = useState(false); // открыт, но чанков пока нет
+  const [emptyWait, setEmptyWait] = useState(false); // ffm-HLS ещё нет (404) / пуст
   const [noSignal, setNoSignal] = useState(false); // fatal network/other за лимитом
   const [autoplayBlocked, setAutoplayBlocked] = useState(false);
   const [muted, setMuted] = useState(true);
   const [edgeClock, setEdgeClock] = useState('');
-  // startedAt открытого сегмента — база «в эфире ДД.ММ.ГГГГ ЧЧ:ММ:СС» (текущая видимая секунда).
-  const [openSegStartedAt, setOpenSegStartedAt] = useState<string | null>(null);
   const [liveTimeLabel, setLiveTimeLabel] = useState('');
   const [liveLagLabel, setLiveLagLabel] = useState('');
 
-  // 1с-тикер (edge clock + «в эфире») создаётся один раз и читает свежие значения через рефы.
-  const openSegStartedAtRef = useRef<string | null>(null);
+  // 1с-тикер (edge clock + статус эфира) создаётся один раз и читает свежие значения через рефы.
   const noSignalRef = useRef(false);
   const emptyWaitRef = useRef(false);
   useEffect(() => {
-    openSegStartedAtRef.current = openSegStartedAt;
     noSignalRef.current = noSignal;
     emptyWaitRef.current = emptyWait;
-  }, [openSegStartedAt, noSignal, emptyWait]);
+  }, [noSignal, emptyWait]);
 
   // Активная live-секция (video смонтировано): нужно для зачистки по unmount.
   const liveActive = isLive && !waiting && !!openSeg;
 
-  // --- Поллинг таймлайна: ловим смену открытого сегмента / конец трансляции ---
+  // --- Поллинг таймлайна: ловим конец трансляции / появление открытого сегмента ---
   useEffect(() => {
     let cancelled = false;
 
@@ -118,7 +94,6 @@ export function LiveViewer({ processId }: LiveViewerProps) {
         setIsLive(live);
         setWaiting(live && !open);
         setOpenSeg(open);
-        setOpenSegStartedAt(open ? open.startedAt : null);
       } catch {
         // Сетевой сбой поллинга: плеер живёт на текущем инстансе, повторим на след. тике.
       }
@@ -132,7 +107,7 @@ export function LiveViewer({ processId }: LiveViewerProps) {
     };
   }, [processId]);
 
-  // --- Час «последнего чанка» (edge clock) + «в эфире» и задержка ---
+  // --- 1с-тикер: edge clock + статус/отставание эфира ---
   useEffect(() => {
     const tick = () => {
       const ts = lastChunkTsRef.current;
@@ -146,55 +121,50 @@ export function LiveViewer({ processId }: LiveViewerProps) {
         setEdgeClock(`${hh}:${mm}:${ss}`);
       }
 
-      // Абсолютное время кадра: от реального PDT играемого фрагмента
-      // (pdt + (currentTime − начало флага)). Фолбэк, если PDT нет:
-      // startedAt окна + anchor + media-time (был неточен из-за фиктивных EXTINF).
-      const startedAt = openSegStartedAtRef.current;
       const v = videoRef.current;
-      if (v && v.currentTime > 0 && !noSignalRef.current && !emptyWaitRef.current) {
-        const meta = fragMetaRef.current;
-        let frameMs = NaN;
-        if (meta) {
-          frameMs = meta.pdtMs + (v.currentTime - meta.start) * 1000;
-        } else if (startedAt) {
-          const startMs = new Date(startedAt).getTime();
-          if (Number.isFinite(startMs)) frameMs = startMs + (anchorRef.current + v.currentTime) * 1000;
-        }
-        if (Number.isFinite(frameMs)) {
-          const d = new Date(frameMs);
-          const date = `${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')}.${d.getFullYear()}`;
-          const clock = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}`;
-          setLiveTimeLabel(`в эфире ${date} ${clock}`);
+      if (!v || v.currentTime <= 0 || noSignalRef.current || emptyWaitRef.current) {
+        setLiveTimeLabel('');
+        setLiveLagLabel('');
+        return;
+      }
+
+      // Точный таймкод кадра — от реального PDT играемого фрагмента
+      // (pdt + (currentTime − начало флага)). PDT в манифесте ffm пока нет —
+      // ветка «спит» до добавления program_date_time в ffm-HLS команду.
+      const meta = fragMetaRef.current;
+      if (meta && Number.isFinite(meta.pdtMs) && Number.isFinite(meta.start)) {
+        const frameMs = meta.pdtMs + (v.currentTime - meta.start) * 1000;
+        const d = new Date(frameMs);
+        const date = `${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')}.${d.getFullYear()}`;
+        const clock = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}`;
+        setLiveTimeLabel(`в эфире ${date} ${clock}`);
+        if (!v.paused) {
           const lag = Math.max(0, Math.round((Date.now() - frameMs) / 1000));
           setLiveLagLabel(`≈${lag}с задержка`);
-          return;
+        } else {
+          setLiveLagLabel('');
         }
+        return;
       }
-      setLiveTimeLabel('');
-      setLiveLagLabel('');
+
+      // PDT нет (сейчас) — точный wall-clock кадра неизвестен. Не выдумываем секунды:
+      // показываем честный статус эфира и отставание playhead от края окна (seekable.end − ct).
+      setLiveTimeLabel('прямой эфир');
+      if (!v.paused) {
+        let se = 0;
+        for (let i = 0; i < v.seekable.length; i++) se = Math.max(se, v.seekable.end(i));
+        if (se > 0 && v.currentTime < se) {
+          setLiveLagLabel(`×${Math.max(0, Math.round(se - v.currentTime))}с от края`);
+        } else {
+          setLiveLagLabel('');
+        }
+      } else {
+        setLiveLagLabel('');
+      }
     };
     tick();
     const timer = setInterval(tick, 1000);
     return () => clearInterval(timer);
-  }, []);
-
-  // finite-длительность EVENT-окна: уперлись в край буфера до прихода новых
-  // чанков — «ended». Не ждём stall-рекавери (10с), а сразу ре-синк к краю
-  // (2с-тикер добьёт по seekable), и пробуем играть дальше.
-  useEffect(() => {
-    const v = videoRef.current;
-    if (!v) return;
-    const onEnded = () => {
-      if (userPausedRef.current) return;
-      try {
-        let se = 0;
-        for (let i = 0; i < v.seekable.length; i++) se = Math.max(se, v.seekable.end(i));
-        if (se > 0) v.currentTime = Math.max(0, se - LIVE_SYNC_S);
-      } catch { /* seekable пуст */ }
-      v.play().catch(() => {});
-    };
-    v.addEventListener('ended', onEnded);
-    return () => v.removeEventListener('ended', onEnded);
   }, []);
 
   function teardownHls() {
@@ -212,8 +182,8 @@ export function LiveViewer({ processId }: LiveViewerProps) {
     if (emptyPollTimerRef.current) return;
     emptyPollTimerRef.current = setTimeout(() => {
       emptyPollTimerRef.current = null;
-      // Пока инстанс жив и сегмент не сменился — переспрашиваем пустой EVENT-манифест.
-      if (hlsRef.current === hls && segIdRef.current) {
+      // Инстанс ещё жив — переспрашиваем (ffm-HLS может появиться в любой момент).
+      if (hlsRef.current === hls) {
         hls.startLoad();
       }
     }, 2000);
@@ -239,12 +209,10 @@ export function LiveViewer({ processId }: LiveViewerProps) {
     });
   }
 
-  function startHls(segId: string, cacheBust: boolean) {
+  function startHls(cacheBust: boolean) {
     const video = videoRef.current;
     if (!video) return;
     teardownHls();
-    segIdRef.current = segId;
-    edgeSeekRef.current = false;
     stallStreakRef.current = 0;
     fatalNetRef.current = 0;
     retryAtRef.current = 0;
@@ -253,35 +221,20 @@ export function LiveViewer({ processId }: LiveViewerProps) {
     setLoading(true);
     setPlaying(false);
 
-    // Окно EVENT-плейлиста открытого сегмента: манифест от чанка, накрывающего
-    // startedAt + anchor (anchor отстаёт от живого хвоста на LIVE_TAIL_S).
-    // Query заморожен на время жизни инстанса → firstIndex стабилен, hls.js видит
-    // небольшой живой манифест и синкается к edge вместо старта с чанка 0.
-    let anchorS = 0;
-    if (openSeg && openSeg.id === segId) {
-      const segStartMs = new Date(openSeg.startedAt).getTime();
-      if (Number.isFinite(segStartMs)) {
-        anchorS = Math.max(0, Math.floor((Date.now() - segStartMs) / 1000) - LIVE_TAIL_S);
-      }
-    }
-    anchorRef.current = anchorS;
-    const src = `/api/v1/segments/${segId}/playlist?start=${anchorS}${cacheBust ? `&t=${Date.now()}` : ''}`;
+    // Нативный живой HLS ffmpeg-manager'а. query-bust не влияет на express.static
+    // (отдаёт тот же файл), но no-store уже гарантирует свежий манифест на каждый
+    // реквест — ?t= оставлен как страховка и для новой media-сессии после recreate.
+    const src = `/hls/process_${processId}/index.m3u8${cacheBust ? `?t=${Date.now()}` : ''}`;
 
     if (Hls.isSupported()) {
       const hls = new Hls({
         enableWorker: true,
         lowLatencyMode: false,
-        // Finite (не Infinity) — сознательно: при liveDurationInfinity hls.js
-        // теряет валидный liveSyncPosition и перестает держать playhead у края.
-        liveDurationInfinity: false,
-        // Абсолютная синхронизация к краю: liveSyncDurationCount перемножается с
-        // TARGETDURATION хвоста (раздут гэпами реконнектов до 57с) — плеер отъезжал
-        // на ~100с от live-edge. Паузы в 2-3с чанков хватает с запасом.
-        liveSyncDuration: LIVE_SYNC_S,
-        // Дрейф после первичного синка: hls синхронизирует ТОЛЬКО при загрузке
-        // манифеста, дальше playhead отстаёт от живущего края на длину сыгранного
-        // окна. maxLatency заставляет прыгать обратно к краю при отставании >6с.
-        liveMaxLatencyDuration: LIVE_MAX_LATENCY_S,
+        // Нативный live: duration = live-окно (hls сам держит край слайдингом окна),
+        // liveSyncDurationCount (≈6с) задаёт точку синхронизации; max-latency ресинк
+        // остаётся на дефолте hls.js (liveMaxLatencyDurationCount: Infinity).
+        liveDurationInfinity: true,
+        liveSyncDurationCount: LIVE_SYNC_COUNT,
         // MSE без этого растёт бесконечно: сыгранный буфер НЕ вытесняется
         // (дефолт Infinity) — много часов эфира = гигабайты в браузере.
         backBufferLength: BACK_BUFFER_S,
@@ -298,7 +251,6 @@ export function LiveViewer({ processId }: LiveViewerProps) {
       const giveUp = () => {
         // Fatal за лимитом: гасим инстанс — сторожевик (или клик по оверлею)
         // пересоздаст его с cache-buster'ом через RETRY_AFTER_FATAL_MS.
-        reAnchoringRef.current = false;
         setNoSignal(true);
         setLoading(false);
         setPlaying(false);
@@ -310,7 +262,6 @@ export function LiveViewer({ processId }: LiveViewerProps) {
       };
 
       hls.on(Hls.Events.MANIFEST_PARSED, () => {
-        reAnchoringRef.current = false;
         resetHealth();
         setLoading(false);
         setEmptyWait(false);
@@ -318,19 +269,11 @@ export function LiveViewer({ processId }: LiveViewerProps) {
       });
 
       hls.on(Hls.Events.LEVEL_LOADED, (_e, data) => {
-        reAnchoringRef.current = false;
         resetHealth();
         const frags = data?.details?.fragments?.length ?? 0;
-        if (frags > 0 && !edgeSeekRef.current) {
-          const sync = hls.liveSyncPosition;
-          if (Number.isFinite(sync) && (sync as number) > 0) {
-            video.currentTime = sync as number;
-          }
-          edgeSeekRef.current = true;
-        }
         setLoading(false);
         if (frags > 0) {
-          // Пустой EVENT-плейлист дождался первого чанка — стартуем воспроизведение.
+          // Манифест пришёл с данными — стартуем воспроизведение.
           setEmptyWait(false);
           attemptPlay();
         } else {
@@ -352,9 +295,10 @@ export function LiveViewer({ processId }: LiveViewerProps) {
           if (data?.details === Hls.ErrorDetails.LEVEL_EMPTY_ERROR) setEmptyWait(true);
           return;
         }
-        // Пустой EVENT-манифест открытого сегмента (чанки ещё не появились):
-        // это не сбой — переспрашиваем поллингом и ждём первый .ts.
-        if (data?.details === Hls.ErrorDetails.LEVEL_EMPTY_ERROR) {
+        // Живой ffm-HLS по пути ещё нет (создаётся/пересоздаётся после реконнекта WS):
+        // 404 — не «поломка», а ожидание данных — переспрашиваем, пока манифест не появится.
+        const status = (data as { response?: { code?: number } } | undefined)?.response?.code;
+        if (data?.type === Hls.ErrorTypes.NETWORK_ERROR && status === 404) {
           setEmptyWait(true);
           setLoading(false);
           scheduleEmptyPoll(hls);
@@ -389,34 +333,35 @@ export function LiveViewer({ processId }: LiveViewerProps) {
     startHlsRef.current = startHls;
   });
 
-  // --- Синхронизация HLS-инстанса с открытым сегментом ---
+  // --- Синхронизация HLS-инстанса с live-статусом ---
   useEffect(() => {
-    const segId = isLive && openSeg ? openSeg.id : null;
-    if (!segId) {
+    if (!liveActive) {
       teardownHls();
       return;
     }
-    startHls(segId, false);
+    startHls(false);
     return () => teardownHls();
-    // eslint-стиль проекта: восстановление/пересоздание триггерится сменой id/статуса.
-  }, [isLive, openSeg?.id]);
+    // eslint-стиль проекта: старт/стоп на переходе «неактив→актив»; смена id открытого
+    // сегмента или поллинг НЕ должны рвать живое воспроизведение (src от сегмента не зависит).
+  }, [liveActive]);
 
-  // --- Watch-догон: stall → recoverMediaError → destroy+recreate (?t=Date.now()) ---
+  // --- Watchdog: stall → recoverMediaError → destroy+recreate (?t=Date.now()) ---
   useEffect(() => {
-    if (!isLive || !openSeg) return;
+    if (!liveActive) return;
     const timer = setInterval(() => {
       const v = videoRef.current;
-      const segId = segIdRef.current;
-      if (!v || !segId) return;
+      if (!v) return;
       // Пользователь сам управляет паузой / автоплей ещё не разрешён — не лечим.
       if (userPausedRef.current || autoplayBlockedRef.current) return;
+      // Ждём данные (404/пустой манифест) — переспрос идёт в ERROR-ветке, не мешаем.
+      if (emptyWaitRef.current) return;
 
       const hls = hlsRef.current;
       if (!hls) {
         // Инстанс убит fatal-ошибкой: ждём таймаут и пробуем свежий с cache-buster.
         if (Date.now() >= retryAtRef.current) {
           retryAtRef.current = Date.now() + RETRY_AFTER_FATAL_MS;
-          startHlsRef.current(segId, true);
+          startHlsRef.current(true);
         }
         return;
       }
@@ -430,53 +375,23 @@ export function LiveViewer({ processId }: LiveViewerProps) {
 
       if (healthy) {
         stallStreakRef.current = 0;
-        // Жёсткий догон к ЖИВОМУ краю. Ориентир — seekable.end (реальный край
-        // буфера), а НЕ hls.liveSyncPosition: тот считается по медиа-времени,
-        // а EXTINF фиктивных гэпов записи растягивают media timeline вперёд
-        // ( лаг «по liveSync» оказался бы мнимым). Прыгаем на seekEnd−preroll.
-        let seekEnd = 0;
-        for (let i = 0; i < v.seekable.length; i++) {
-          const e = v.seekable.end(i);
-          if (e > seekEnd) seekEnd = e;
-        }
-        const target = seekEnd - LIVE_SYNC_S;
-        if (
-          !userPausedRef.current &&
-          seekEnd > 0 && target > 0 &&
-          target - v.currentTime > LIVE_CATCHUP_GAP_S
-        ) {
-          v.currentTime = target;
-        }
-        // Окно EVENT-плейлиста (?start= заморожен) с момента создания инстанса
-        // отыграло > LIVE_REANCHOR_AFTER_S и снова выросло — «мягкий» ре-якорь:
-        // destroy + пересоздание от свежего хвоста (новый anchor от текущего
-        // now и ТЕКУЩЕГО открытого сегмента). До MANIFEST_PARSED/LEVEL_LOADED
-        // нового инстанса флаг reAnchoringRef не даёт долбить повторно.
-        if (!reAnchoringRef.current && openSeg && v.currentTime > LIVE_REANCHOR_AFTER_S) {
-          reAnchoringRef.current = true;
-          stallStreakRef.current = 0;
-          fatalNetRef.current = 0;
-          retryAtRef.current = 0;
-          startHlsRef.current(openSeg.id, false);
-        }
+        // Нативный live hls.js сам держит край (liveSync + слайдинг окна) —
+        // ручного догона/ре-якоря больше не нужно.
         return;
       }
-
-      // Ре-якорь в полёте (новый инстанс грузится): не мешаем recovery-счётчиками.
-      if (reAnchoringRef.current) return;
 
       stallStreakRef.current += 1;
       if (stallStreakRef.current >= STALL_RECREATE_CYCLES) {
         // Воспроизведение так и не поехало после recoverMediaError — пересоздаём инстанс.
         stallStreakRef.current = 0;
         retryAtRef.current = Date.now() + 3000;
-        startHlsRef.current(segId, true);
+        startHlsRef.current(true);
       } else if (stallStreakRef.current >= STALL_RECOVER_CYCLES) {
         hls.recoverMediaError();
       }
     }, WATCH_MS);
     return () => clearInterval(timer);
-  }, [isLive, openSeg?.id]);
+  }, [liveActive]);
 
   // --- Unmount / выход из live-вида: полная зачистка hls + <video> ---
   useEffect(() => {
@@ -528,12 +443,13 @@ export function LiveViewer({ processId }: LiveViewerProps) {
     userPausedRef.current = false;
     autoplayBlockedRef.current = false;
     setAutoplayBlocked(false);
+    // Живой край — это seekable.end буфера; liveSyncPosition врёт при пустом seekable.
     let seekEnd = 0;
     for (let i = 0; i < v.seekable.length; i++) {
       const e = v.seekable.end(i);
       if (e > seekEnd) seekEnd = e;
     }
-    const pos = seekEnd > 0 ? Math.max(0, seekEnd - LIVE_SYNC_S) : hls.liveSyncPosition;
+    const pos = seekEnd > 0 ? Math.max(0, seekEnd - EDGE_PREROLL_S) : hls.liveSyncPosition;
     if (pos != null && Number.isFinite(pos)) {
       try {
         v.currentTime = Math.max(0, pos);
@@ -572,8 +488,7 @@ export function LiveViewer({ processId }: LiveViewerProps) {
   }
 
   function retryNow() {
-    const segId = segIdRef.current;
-    if (segId) startHls(segId, true);
+    startHls(true);
   }
 
   // Трансляция завершена (процесс не running): родитель вскоре размонтирует
@@ -652,7 +567,7 @@ export function LiveViewer({ processId }: LiveViewerProps) {
           </div>
         )}
 
-        {!noSignal && !autoplayBlocked && !loading && emptyWait && (
+        {!noSignal && !autoplayBlocked && !loading && !playing && emptyWait && (
           <div className={styles.overlay}>
             <span className={styles.spinner} />
             Запись идёт, ждём данные…
