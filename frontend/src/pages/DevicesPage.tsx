@@ -4,6 +4,7 @@ import { Layout, PageHeader, Card } from '../components/Layout/Layout';
 import { Table, type Column } from '../components/Table/Table';
 import { Pagination } from '../components/Pagination/Pagination';
 import { SkeletonRows } from '../components/Skeleton/Skeleton';
+import { Button } from '../components/Button/Button';
 import { usePaginatedData } from '../hooks/usePaginatedData';
 import type { RecordingDevice as Device } from '../types';
 import listStyles from './ListPage.module.css';
@@ -30,7 +31,9 @@ export function DevicesPage() {
 
   return (
     <Layout>
-      <PageHeader title="Устройства" />
+      <PageHeader title="Устройства" action={
+        <Button variant="primary" size="sm" onClick={() => navigate('/devices/new')}>＋ Создать устройство</Button>
+      } />
       <Card>
         <div className={listStyles.searchBar}>
           <input

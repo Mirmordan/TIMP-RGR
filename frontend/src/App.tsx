@@ -40,9 +40,11 @@ function AppRoutes() {
       <Route path="/login" element={user ? <Navigate to="/" replace /> : <AuthPage />} />
       <Route path="/" element={<ProtectedRoute><HomePage /></ProtectedRoute>} />
       <Route path="/devices" element={<ProtectedRoute><DevicesPage /></ProtectedRoute>} />
+      <Route path="/devices/new" element={<ProtectedRoute><DeviceEditPage /></ProtectedRoute>} />
       <Route path="/devices/:id" element={<ProtectedRoute><DeviceDetailPage /></ProtectedRoute>} />
       <Route path="/devices/:id/edit" element={<ProtectedRoute><DeviceEditPage /></ProtectedRoute>} />
       <Route path="/streams" element={<ProtectedRoute><StreamsPage /></ProtectedRoute>} />
+      <Route path="/streams/new" element={<ProtectedRoute><StreamEditPage /></ProtectedRoute>} />
       <Route path="/streams/:id/live" element={<ProtectedRoute><StreamLivePage /></ProtectedRoute>} />
       <Route path="/streams/:id" element={<ProtectedRoute><StreamDetailPage /></ProtectedRoute>} />
       <Route path="/streams/:id/edit" element={<ProtectedRoute><StreamEditPage /></ProtectedRoute>} />

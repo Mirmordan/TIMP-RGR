@@ -10,7 +10,8 @@ import type { RecordingStream as Stream, RecordingDevice as Device } from '../ty
 
 export function StreamEditPage() {
   const { id } = useParams<{ id: string }>();
-  const { item: stream, loading } = useEntity<Stream>('/streams', id);
+  const isCreate = id === undefined || id === 'new';
+  const { item: stream, loading } = useEntity<Stream>('/streams', isCreate ? undefined : id);
   const navigate = useNavigate();
 
   const [devices, setDevices] = useState<Device[]>([]);
@@ -22,12 +23,19 @@ export function StreamEditPage() {
   const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
+    if (isCreate) {
+      setUrl('');
+      setDeviceId(null);
+      setSourceFingerprint('');
+      setError('');
+      return;
+    }
     if (stream) {
       setUrl(stream.url);
       setDeviceId(stream.deviceId ?? null);
       setSourceFingerprint(stream.sourceFingerprint ?? '');
     }
-  }, [stream]);
+  }, [isCreate, stream]);
 
   useEffect(() => {
     apiFetch('/devices?limit=200').then(async r => {
@@ -55,16 +63,18 @@ export function StreamEditPage() {
         deviceId: deviceId || null,
         sourceFingerprint: sourceFingerprint || null,
       };
-      const r = await apiFetch(`/streams/${id}`, {
-        method: 'PUT',
+      const urlPath = isCreate ? '/streams' : `/streams/${id}`;
+      const r = await apiFetch(urlPath, {
+        method: isCreate ? 'POST' : 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       });
       if (!r.ok) {
         const d = await r.json().catch(() => ({}));
-        throw new Error(d.message || 'Ошибка');
+        throw new Error(d.error || d.message || 'Ошибка');
       }
-      navigate(`/streams/${id}`);
+      const d = await r.json();
+      navigate(isCreate ? `/streams/${d.id}` : `/streams/${id}`);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Ошибка');
     } finally {
@@ -85,16 +95,16 @@ export function StreamEditPage() {
     }
   }
 
-  if (loading) return <Layout><div className={styles.loading}>Загрузка...</div></Layout>;
+  if (loading && !isCreate) return <Layout><div className={styles.loading}>Загрузка...</div></Layout>;
 
   return (
     <Layout>
       <DetailHeader
-        title="Редактирование потока"
-        onBack={`../${id}`}
-        actions={
+        title={isCreate ? 'Новый поток' : 'Редактирование потока'}
+        onBack={isCreate ? '/streams' : `../${id}`}
+        actions={!isCreate && (
           <Button variant="danger" onClick={handleDelete} disabled={deleting}>Удалить</Button>
-        }
+        )}
       />
       <Card>
         <form className={styles.form} onSubmit={handleSubmit}>
@@ -119,8 +129,8 @@ export function StreamEditPage() {
           </div>
           {error && <div className={styles.error}>{error}</div>}
           <div className={styles.formActions}>
-            <Button type="submit" variant="primary" disabled={saving}>{saving ? '...' : 'Сохранить'}</Button>
-            <Button type="button" variant="outline" onClick={() => navigate(`/streams/${id}`)}>Отмена</Button>
+            <Button type="submit" variant="primary" disabled={saving}>{saving ? '...' : isCreate ? 'Создать' : 'Сохранить'}</Button>
+            <Button type="button" variant="outline" onClick={() => navigate(isCreate ? '/streams' : `/streams/${id}`)}>Отмена</Button>
           </div>
         </form>
       </Card>
