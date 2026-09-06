@@ -1508,3 +1508,303 @@ adminRouter.delete('/audit', requireCapability('audit:delete'), async (req: Requ
     sendRbacError(res, e);
   }
 });
+
+// --- Прямые grants ролей на объекты + унифицированный список объектов ---
+
+/**
+ * @openapi
+ * /admin/roles/{id}/users:
+ *   get:
+ *     tags: [Admin]
+ *     operationId: listRoleUsers
+ *     summary: Пользователи роли
+ *     description: Пагинированный список пользователей (с их ролями), которым выдана роль. Требуется capability user:read.
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         description: UUID роли.
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *       - name: limit
+ *         in: query
+ *         required: false
+ *         schema:
+ *           type: integer
+ *           default: 20
+ *       - name: offset
+ *         in: query
+ *         required: false
+ *         schema:
+ *           type: integer
+ *           default: 0
+ *     responses:
+ *       '200':
+ *         description: Массив пользователей роли
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 $ref: '#/components/schemas/RbacUserWithRoles'
+ *       '401':
+ *         description: Требуется авторизация
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       '403':
+ *         description: Недостаточно прав (нужна capability user:read)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       '404':
+ *         description: Роль не найдена
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
+adminRouter.get('/roles/:id/users', requireCapability('user:read'), async (req: Request, res: Response) => {
+  try {
+    const id = req.params.id as string;
+    const role = await rbacRepository.findRoleById(id);
+    if (!role) return res.status(404).json({ error: 'роль не найдена' });
+    const limit = Number(req.query.limit) || 20;
+    const offset = Number(req.query.offset) || 0;
+    const users = await rbacRepository.findUsersInRole(id, limit, offset);
+    res.json(users);
+  } catch (e) {
+    sendRbacError(res, e);
+  }
+});
+
+/**
+ * @openapi
+ * /admin/roles/{id}/grants:
+ *   get:
+ *     tags: [Admin]
+ *     operationId: listRoleObjectGrants
+ *     summary: Прямые grants роли на объекты
+ *     description: Список прямых выдач роли (role × object × action) с метаданными объектов. Требуется capability permission:read.
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         description: UUID роли.
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *     responses:
+ *       '200':
+ *         description: Массив grants роли
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 $ref: '#/components/schemas/RbacObjectGrant'
+ *       '401':
+ *         description: Требуется авторизация
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       '403':
+ *         description: Недостаточно прав (нужна capability permission:read)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       '404':
+ *         description: Роль не найдена
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
+adminRouter.get('/roles/:id/grants', requireCapability('permission:read'), async (req: Request, res: Response) => {
+  try {
+    const id = req.params.id as string;
+    const role = await rbacRepository.findRoleById(id);
+    if (!role) return res.status(404).json({ error: 'роль не найдена' });
+    const grants = await rbacRepository.findRoleObjectGrants(id);
+    res.json(grants);
+  } catch (e) {
+    sendRbacError(res, e);
+  }
+});
+
+/**
+ * @openapi
+ * /admin/roles/{id}/grants:
+ *   put:
+ *     tags: [Admin]
+ *     operationId: setRoleObjectGrants
+ *     summary: Замена прямых grants роли
+ *     description: Полностью заменяет набор прямых выдач роли на объекты (валидация как у прав на группы — действия read/write/delete/stream/list, все objectId должны существовать). Требуется capability permission:manage.
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         description: UUID роли.
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/ObjectGrantEntries'
+ *     responses:
+ *       '200':
+ *         description: Актуальный список grants роли
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 $ref: '#/components/schemas/RbacObjectGrant'
+ *       '400':
+ *         description: grants не массив { objectId, action }, неизвестное действие или нет объекта
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       '401':
+ *         description: Требуется авторизация
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       '403':
+ *         description: Недостаточно прав (нужна capability permission:manage)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       '404':
+ *         description: Роль не найдена
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
+adminRouter.put('/roles/:id/grants', requireCapability('permission:manage'), async (req: Request, res: Response) => {
+  try {
+    const id = req.params.id as string;
+    const grants = await rbacService.replaceRoleObjectGrants(id, actorOf(req), (req.body ?? {}).grants);
+    res.json(grants);
+  } catch (e) {
+    sendRbacError(res, e);
+  }
+});
+
+/**
+ * @openapi
+ * /admin/objects:
+ *   get:
+ *     tags: [Admin]
+ *     operationId: listAdminObjects
+ *     summary: Унифицированный список объектов (для permission-UI)
+ *     description: >-
+ *       Поиск объектов всех типов (device, stream, process, segment, chunk, incident)
+ *       по общим метаданным objects (name/description/type). Панель /admin (permission:read)
+ *       должна видеть ВСЕ объекты-кандидаты независимо от прав текущего юзера на них,
+ *       поэтому выборка идёт напрямую из objects БЕЗ RLS-фильтрации (objects RLS не имеет).
+ *       Каждый поиск фиксируется в аудит-логе (action=admin.objects.query). Требуется capability permission:read.
+ *     parameters:
+ *       - name: q
+ *         in: query
+ *         required: false
+ *         description: Подстрока для поиска по имени/описанию/id объекта.
+ *         schema:
+ *           type: string
+ *       - name: type
+ *         in: query
+ *         required: false
+ *         description: Тип объекта (device, stream, process, segment, chunk, incident).
+ *         schema:
+ *           type: string
+ *       - name: groupId
+ *         in: query
+ *         required: false
+ *         description: Если задан — только объекты этой группы.
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *       - name: limit
+ *         in: query
+ *         required: false
+ *         schema:
+ *           type: integer
+ *           default: 50
+ *       - name: offset
+ *         in: query
+ *         required: false
+ *         schema:
+ *           type: integer
+ *           default: 0
+ *     responses:
+ *       '200':
+ *         description: Объекты и общее количество
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               required: [objects, total]
+ *               properties:
+ *                 objects:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/RbacObject'
+ *                 total:
+ *                   type: integer
+ *       '401':
+ *         description: Требуется авторизация
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       '403':
+ *         description: Недостаточно прав (нужна capability permission:read)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
+adminRouter.get('/objects', requireCapability('permission:read'), async (req: Request, res: Response) => {
+  const limit = Math.min(Math.max(Number(req.query.limit) || 50, 1), 200);
+  const offset = Math.max(Number(req.query.offset) || 0, 0);
+  const q = typeof req.query.q === 'string' && req.query.q !== '' ? req.query.q : undefined;
+  const type = typeof req.query.type === 'string' && req.query.type !== '' ? req.query.type : undefined;
+  const groupId = typeof req.query.groupId === 'string' && req.query.groupId !== '' ? req.query.groupId : undefined;
+  const objects = await rbacRepository.findAdminObjects({
+    ...(q !== undefined ? { q } : {}),
+    ...(type !== undefined ? { type } : {}),
+    ...(groupId !== undefined ? { groupId } : {}),
+    limit,
+    offset,
+  });
+  // RLS-bypass-выборка объектов-кандидатов фиксируется в аудит-логе (best-effort).
+  try {
+    await auditService.logAudit({
+      actorId: actorOf(req).id,
+      actorName: actorOf(req).username,
+      action: 'admin.objects.query',
+      targetType: 'admin',
+      details: {
+        q: typeof req.query.q === 'string' ? req.query.q : undefined,
+        type: typeof req.query.type === 'string' ? req.query.type : undefined,
+        groupId: typeof req.query.groupId === 'string' ? req.query.groupId : undefined,
+        total: objects.total,
+      },
+    });
+  } catch {
+    /* аудит best-effort */
+  }
+  res.json(objects);
+});

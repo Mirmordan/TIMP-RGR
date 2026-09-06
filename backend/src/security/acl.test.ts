@@ -19,6 +19,7 @@ const PERMS_RE = /FROM permissions p/;
 const OBJ_GROUPS_RE = /object_id = \$1/;
 const CAPABILITIES_RE = /role_capabilities/;
 const OWNER_RE = /FROM objects WHERE id = \$1/;
+const DIRECT_GRANTS_RE = /role_object_grants/;
 
 interface SeedRows {
   adminExists?: boolean;
@@ -26,6 +27,7 @@ interface SeedRows {
   objGroups?: string[];
   capabilities?: string[];
   ownerId?: string | null;
+  directGrants?: Array<{ objectId: string; action: string }>;
 }
 
 /** Настроить pool.query: отдаём строки в зависимости от текста SQL. */
@@ -34,6 +36,11 @@ function seed(rows: SeedRows = {}): void {
     const text = String(sql);
     if (IS_ADMIN_RE.test(text)) {
       return Promise.resolve({ rows: [{ exists: rows.adminExists ?? false }] });
+    }
+    if (DIRECT_GRANTS_RE.test(text)) {
+      return Promise.resolve({
+        rows: (rows.directGrants ?? []).map((g) => ({ objectId: g.objectId, action: g.action })),
+      });
     }
     if (PERMS_RE.test(text)) {
       return Promise.resolve({ rows: (rows.perms ?? []).map((r) => ({ groupId: r.groupId, action: r.action })) });
@@ -107,21 +114,37 @@ describe('acl.can', () => {
     await expect(can('usr-x', 'obj-own5', 'read')).resolves.toBe(false);
   });
 
+  it('прямой grant роли на объект → true без групп и без owner-статуса', async () => {
+    seed({ perms: [], objGroups: [], directGrants: [{ objectId: 'obj-dg', action: 'read' }] });
+    await expect(can('usr-dg', 'obj-dg', 'read')).resolves.toBe(true);
+    await expect(can('usr-dg', 'obj-dg', 'write')).resolves.toBe(false);
+  });
+
+  it('прямой grant не на тот объект → false', async () => {
+    seed({
+      perms: [],
+      objGroups: [],
+      ownerId: 'other-u',
+      directGrants: [{ objectId: 'obj-other', action: 'read' }],
+    });
+    await expect(can('usr-dg2', 'obj-own5', 'read')).resolves.toBe(false);
+  });
+
   it('юзер без прав на не-read действие → false и БЕЗ запроса объектных групп', async () => {
     seed({ perms: [] });
     await expect(can('usr-c', 'obj-c', 'delete')).resolves.toBe(false);
-    expect(queryCount()).toBe(2); // isAdmin + getUserGroupPermissions
+    expect(queryCount()).toBe(3); // isAdmin + getUserDirectGrants + getUserGroupPermissions
   });
 
   it('invalidateUser/invalidateObject: повторный can снова идёт в БД', async () => {
     seed({ perms: [{ groupId: 'gOther', action: 'read' }], objGroups: ['invG'] });
     await can('inv-u', 'inv-o', 'read');
-    expect(queryCount()).toBe(3);
+    expect(queryCount()).toBe(4);
 
     invalidateUser('inv-u');
     invalidateObject('inv-o');
     await can('inv-u', 'inv-o', 'read');
-    expect(queryCount()).toBe(6);
+    expect(queryCount()).toBe(8);
   });
 });
 

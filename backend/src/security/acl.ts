@@ -10,8 +10,9 @@ import type { ObjectAction } from './types';
  * на каждый объект (результаты кешируются в памяти). RLS в БД остаётся
  * последним рубежом и защищает от обхода этого слоя.
  *
- * RBAC-таблицы (user_roles, permissions, group_members, groups) и objects
- * (owner_id) НЕ имеют RLS, поэтому читаются напрямую.
+ * RBAC-таблицы (user_roles, permissions, group_members, groups,
+ * role_object_grants) и objects (owner_id) НЕ имеют RLS, поэтому читаются
+ * напрямую.
  *
  * Семантика owner_read (совпадает с RLS-политиками *_owner_read): владелец
  * (создатель) объекта читает его ТОЛЬКО пока объект не включён ни в одну
@@ -19,8 +20,13 @@ import type { ObjectAction } from './types';
  * исключительно групповыми правами (и админом). Это «bootstrap» для создания
  * объектов не-админами (camera:create и т.п.): автор видит свой свежий объект
  * до того, как администратор начнёт управлять доступом через группы.
+ *
+ * Прямые grants ролей на объекты (role_object_grants) действуют безусловно
+ * (не зависят от группового членства) и объединяются с групповыми правами.
  */
 
+// userId -> Map<objectId, Set<action>> (union прямых grants ролей юзера)
+const userDirectGrantsCache = new Cache<Map<string, Set<ObjectAction>>>(2000, 5 * 60_000);
 // userId -> Map<groupId, Set<action>>  (union прав по всем ролям юзера)
 const userGroupsCache = new Cache<Map<string, Set<ObjectAction>>>(2000, 5 * 60_000);
 // objectId -> Set<groupId>
@@ -94,6 +100,7 @@ async function getObjectGroups(objectId: string): Promise<string[]> {
  *
  * Семантика совпадает с RLS-политиками:
  *  - admin видит всё;
+ *  - прямые grants ролей на объект (role_object_grants) действуют безусловно;
  *  - владелец (создатель) читает свой объект, только пока тот не включён
  *    ни в одну группу (аналог *_owner_read = is_owner AND NOT в group_members);
  *    как только объект передан в группу(ы) — неявный owner-read исчезает,
@@ -106,6 +113,11 @@ export async function can(
   action: ObjectAction,
 ): Promise<boolean> {
   if (await isAdmin(userId)) return true;
+
+  // Прямые grants ролей юзера на конкретный объект (role_object_grants).
+  const direct = await getUserDirectGrants(userId);
+  const directActions = direct.get(objectId);
+  if (directActions && directActions.has(action)) return true;
 
   const perms = await getUserGroupPermissions(userId);
 
@@ -132,6 +144,30 @@ export async function can(
     if (actions && actions.has(action)) return true;
   }
   return false;
+}
+
+/**
+ * Union прямых grants (role_object_grants) пользователя: Map<objectId, Set<action>>.
+ * Хранится в кеше (инвалидируется invalidateUser после изменений RBAC).
+ */
+async function getUserDirectGrants(userId: string): Promise<Map<string, Set<ObjectAction>>> {
+  const cached = userDirectGrantsCache.get(userId);
+  if (cached) return cached;
+  const { rows } = await pool.query<{ objectId: string; action: ObjectAction }>(
+    `SELECT DISTINCT g.object_id AS "objectId", g.action
+     FROM role_object_grants g
+     JOIN user_roles ur ON ur.role_id = g.role_id
+     WHERE ur.user_id = $1`,
+    [userId],
+  );
+  const map = new Map<string, Set<ObjectAction>>();
+  for (const r of rows) {
+    const set = map.get(r.objectId);
+    if (set) set.add(r.action);
+    else map.set(r.objectId, new Set([r.action]));
+  }
+  userDirectGrantsCache.set(userId, map);
+  return map;
 }
 
 /**
@@ -185,6 +221,7 @@ export async function hasCapability(
 
 // --- Инвалидация кеша (вызывать после изменений RBAC) ---
 export function invalidateUser(userId: string): void {
+  userDirectGrantsCache.del(userId);
   userGroupsCache.del(userId);
   adminCache.del(userId);
   userCapabilitiesCache.del(userId);
@@ -199,4 +236,14 @@ export function invalidateGroup(groupId: string): void {
   // группа меняет membership/групповые права — сбрасываем кеш всех юзеров
   userGroupsCache.clear();
   objectGroupsCache.clear();
+}
+
+/** Полностью сбросить ACL-кеши (например, при изменении прямых grants роли). */
+export function clearAclCaches(): void {
+  userDirectGrantsCache.clear();
+  userGroupsCache.clear();
+  objectGroupsCache.clear();
+  objectOwnerCache.clear();
+  adminCache.clear();
+  userCapabilitiesCache.clear();
 }

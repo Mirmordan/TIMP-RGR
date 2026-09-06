@@ -11,6 +11,7 @@ import type { AuditActor } from './audit.service';
 import type {
   RbacGroup,
   RbacGroupObject,
+  RbacObjectGrant,
   RbacPermission,
   RbacRole,
   RbacUserWithRoles,
@@ -255,6 +256,70 @@ export const rbacService = {
     });
 
     return rbacRepository.findRoleCapabilities(id);
+  },
+
+  /**
+   * Полностью заменить набор прямых grants роли (role × object × action).
+   * Прямые grants не зависят от групп: выдача read/write/... на конкретный
+   * объект действует для всех юзеров роли. Валидация до записи: действия из
+   * чек-листа OBJECT_ACTIONS, все objectId существуют, дубликаты схлопываются.
+   * После commit — инвалидация ACL-кеша holder-ов роли и затронутых объектов.
+   */
+  async replaceRoleObjectGrants(id: string, actor: AuditActor, grants: unknown): Promise<RbacObjectGrant[]> {
+    const role = await rbacRepository.findRoleById(id);
+    if (!role) throw new HttpError(404, 'роль не найдена');
+
+    if (!Array.isArray(grants)) {
+      throw new HttpError(400, 'grants должен быть массивом объектов { objectId, action }');
+    }
+    const list: Array<{ objectId: string; action: string }> = [];
+    for (const g of grants) {
+      const grant = g as { objectId?: unknown; action?: unknown } | null;
+      if (!grant || typeof grant !== 'object' || typeof grant.objectId !== 'string' || typeof grant.action !== 'string') {
+        throw new HttpError(400, 'grants должен быть массивом объектов { objectId, action }');
+      }
+      if (!OBJECT_ACTIONS.includes(grant.action as ObjectAction)) {
+        throw new HttpError(400, `неизвестное действие: ${grant.action}`);
+      }
+      list.push({ objectId: grant.objectId, action: grant.action });
+    }
+
+    // Дубликаты пар (role, object, action) в БД запрещены UNIQUE — схлопываем.
+    const uniquePairs = new Map<string, { objectId: string; action: string }>();
+    for (const g of list) uniquePairs.set(`${g.objectId}:${g.action}`, g);
+
+    const objectIds = [...new Set(list.map((g) => g.objectId))];
+    if (objectIds.length > 0) {
+      const found = await rbacRepository.findExistingObjectIds(objectIds);
+      const foundSet = new Set(found);
+      const missing = objectIds.filter((o) => !foundSet.has(o));
+      if (missing.length > 0) throw new HttpError(400, `объект не найден: ${missing.slice(0, 5).join(', ')}`);
+    }
+
+    const before = await rbacRepository.findRoleObjectGrants(id);
+    const finalGrants = [...uniquePairs.values()];
+    await rbacRepository.replaceRoleObjectGrants(id, finalGrants);
+
+    // Инвалидируем кеш holder-ов роли (у них изменился набор прямых grants)
+    // и объектные кеши затронутых объектов.
+    const holders = await rbacRepository.findUsersByRole(id);
+    for (const userId of holders) invalidateUser(userId);
+    const affectedObjects = new Set<string>([
+      ...before.map((g) => g.objectId),
+      ...objectIds,
+    ]);
+    for (const objectId of affectedObjects) invalidateObject(objectId);
+
+    await auditService.logAudit({
+      actorId: actor.id,
+      actorName: actor.username,
+      action: 'role.grants.set',
+      targetType: 'role',
+      targetId: id,
+      details: { grants: finalGrants.map((g) => [g.objectId, g.action]) },
+    });
+
+    return rbacRepository.findRoleObjectGrants(id);
   },
 
   /** Создать группу объектов (имя валидируется тем же regex, что и роли). */

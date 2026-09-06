@@ -123,12 +123,12 @@ export const CAPABILITY_CATALOG: readonly CapabilityInfo[] = [
   {
     code: 'permission:read',
     label: 'Права доступа: чтение',
-    description: 'Просмотр прав ролей на группы объектов (GET /admin/permissions).',
+    description: 'Просмотр прав ролей на группы объектов и прямых выдач на объекты (GET /admin/permissions, GET /admin/roles/:id/grants, GET /admin/objects).',
   },
   {
     code: 'permission:manage',
     label: 'Права доступа: управление',
-    description: 'Изменение прав ролей на группы объектов и состава объектов групп (PUT /admin/roles/:id/permissions, PUT /admin/groups/:id/objects).',
+    description: 'Изменение прав ролей на группы объектов, прямых выдач на объекты и состава объектов групп (PUT /admin/roles/:id/permissions, PUT /admin/roles/:id/grants, PUT /admin/groups/:id/objects).',
   },
   {
     code: 'audit:read',

@@ -1,15 +1,12 @@
 import { pool } from '../database/connection';
 import type { PoolClient } from 'pg';
-import { queryAs } from '../security/dbBridge';
 import type { Capability } from '../security/types';
 
 /**
  * Доступ к RBAC-таблицам (users, roles, user_roles, groups,
  * group_members, permissions, objects, recording_devices) для /admin панели:
  * read-only выборки + мутации ролей пользователей и CRUD кастомных ролей.
- * Таблицы не имеют RLS, поэтому читаются напрямую через pool (без queryAs).
- * Исключение — выборки, джойнящие recording_devices (FORCE RLS): идут через
- * queryAs, чтобы app.user_id из контекста запроса прошёл is_admin()/has_permission().
+ * Таблицы не имеют RLS, поэтому читаются напрямую через pool.
  */
 
 /** Выполнить серию запросов в одной транзакции. */
@@ -53,6 +50,7 @@ export interface RbacGroupObject {
   objectId: string;
   name: string | null;
   type: string | null;
+  description: string | null;
 }
 
 export interface RbacPermission {
@@ -62,6 +60,27 @@ export interface RbacPermission {
   groupId: string;
   groupName: string;
   action: string;
+}
+
+/** Прямая выдача роли на объект (role_object_grants). */
+export interface RbacObjectGrant {
+  id: string;
+  roleId: string;
+  objectId: string;
+  objectType: string | null;
+  objectName: string | null;
+  objectDescription: string | null;
+  action: string;
+  createdAt: string;
+}
+
+/** Унифицированная запись объекта для панели /admin (из objects). */
+export interface RbacObject {
+  id: string;
+  type: string | null;
+  name: string | null;
+  description: string | null;
+  createdAt: string;
 }
 
 export const rbacRepository = {
@@ -132,20 +151,118 @@ export const rbacRepository = {
     return rows;
   },
 
+  /**
+   * Объекты группы (произвольные типы: device/stream/process/segment/chunk/incident).
+   * ВАЖНО: читается objects (без RLS) через pool — панель /admin обязана видеть
+   * ВСЕ объекты группы, независимо от прав текущего юзера на них.
+   */
   async findGroupObjects(groupId: string): Promise<{ exists: boolean; objects: RbacGroupObject[] }> {
-    const group = await queryAs<{ id: string }>('SELECT id FROM groups WHERE id = $1', [groupId]);
+    const group = await pool.query<{ id: string }>('SELECT id FROM groups WHERE id = $1', [groupId]);
     if (!group.rows[0]) return { exists: false, objects: [] };
-    const { rows } = await queryAs<RbacGroupObject>(
+    const { rows } = await pool.query<RbacGroupObject>(
       `SELECT gm.object_id AS "objectId",
-              rd.name AS "name",
-              rd.type AS "type"
+              objects_display_name(o.id) AS "name",
+              o.type AS "type",
+              o.description AS "description"
        FROM group_members gm
-       LEFT JOIN recording_devices rd ON rd.object_id = gm.object_id
+       JOIN objects o ON o.id = gm.object_id
        WHERE gm.group_id = $1
-       ORDER BY rd.name NULLS LAST, gm.object_id`,
+       ORDER BY o.created_at DESC, gm.object_id`,
       [groupId],
     );
     return { exists: true, objects: rows };
+  },
+
+  // --- Прямые grants ролей на объекты (role_object_grants) ---
+
+  /** Все прямые grants роли (с метаданными объекта). */
+  async findRoleObjectGrants(roleId: string): Promise<RbacObjectGrant[]> {
+    const { rows } = await pool.query<RbacObjectGrant>(
+      `SELECT g.id AS "id",
+              g.role_id AS "roleId",
+              g.object_id AS "objectId",
+              o.type AS "objectType",
+              objects_display_name(o.id) AS "objectName",
+              o.description AS "objectDescription",
+              g.action AS "action",
+              g.created_at AS "createdAt"
+       FROM role_object_grants g
+       JOIN objects o ON o.id = g.object_id
+       WHERE g.role_id = $1
+       ORDER BY o.created_at DESC, g.action, g.object_id`,
+      [roleId],
+    );
+    return rows;
+  },
+
+  /** Заменить набор прямых grants роли (транзакция: DELETE + INSERT). */
+  async replaceRoleObjectGrants(roleId: string, grants: Array<{ objectId: string; action: string }>): Promise<void> {
+    await withTransaction(async (client) => {
+      await client.query('DELETE FROM role_object_grants WHERE role_id = $1', [roleId]);
+      for (const g of grants) {
+        await client.query(
+          'INSERT INTO role_object_grants (role_id, object_id, action) VALUES ($1, $2, $3)',
+          [roleId, g.objectId, g.action],
+        );
+      }
+    });
+  },
+
+  // --- Унифицированный список объектов для панели /admin ---
+
+  /**
+   * Поиск объектов любых типов по общим метаданным (objects).
+   * ВАЖНО: objects без RLS, читаем через pool — /admin (permission-UI) должен
+   * видеть ВСЕ объекты-кандидаты, независимо от visibility текущего юзера.
+   * Эндпоинт защищён capability permission:read и аудитируется.
+   */
+  async findAdminObjects(params: {
+    q?: string;
+    type?: string;
+    groupId?: string;
+    limit: number;
+    offset: number;
+  }): Promise<{ objects: RbacObject[]; total: number }> {
+    const where: string[] = [`o.type <> ''`];
+    const cond: unknown[] = [];
+    const push = (v: unknown) => {
+      cond.push(v);
+      return cond.length;
+    };
+
+    if (params.type) {
+      where.push(`o.type = $${push(params.type)}`);
+    }
+    if (params.groupId) {
+      where.push(
+        `EXISTS (SELECT 1 FROM group_members gm WHERE gm.group_id = $${push(params.groupId)} AND gm.object_id = o.id)`,
+      );
+    }
+    if (params.q && params.q.trim() !== '') {
+      const like = `%${params.q.trim()}%`;
+      where.push(
+        `(objects_display_name(o.id) ILIKE $${push(like)}
+          OR o.description ILIKE $${push(like)}
+          OR o.id::text ILIKE $${push(like)})`,
+      );
+    }
+    const whereSql = `WHERE ${where.join(' AND ')}`;
+
+    const select = `SELECT o.id AS "id",
+                           o.type AS "type",
+                           objects_display_name(o.id) AS "name",
+                           o.description AS "description",
+                           o.created_at AS "createdAt"
+                    FROM objects o`;
+
+    const [data, total] = await Promise.all([
+      pool.query<RbacObject>(`${select} ${whereSql} ORDER BY o.created_at DESC LIMIT $${push(params.limit)} OFFSET $${push(params.offset)}`, cond),
+      pool.query<{ total: number }>(
+        `SELECT count(*)::int AS "total" FROM objects o ${whereSql}`,
+        cond.slice(0, cond.length - 2),
+      ),
+    ]);
+    return { objects: data.rows, total: total.rows[0]?.total ?? 0 };
   },
 
   async findPermissions(): Promise<RbacPermission[]> {
@@ -228,6 +345,32 @@ export const rbacRepository = {
       [roleId],
     );
     return rows.map((r) => r.userId);
+  },
+
+  /** Пагинированный список пользователей с ролями, которым выдана роль (для /admin/roles/:id/users). */
+  async findUsersInRole(roleId: string, limit: number, offset: number): Promise<RbacUserWithRoles[]> {
+    const { rows } = await pool.query<RbacUserWithRoles>(
+      `SELECT u.id AS "id",
+              u.username AS "username",
+              u.email AS "email",
+              u.created_at AS "createdAt",
+              u.password_hash IS NOT NULL AS "passwordSet",
+              COALESCE(
+                jsonb_agg(jsonb_build_object('id', r.id, 'name', r.name))
+                  FILTER (WHERE r.id IS NOT NULL),
+                '[]'::jsonb
+              ) AS "roles"
+       FROM users u
+       JOIN user_roles ur ON ur.user_id = u.id
+       LEFT JOIN user_roles ur_all ON ur_all.user_id = u.id
+       LEFT JOIN roles r ON r.id = ur_all.role_id
+       WHERE ur.role_id = $1
+       GROUP BY u.id
+       ORDER BY u.username
+       LIMIT $2 OFFSET $3`,
+      [roleId, limit, offset],
+    );
+    return rows;
   },
 
   /** Заменить набор спец-прав роли (транзакция: DELETE + INSERT). */

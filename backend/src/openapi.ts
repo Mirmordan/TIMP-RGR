@@ -694,17 +694,79 @@ const definition = {
         type: 'object',
         required: ['objectId', 'name', 'type'],
         properties: {
-          objectId: { type: 'string', description: 'UUID объекта (камеры).' },
+          objectId: { type: 'string', description: 'UUID объекта.' },
           name: {
             type: 'string',
             nullable: true,
-            description: 'Название устройства (null, если объект не устройство).',
+            description: 'Эффективное название объекта (собственное или унаследованное от устройства).',
           },
           type: {
             type: 'string',
             nullable: true,
-            description: 'Тип объекта (null, если неизвестен).',
+            description: 'Тип объекта (device, stream, process, segment, chunk, incident).',
           },
+          description: {
+            type: 'string',
+            nullable: true,
+            description: 'Описание объекта (общие метаданные objects).',
+          },
+        },
+      },
+      RbacObjectGrant: {
+        type: 'object',
+        description: 'Прямая выдача роли на конкретный объект (role_object_grants).',
+        required: ['id', 'roleId', 'objectId', 'action', 'createdAt'],
+        properties: {
+          id: { type: 'string', description: 'UUID записи grants.' },
+          roleId: { type: 'string', description: 'UUID роли.' },
+          objectId: { type: 'string', description: 'UUID объекта.' },
+          objectType: { type: 'string', nullable: true, description: 'Тип объекта.' },
+          objectName: { type: 'string', nullable: true, description: 'Эффективное название объекта.' },
+          objectDescription: { type: 'string', nullable: true, description: 'Описание объекта.' },
+          action: {
+            type: 'string',
+            enum: ['read', 'write', 'delete', 'stream', 'list'],
+            description: 'Действие, разрешаемое на объекте.',
+          },
+          createdAt: { type: 'string', format: 'date-time' },
+        },
+      },
+      ObjectGrantEntries: {
+        type: 'object',
+        description: 'Полный новый набор прямых grants роли (заменяет текущий).',
+        required: ['grants'],
+        properties: {
+          grants: {
+            type: 'array',
+            items: {
+              type: 'object',
+              required: ['objectId', 'action'],
+              properties: {
+                objectId: {
+                  type: 'string',
+                  format: 'uuid',
+                  description: 'UUID объекта.',
+                },
+                action: {
+                  type: 'string',
+                  enum: ['read', 'write', 'delete', 'stream', 'list'],
+                  description: 'Действие, разрешаемое на объекте.',
+                },
+              },
+            },
+          },
+        },
+      },
+      RbacObject: {
+        type: 'object',
+        description: 'Унифицированная запись объекта в панели /admin (общие метаданные objects).',
+        required: ['id', 'createdAt'],
+        properties: {
+          id: { type: 'string', description: 'UUID объекта.' },
+          type: { type: 'string', nullable: true, description: 'Тип объекта.' },
+          name: { type: 'string', nullable: true, description: 'Эффективное название объекта.' },
+          description: { type: 'string', nullable: true, description: 'Описание объекта.' },
+          createdAt: { type: 'string', format: 'date-time' },
         },
       },
       RbacPermission: {

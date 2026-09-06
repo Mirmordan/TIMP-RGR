@@ -15,6 +15,11 @@ const mocks = vi.hoisted(() => ({
   findCapabilitiesByUser: vi.fn(),
   findUsersByRole: vi.fn(),
   replaceRoleCapabilities: vi.fn(),
+  findUsersInRole: vi.fn(),
+  findRoleObjectGrants: vi.fn(),
+  replaceRoleObjectGrants: vi.fn(),
+  findExistingObjectIds: vi.fn(),
+  findAdminObjects: vi.fn(),
   logAudit: vi.fn(),
   userGetAll: vi.fn(),
   deviceCreate: vi.fn(),
@@ -36,6 +41,11 @@ vi.mock('../repositories/rbac.repository', () => ({
     findCapabilitiesByUser: (...a: unknown[]) => mocks.findCapabilitiesByUser(...a),
     findUsersByRole: (...a: unknown[]) => mocks.findUsersByRole(...a),
     replaceRoleCapabilities: (...a: unknown[]) => mocks.replaceRoleCapabilities(...a),
+    findUsersInRole: (...a: unknown[]) => mocks.findUsersInRole(...a),
+    findRoleObjectGrants: (...a: unknown[]) => mocks.findRoleObjectGrants(...a),
+    replaceRoleObjectGrants: (...a: unknown[]) => mocks.replaceRoleObjectGrants(...a),
+    findExistingObjectIds: (...a: unknown[]) => mocks.findExistingObjectIds(...a),
+    findAdminObjects: (...a: unknown[]) => mocks.findAdminObjects(...a),
   },
 }));
 
@@ -281,6 +291,104 @@ describe('specialPermissions.integration (route-level, роли и спец-пр
       });
       expect(r.status).toBe(400);
       expect(mocks.replaceRoleCapabilities).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('прямые grants ролей на объекты (role_object_grants)', () => {
+    const customRole = { id: '00000000-0000-0000-0000-00000000cafe', name: 'hr', createdAt: '2026-01-01T00:00:00.000Z' };
+
+    it('GET /admin/roles/:id/users требует user:read и вызывает findUsersInRole', async () => {
+      grantAll('u-admin');
+      (mocks.findRoleById as unknown as Mock).mockResolvedValue(customRole);
+      (mocks.findUsersInRole as unknown as Mock).mockResolvedValue([
+        { id: 'u1', username: 'alice', email: 'a@t.ru', createdAt: '2026-01-01T00:00:00.000Z', passwordSet: true, roles: [customRole] },
+      ]);
+      const r = await api('GET', `/admin/roles/${customRole.id}/users`, 'u-admin');
+      expect(r.status).toBe(200);
+      expect(r.body).toHaveLength(1);
+      expect(mocks.findUsersInRole).toHaveBeenCalledWith(customRole.id, 20, 0);
+    });
+
+    it('GET /admin/roles/:id/users для несуществующей роли → 404', async () => {
+      grantAll('u-admin');
+      (mocks.findRoleById as unknown as Mock).mockResolvedValue(null);
+      const r = await api('GET', `/admin/roles/${customRole.id}/users`, 'u-admin');
+      expect(r.status).toBe(404);
+    });
+
+    it('GET /admin/objects требует permission:read, отдаёт список и пишет admin.objects.query', async () => {
+      grantAll('u-admin');
+      (mocks.findAdminObjects as unknown as Mock).mockResolvedValue({
+        objects: [
+          { id: 'o1', type: 'device', name: 'cam', description: null, createdAt: '2026-01-01T00:00:00.000Z' },
+        ],
+        total: 1,
+      });
+      const r = await api('GET', '/admin/objects?q=cam&type=device', 'u-admin');
+      expect(r.status).toBe(200);
+      expect(r.body).toMatchObject({ total: 1 });
+      expect(mocks.findAdminObjects).toHaveBeenCalledWith(
+        expect.objectContaining({ q: 'cam', type: 'device' }),
+      );
+      expect(mocks.logAudit).toHaveBeenCalledWith(
+        expect.objectContaining({ action: 'admin.objects.query', targetType: 'admin' }),
+      );
+    });
+
+    it('GET /admin/objects без permission:read → 403 и БЕЗ запроса', async () => {
+      const uid = 'u-no-perm';
+      // не выдаём permission:read
+      expect((await api('GET', '/admin/objects', uid)).status).toBe(403);
+      expect(mocks.findAdminObjects).not.toHaveBeenCalled();
+    });
+
+    it('GET /admin/roles/:id/grants требует permission:read', async () => {
+      grantAll('u-admin');
+      (mocks.findRoleById as unknown as Mock).mockResolvedValue(customRole);
+      (mocks.findRoleObjectGrants as unknown as Mock).mockResolvedValue([]);
+      expect((await api('GET', `/admin/roles/${customRole.id}/grants`, 'u-admin')).status).toBe(200);
+      expect((await api('GET', `/admin/roles/${customRole.id}/grants`, 'u-role-read')).status).toBe(403);
+    });
+
+    it('PUT /admin/roles/:id/grants заменяет набор и пишет аудит role.grants.set', async () => {
+      grantAll('u-admin');
+      (mocks.findRoleById as unknown as Mock).mockResolvedValue(customRole);
+      (mocks.findExistingObjectIds as unknown as Mock).mockResolvedValue(['o1', 'o2']);
+      (mocks.findRoleObjectGrants as unknown as Mock).mockResolvedValue([
+        {
+          id: 'g1', roleId: customRole.id, objectId: 'o1', objectType: 'device', objectName: 'cam',
+          objectDescription: null, action: 'read', createdAt: '2026-01-01T00:00:00.000Z',
+        },
+      ]);
+      (mocks.findUsersByRole as unknown as Mock).mockResolvedValue(['u1']);
+      (mocks.replaceRoleObjectGrants as unknown as Mock).mockResolvedValue(undefined);
+
+      const r = await api('PUT', `/admin/roles/${customRole.id}/grants`, 'u-admin', {
+        grants: [
+          { objectId: 'o1', action: 'read' },
+          { objectId: 'o2', action: 'write' },
+        ],
+      });
+      expect(r.status).toBe(200);
+      expect(mocks.replaceRoleObjectGrants).toHaveBeenCalledWith(customRole.id, [
+        { objectId: 'o1', action: 'read' },
+        { objectId: 'o2', action: 'write' },
+      ]);
+      expect(mocks.invalidateUser).toHaveBeenCalledWith('u1');
+      expect(mocks.logAudit).toHaveBeenCalledWith(
+        expect.objectContaining({ action: 'role.grants.set', targetId: customRole.id }),
+      );
+    });
+
+    it('PUT grants: несуществующий объект → 400 без записи', async () => {
+      grantAll('u-admin');
+      (mocks.findRoleById as unknown as Mock).mockResolvedValue(customRole);
+      (mocks.findExistingObjectIds as unknown as Mock).mockResolvedValue(['o1']);
+      const r = await api('PUT', `/admin/roles/${customRole.id}/grants`, 'u-admin', {
+        grants: [{ objectId: 'o-missing', action: 'read' }],
+      });
+      expect(r.status).toBe(400);
+      expect(mocks.replaceRoleObjectGrants).not.toHaveBeenCalled();
     });
   });
 });

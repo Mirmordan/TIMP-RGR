@@ -33,6 +33,9 @@ vi.mock('../repositories/rbac.repository', () => ({
     replaceGroupObjects: vi.fn(),
     findExistingGroupIds: vi.fn(),
     findExistingObjectIds: vi.fn(),
+    findUsersInRole: vi.fn(),
+    findRoleObjectGrants: vi.fn(),
+    replaceRoleObjectGrants: vi.fn(),
   },
 }));
 
@@ -55,7 +58,7 @@ vi.mock('./audit.service', () => ({
 }));
 
 import { rbacRepository } from '../repositories/rbac.repository';
-import { invalidateUser, invalidateGroup } from '../security/acl';
+import { invalidateUser, invalidateObject, invalidateGroup } from '../security/acl';
 import { userRepository } from '../repositories/user.repository';
 import { auditService } from './audit.service';
 import { rbacService } from './rbac.service';
@@ -327,6 +330,78 @@ describe('rbacService.replaceRoleCapabilities', () => {
         targetType: 'role',
         targetId: 'r1',
         details: { capabilities: ['user:read'] },
+      }),
+    );
+  });
+});
+
+describe('rbacService.replaceRoleObjectGrants', () => {
+  it('роль не найдена → 404', async () => {
+    (rbacRepository.findRoleById as unknown as Mock).mockResolvedValue(null);
+    await expectHttpError(rbacService.replaceRoleObjectGrants('r-missing', ACTOR, []), 404);
+  });
+
+  it('не массив grants → 400', async () => {
+    (rbacRepository.findRoleById as unknown as Mock).mockResolvedValue(role('r1', 'custom-role'));
+    await expectHttpError(rbacService.replaceRoleObjectGrants('r1', ACTOR, 'oops'), 400);
+  });
+
+  it('неизвестное действие → 400', async () => {
+    (rbacRepository.findRoleById as unknown as Mock).mockResolvedValue(role('r1', 'custom-role'));
+    await expectHttpError(
+      rbacService.replaceRoleObjectGrants('r1', ACTOR, [{ objectId: 'o1', action: 'explode' }]),
+      400,
+    );
+  });
+
+  it('несуществующий объект → 400', async () => {
+    (rbacRepository.findRoleById as unknown as Mock).mockResolvedValue(role('r1', 'custom-role'));
+    (rbacRepository.findExistingObjectIds as unknown as Mock).mockResolvedValue(['o1']);
+    await expectHttpError(
+      rbacService.replaceRoleObjectGrants('r1', ACTOR, [{ objectId: 'oX', action: 'read' }]),
+      400,
+    );
+    expect(rbacRepository.replaceRoleObjectGrants).not.toHaveBeenCalled();
+  });
+
+  it('happy path: дедупликация, инвалидация holder-ов и объектов, аудит', async () => {
+    (rbacRepository.findRoleById as unknown as Mock).mockResolvedValue(role('r1', 'custom-role'));
+    (rbacRepository.findExistingObjectIds as unknown as Mock).mockResolvedValue(['o1', 'o2']);
+    (rbacRepository.findRoleObjectGrants as unknown as Mock)
+      .mockResolvedValueOnce([{ objectId: 'o0', action: 'read' }]) // before
+      .mockResolvedValueOnce([
+        { id: 'g1', roleId: 'r1', objectId: 'o1', objectType: 'device', objectName: 'cam', objectDescription: null, action: 'read', createdAt: '2026-01-01T00:00:00.000Z' },
+        { id: 'g2', roleId: 'r1', objectId: 'o2', objectType: 'device', objectName: 'cam2', objectDescription: null, action: 'write', createdAt: '2026-01-01T00:00:00.000Z' },
+      ]);
+    (rbacRepository.findUsersByRole as unknown as Mock).mockResolvedValue(['u1', 'u2']);
+    (rbacRepository.replaceRoleObjectGrants as unknown as Mock).mockResolvedValue(undefined);
+
+    const result = await rbacService.replaceRoleObjectGrants(
+      'r1',
+      ACTOR,
+      [
+        { objectId: 'o1', action: 'read' },
+        { objectId: 'o1', action: 'read' }, // дубликат — схлопнется
+        { objectId: 'o2', action: 'write' },
+      ],
+    );
+
+    expect(rbacRepository.replaceRoleObjectGrants).toHaveBeenCalledWith('r1', [
+      { objectId: 'o1', action: 'read' },
+      { objectId: 'o2', action: 'write' },
+    ]);
+    expect(invalidateUser).toHaveBeenCalledWith('u1');
+    expect(invalidateUser).toHaveBeenCalledWith('u2');
+    expect(invalidateObject).toHaveBeenCalledWith('o0');
+    expect(invalidateObject).toHaveBeenCalledWith('o1');
+    expect(invalidateObject).toHaveBeenCalledWith('o2');
+    expect(result).toHaveLength(2);
+    const logAudit = auditService.logAudit as unknown as Mock;
+    expect(logAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'role.grants.set',
+        targetType: 'role',
+        targetId: 'r1',
       }),
     );
   });
