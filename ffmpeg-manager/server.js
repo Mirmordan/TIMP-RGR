@@ -12,6 +12,7 @@ app.use(express.json());
 
 const PORT = process.env.PORT || 9999;
 const RECORD_ROOT = process.env.RECORD_ROOT || '/data/chunks';
+const HLS_ROOT = join(RECORD_ROOT, '.hls');
 const paths = new Map();
 const STATE_FILE = join(RECORD_ROOT, '.ffm-paths.json');
 
@@ -120,6 +121,12 @@ function startIvideonStream(name, opts) {
   let watchdog = null;
   const live = new Set();
 
+  // Live-HLS каталог: внутри RECORD_ROOT, но отдельным скрытым каталогом,
+  // чтобы не попадать в скан архивных чанков (recordRoot/process_<id>).
+  const hlsDir = join(HLS_ROOT, name);
+  mkdirSync(hlsDir, { recursive: true });
+  let liveFfmpeg = null;
+
   function createNewSegment() {
     if (stopped) return null;
     // Явное владение: до перезаписи держим ссылку на прежний процесс,
@@ -148,6 +155,69 @@ function startIvideonStream(name, opts) {
     return proc;
   }
 
+  // Один долгий live-HLS процесс на сессию: сам режет fMP4-pipe на 2s .ts сегменты.
+  // Пересоздаётся на каждом WS-reconnect со свежим индексом (playlist перезапишется — ок для live).
+  function startLiveHls() {
+    if (stopped) return null;
+    const prev = liveFfmpeg;
+    if (prev) {
+      liveFfmpeg = null;
+      if (prev.exitCode === null && prev.signalCode === null) forceKill(prev, name);
+    }
+    mkdirSync(hlsDir, { recursive: true });
+    // Свежий старт: чистим сегменты/playlist прошлой live-сессии (ffmpeg начнёт с seg_00000).
+    try {
+      for (const f of readdirSync(hlsDir)) {
+        if ((f.startsWith('seg_') && f.endsWith('.ts')) || f === 'index.m3u8') {
+          try { unlinkSync(join(hlsDir, f)); } catch {}
+        }
+      }
+    } catch {}
+    const proc = spawn('ffmpeg', [
+      '-hide_banner', '-loglevel', 'error',
+      '-f', 'mp4', '-i', 'pipe:0',
+      '-c', 'copy',
+      '-f', 'hls',
+      '-hls_time', '2',
+      '-hls_list_size', '8',
+      '-hls_flags', 'delete_segments+append_list',
+      '-hls_segment_type', 'mpegts',
+      '-hls_segment_filename', join(hlsDir, 'seg_%05d.ts'),
+      '-y', join(hlsDir, 'index.m3u8'),
+    ], { stdio: ['pipe', 'ignore', 'pipe'] });
+    liveFfmpeg = proc;
+    registerProc(proc, live);
+    proc.stderr.on('data', (d) => console.error(`[${name}][live] ${d}`));
+    proc.on('error', () => { if (liveFfmpeg === proc) liveFfmpeg = null; });
+    proc.on('close', () => {
+      if (liveFfmpeg === proc) liveFfmpeg = null;
+    });
+    console.log(`[${name}] live HLS ffmpeg started (pid ${proc.pid})`);
+    return proc;
+  }
+
+  function stopLiveHls() {
+    const p = liveFfmpeg;
+    if (!p) return;
+    liveFfmpeg = null;
+    if (p.exitCode === null && p.signalCode === null) forceKill(p, name);
+  }
+
+  // Пишет init+фрагмент в оба stdin (архивный current + live). Мёртвый процесс
+  // (exitCode/signalCode/неписучий stdin) пропускается: EPIPE на live не должен
+  // ронять архивную запись.
+  function feedPipes(init, data) {
+    for (const proc of [currentFfmpeg, liveFfmpeg]) {
+      if (!proc || proc.exitCode !== null || proc.signalCode !== null) continue;
+      const stdin = proc.stdin;
+      if (!stdin || !stdin.writable) continue;
+      try {
+        stdin.write(init);
+        stdin.write(data);
+      } catch {}
+    }
+  }
+
   function connect() {
     if (stopped) return;
 
@@ -161,16 +231,14 @@ function startIvideonStream(name, opts) {
         console.log(`[${name}] WS connected`);
         const p = paths.get(name);
         if (p) { p.online = true; p.ready = false; }
+        startLiveHls();
       });
 
       ws.on('message', (data, isBinary) => {
         if (isBinary) {
           if (!initSegment) return;
           if (!currentFfmpeg) createNewSegment();
-          if (currentFfmpeg && currentFfmpeg.stdin.writable) {
-            currentFfmpeg.stdin.write(initSegment);
-            currentFfmpeg.stdin.write(data);
-          }
+          feedPipes(initSegment, data);
           const p = paths.get(name);
           if (p) { p.ready = true; p.bytesReceived += data.length; }
         } else {
@@ -195,6 +263,7 @@ function startIvideonStream(name, opts) {
         const p = paths.get(name);
         if (p) { p.online = false; p.ready = false; }
         if (currentFfmpeg) releaseProc(currentFfmpeg, name);
+        stopLiveHls();
         if (!stopped) reconnectTimer = setTimeout(connect, 3000);
       });
 
@@ -203,6 +272,7 @@ function startIvideonStream(name, opts) {
         const p = paths.get(name);
         if (p) { p.online = false; p.ready = false; }
         if (currentFfmpeg) releaseProc(currentFfmpeg, name);
+        stopLiveHls();
         if (!stopped) reconnectTimer = setTimeout(connect, 5000);
       });
 
@@ -218,6 +288,7 @@ function startIvideonStream(name, opts) {
     const now = Date.now();
     for (const proc of live) {
       if (proc === currentFfmpeg) continue;
+      if (proc === liveFfmpeg) continue;
       const m = procMeta.get(proc);
       if (m && now - m.born > 30000) {
         console.warn(`[${name}] watchdog: stale ffmpeg (pid ${proc.pid}) alive >30s — force kill`);
@@ -232,6 +303,7 @@ function startIvideonStream(name, opts) {
       stopped = true;
       if (reconnectTimer) clearTimeout(reconnectTimer);
       if (watchdog) { clearInterval(watchdog); watchdog = null; }
+      stopLiveHls();
       if (ws) { try { ws.close(); } catch {} }
       for (const proc of live) forceKill(proc, name);
     }
@@ -323,6 +395,10 @@ function readState() {
 
 async function addPath(name, conf) {
   if (paths.has(name)) return false;
+  // Защита от выхода за RECORD_ROOT/.hls: name попадает в join(RECORD_ROOT|HLS_ROOT, name).
+  if (typeof name !== 'string' || !name || name.includes('/') || name.includes('\\') || name.includes('..')) {
+    throw new Error(`invalid path name: ${JSON.stringify(name)}`);
+  }
 
   const recordDir = join(RECORD_ROOT, name);
   mkdirSync(recordDir, { recursive: true });
@@ -362,6 +438,9 @@ app.delete('/v3/config/paths/delete/:name', (req, res) => {
   if (entry.stream) entry.stream.stop();
   paths.delete(name);
   persistState();
+  // Чистим live-HLS после остановки (rm после kill; ошибки игнорируем).
+  const hlsDir = join(HLS_ROOT, name);
+  setTimeout(() => { try { rmSync(hlsDir, { recursive: true, force: true }); } catch {} }, 250);
   res.json({ status: 'ok' });
 });
 
@@ -373,6 +452,7 @@ app.get('/v3/paths/get/:name', (req, res) => {
     name: entry.name, ready: entry.ready, online: entry.online,
     source: { type: entry.conf._ivideon ? 'ivideon' : 'hlsSource', id: '' },
     tracks: entry.ready ? ['H264'] : [], readers: [], bytesReceived: entry.bytesReceived, fileCount: files,
+    liveHls: entry.conf._ivideon ? `/hls/${entry.name}/index.m3u8` : null,
   });
 });
 
@@ -384,12 +464,24 @@ app.get('/v3/paths/list', (req, res) => {
       name: entry.name, ready: entry.ready, online: entry.online,
       source: { type: entry.conf._ivideon ? 'ivideon' : 'hlsSource', id: '' },
       tracks: entry.ready ? ['H264'] : [], readers: [], bytesReceived: entry.bytesReceived, fileCount: files,
+      liveHls: entry.conf._ivideon ? `/hls/${entry.name}/index.m3u8` : null,
     });
   }
   res.json({ itemCount: items.length, pageCount: 1, items });
 });
 
 app.get('/health', (req, res) => res.json({ status: 'ok', paths: paths.size }));
+
+// ===== Live HLS static =====
+// Отдаём .hls сегменты и playlists. express/send резолвит путь безопасно
+// (попытки выйти за HLS_ROOT через '..' отклоняются), m3u8 не кэшируем.
+app.use('/hls', express.static(HLS_ROOT, {
+  index: false,
+  setHeaders: (res, filePath) => {
+    if (filePath.endsWith('.m3u8')) res.setHeader('Cache-Control', 'no-store');
+    else if (filePath.endsWith('.ts')) res.setHeader('Cache-Control', 'max-age=5');
+  },
+}));
 
 // ===== Boot: restore persisted paths before listening =====
 
