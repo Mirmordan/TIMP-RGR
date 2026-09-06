@@ -322,9 +322,11 @@ export const rbacService = {
     return rbacRepository.findRoleObjectGrants(id);
   },
 
-  /** Создать группу объектов (имя валидируется тем же regex, что и роли). */
-  async createGroup(name: unknown, actor: AuditActor): Promise<RbacGroup> {
+/** Создать группу объектов (имя валидируется тем же regex, что и роли).
+ *  Системное имя 'all' зарезервировано. */
+async createGroup(name: unknown, actor: AuditActor): Promise<RbacGroup> {
     assertValidGroupName(name);
+    if (name === 'all') throw new HttpError(400, 'имя «all» зарезервировано для системной группы');
     const existing = await rbacRepository.findGroupByName(name);
     if (existing) throw new HttpError(409, 'группа с таким именем уже существует');
     const group = await rbacRepository.createGroup(name);
@@ -339,12 +341,14 @@ export const rbacService = {
     return group;
   },
 
-  /** Переименовать группу объектов. */
-  async renameGroup(id: string, actor: AuditActor, name: unknown): Promise<RbacGroup> {
+/** Переименовать группу объектов (системную группу переименовывать нельзя). */
+async renameGroup(id: string, actor: AuditActor, name: unknown): Promise<RbacGroup> {
     const group = await rbacRepository.findGroupById(id);
     if (!group) throw new HttpError(404, 'группа не найдена');
+    if (group.isSystem) throw new HttpError(400, 'системную группу переименовывать нельзя');
 
     assertValidGroupName(name);
+    if (name === 'all') throw new HttpError(400, 'имя «all» зарезервировано для системной группы');
     const clash = await rbacRepository.findGroupByName(name);
     if (clash && clash.id !== group.id) throw new HttpError(409, 'группа с таким именем уже существует');
 
@@ -362,13 +366,14 @@ export const rbacService = {
     return updated;
   },
 
-  /**
+/**
    * Удалить группу, только если на ней не висит ни прав, ни объектов
-   * (иначе 409 — никаких молчаливых каскадов).
+   * (иначе 409 — никаких молчаливых каскадов). Системную группу удалять нельзя.
    */
-  async deleteGroup(id: string, actor: AuditActor): Promise<void> {
+async deleteGroup(id: string, actor: AuditActor): Promise<void> {
     const group = await rbacRepository.findGroupById(id);
     if (!group) throw new HttpError(404, 'группа не найдена');
+    if (group.isSystem) throw new HttpError(400, 'системную группу удалять нельзя');
 
     const usage = await rbacRepository.countGroupUsage(id);
     if (usage.permissions > 0 || usage.members > 0) {
@@ -390,14 +395,16 @@ export const rbacService = {
     });
   },
 
-  /**
+/**
    * Заменить состав объектов группы (transaction DELETE+INSERT).
    * Валидация id объектов до записи; после — инвалидация кеша группы
    * и всех затронутых объектов (старое+новое множество).
+   * Системная группа не имеет членов (все объекты implicit).
    */
-  async replaceGroupObjects(id: string, actor: AuditActor, objectIds: unknown): Promise<RbacGroupObject[]> {
+async replaceGroupObjects(id: string, actor: AuditActor, objectIds: unknown): Promise<RbacGroupObject[]> {
     const group = await rbacRepository.findGroupById(id);
     if (!group) throw new HttpError(404, 'группа не найдена');
+    if (group.isSystem) throw new HttpError(400, 'системная группа не имеет явных членов');
 
     if (!Array.isArray(objectIds) || objectIds.some((o: unknown) => typeof o !== 'string')) {
       throw new HttpError(400, 'objectIds должен быть массивом uuid-строк');

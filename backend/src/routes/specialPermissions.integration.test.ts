@@ -20,6 +20,7 @@ const mocks = vi.hoisted(() => ({
   replaceRoleObjectGrants: vi.fn(),
   findExistingObjectIds: vi.fn(),
   findAdminObjects: vi.fn(),
+  findGroupById: vi.fn(),
   logAudit: vi.fn(),
   userGetAll: vi.fn(),
   deviceCreate: vi.fn(),
@@ -46,6 +47,7 @@ vi.mock('../repositories/rbac.repository', () => ({
     replaceRoleObjectGrants: (...a: unknown[]) => mocks.replaceRoleObjectGrants(...a),
     findExistingObjectIds: (...a: unknown[]) => mocks.findExistingObjectIds(...a),
     findAdminObjects: (...a: unknown[]) => mocks.findAdminObjects(...a),
+    findGroupById: (...a: unknown[]) => mocks.findGroupById ? mocks.findGroupById(...a) : Promise.resolve(null),
   },
 }));
 
@@ -389,6 +391,39 @@ describe('specialPermissions.integration (route-level, роли и спец-пр
       });
       expect(r.status).toBe(400);
       expect(mocks.replaceRoleObjectGrants).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('системная группа all (is_system)', () => {
+    const sysGroup = { id: 'aaaaaaaa-0000-0000-0000-000000000001', name: 'all', objectCount: 0, isSystem: true };
+
+    it('PATCH /admin/groups/:id системной группы → 400', async () => {
+      grantAll('u-admin');
+      (mocks.findRoleById as unknown as Mock).mockResolvedValue(sysGroup);
+      (mocks.findGroupById as unknown as Mock).mockResolvedValue(sysGroup);
+      const r = await api('PATCH', '/admin/groups/aaaaaaaa-0000-0000-0000-000000000001', 'u-admin', { name: 'newname' });
+      expect(r.status).toBe(400);
+    });
+
+    it('DELETE /admin/groups/:id системной группы → 400', async () => {
+      grantAll('u-admin');
+      (mocks.findGroupById as unknown as Mock).mockResolvedValue(sysGroup);
+      const r = await api('DELETE', '/admin/groups/aaaaaaaa-0000-0000-0000-000000000001', 'u-admin');
+      expect(r.status).toBe(400);
+    });
+
+    it('PUT /admin/groups/:id/objects системной группы → 400', async () => {
+      grantAll('u-admin');
+      (mocks.findGroupById as unknown as Mock).mockResolvedValue(sysGroup);
+      const r = await api('PUT', '/admin/groups/aaaaaaaa-0000-0000-0000-000000000001/objects', 'u-admin', { objectIds: [] });
+      expect(r.status).toBe(400);
+    });
+
+    it('POST /admin/groups с именем all → 400 (системное имя зарезервировано)', async () => {
+      grantAll('u-admin');
+      (mocks.findRoleById as unknown as Mock).mockResolvedValue({ id: 'r1', name: 'custom-role', createdAt: '2026-01-01T00:00:00.000Z' });
+      const r = await api('POST', '/admin/groups', 'u-admin', { name: 'all' });
+      expect(r.status).toBe(400);
     });
   });
 });

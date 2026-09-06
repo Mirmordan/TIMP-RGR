@@ -688,6 +688,7 @@ const definition = {
           id: { type: 'string', description: 'UUID группы объектов.' },
           name: { type: 'string', description: 'Имя группы.' },
           objectCount: { type: 'integer', description: 'Количество объектов в группе.' },
+          isSystem: { type: 'boolean', description: 'Системная группа (присутствует во всех объектах).', nullable: true },
         },
       },
       RbacGroupObject: {

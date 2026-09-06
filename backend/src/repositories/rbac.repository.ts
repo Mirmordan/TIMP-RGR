@@ -44,6 +44,7 @@ export interface RbacGroup {
   id: string;
   name: string;
   objectCount: number;
+  isSystem?: boolean;
 }
 
 export interface RbacGroupObject {
@@ -142,7 +143,8 @@ export const rbacRepository = {
     const { rows } = await pool.query<RbacGroup>(
       `SELECT g.id AS "id",
               g.name AS "name",
-              count(gm.object_id)::int AS "objectCount"
+              count(gm.object_id)::int AS "objectCount",
+              g.is_system AS "isSystem"
        FROM groups g
        LEFT JOIN group_members gm ON gm.group_id = g.id
        GROUP BY g.id
@@ -153,12 +155,29 @@ export const rbacRepository = {
 
   /**
    * Объекты группы (произвольные типы: device/stream/process/segment/chunk/incident).
+   * Для системной группы возвращает ВСЕ объекты (без group_members).
    * ВАЖНО: читается objects (без RLS) через pool — панель /admin обязана видеть
    * ВСЕ объекты группы, независимо от прав текущего юзера на них.
    */
   async findGroupObjects(groupId: string): Promise<{ exists: boolean; objects: RbacGroupObject[] }> {
-    const group = await pool.query<{ id: string }>('SELECT id FROM groups WHERE id = $1', [groupId]);
+    const group = await pool.query<{ id: string; isSystem: boolean }>('SELECT id, is_system AS "isSystem" FROM groups WHERE id = $1', [groupId]);
     if (!group.rows[0]) return { exists: false, objects: [] };
+    const isSystem = group.rows[0].isSystem;
+
+    if (isSystem) {
+      // Системная группа — все объекты.
+      const { rows } = await pool.query<RbacGroupObject>(
+        `SELECT o.id AS "objectId",
+                objects_display_name(o.id) AS "name",
+                o.type AS "type",
+                o.description AS "description"
+         FROM objects o
+         WHERE o.type <> ''
+         ORDER BY o.created_at DESC`,
+      );
+      return { exists: true, objects: rows };
+    }
+
     const { rows } = await pool.query<RbacGroupObject>(
       `SELECT gm.object_id AS "objectId",
               objects_display_name(o.id) AS "name",
@@ -530,6 +549,7 @@ export const rbacRepository = {
     const { rows } = await pool.query<RbacGroup>(
       `SELECT g.id AS "id",
               g.name AS "name",
+              g.is_system AS "isSystem",
               count(gm.object_id)::int AS "objectCount"
        FROM groups g
        LEFT JOIN group_members gm ON gm.group_id = g.id
@@ -542,7 +562,7 @@ export const rbacRepository = {
 
   async findGroupByName(name: string): Promise<RbacGroup | null> {
     const { rows } = await pool.query<RbacGroup>(
-      `SELECT id AS "id", name AS "name", 0::int AS "objectCount"
+      `SELECT id AS "id", name AS "name", is_system AS "isSystem", 0::int AS "objectCount"
        FROM groups
        WHERE name = $1`,
       [name],
@@ -560,10 +580,10 @@ export const rbacRepository = {
     return { permissions: rows[0]?.permissions ?? 0, members: rows[0]?.members ?? 0 };
   },
 
-  async createGroup(name: string): Promise<RbacGroup> {
+async createGroup(name: string): Promise<RbacGroup> {
     const { rows } = await pool.query<RbacGroup>(
       `INSERT INTO groups (name) VALUES ($1)
-       RETURNING id, name, 0::int AS "objectCount"`,
+       RETURNING id, name, false AS "isSystem", 0::int AS "objectCount"`,
       [name],
     );
     const row = rows[0];
@@ -575,8 +595,9 @@ export const rbacRepository = {
     const { rows } = await pool.query<RbacGroup>(
       `UPDATE groups SET name = $1 WHERE id = $2
        RETURNING id,
-               name,
-               (SELECT count(*)::int FROM group_members gm WHERE gm.group_id = groups.id) AS "objectCount"`,
+                name,
+                is_system AS "isSystem",
+                (SELECT count(*)::int FROM group_members gm WHERE gm.group_id = groups.id) AS "objectCount"`,
       [name, id],
     );
     return rows[0] ?? null;

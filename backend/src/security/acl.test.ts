@@ -10,6 +10,7 @@ import {
   hasCapability,
   invalidateUser,
   invalidateObject,
+  clearAclCaches,
 } from './acl';
 
 const poolQuery = pool.query as unknown as Mock;
@@ -20,6 +21,7 @@ const OBJ_GROUPS_RE = /object_id = \$1/;
 const CAPABILITIES_RE = /role_capabilities/;
 const OWNER_RE = /FROM objects WHERE id = \$1/;
 const DIRECT_GRANTS_RE = /role_object_grants/;
+const SYSTEM_GROUPS_RE = /is_system = true/;
 
 interface SeedRows {
   adminExists?: boolean;
@@ -28,6 +30,7 @@ interface SeedRows {
   capabilities?: string[];
   ownerId?: string | null;
   directGrants?: Array<{ objectId: string; action: string }>;
+  systemGroupIds?: string[];
 }
 
 /** Настроить pool.query: отдаём строки в зависимости от текста SQL. */
@@ -44,6 +47,9 @@ function seed(rows: SeedRows = {}): void {
     }
     if (PERMS_RE.test(text)) {
       return Promise.resolve({ rows: (rows.perms ?? []).map((r) => ({ groupId: r.groupId, action: r.action })) });
+    }
+    if (SYSTEM_GROUPS_RE.test(text)) {
+      return Promise.resolve({ rows: (rows.systemGroupIds ?? []).map((id) => ({ id })) });
     }
     if (OBJ_GROUPS_RE.test(text)) {
       return Promise.resolve({ rows: (rows.objGroups ?? []).map((g) => ({ groupId: g })) });
@@ -68,6 +74,7 @@ function queryCount(): number {
 
 beforeEach(() => {
   poolQuery.mockReset();
+  clearAclCaches();
 });
 
 describe('acl.can', () => {
@@ -136,15 +143,26 @@ describe('acl.can', () => {
     expect(queryCount()).toBe(3); // isAdmin + getUserDirectGrants + getUserGroupPermissions
   });
 
+  it('системная группа: юзер с perms на system group читает объект без реальных групп', async () => {
+    seed({ perms: [{ groupId: 'sysG', action: 'read' }], objGroups: [], systemGroupIds: ['sysG'] });
+    await expect(can('usr-sys', 'obj-sys', 'read')).resolves.toBe(true);
+    await expect(can('usr-sys', 'obj-sys', 'write')).resolves.toBe(false);
+  });
+
+  it('системная группа: perms читает объект c реальной группой + system group', async () => {
+    seed({ perms: [{ groupId: 'sysG', action: 'read' }], objGroups: ['realG'], systemGroupIds: ['sysG'] });
+    await expect(can('usr-sys2', 'obj-sys2', 'read')).resolves.toBe(true);
+  });
+
   it('invalidateUser/invalidateObject: повторный can снова идёт в БД', async () => {
     seed({ perms: [{ groupId: 'gOther', action: 'read' }], objGroups: ['invG'] });
     await can('inv-u', 'inv-o', 'read');
-    expect(queryCount()).toBe(4);
+    expect(queryCount()).toBe(5); // isAdmin + directGrants + perms + objGroups + sysGroups
 
     invalidateUser('inv-u');
     invalidateObject('inv-o');
     await can('inv-u', 'inv-o', 'read');
-    expect(queryCount()).toBe(8);
+    expect(queryCount()).toBe(9); // 5 + 4 (sysGroups cached)
   });
 });
 

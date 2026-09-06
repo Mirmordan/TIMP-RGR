@@ -37,6 +37,8 @@ const objectOwnerCache = new Cache<string>(2000, 5 * 60_000);
 const adminCache = new Cache<boolean>(2000, 5 * 60_000);
 // userId -> Set<Capability>  (union спец-прав по всем ролям юзера из role_capabilities)
 const userCapabilitiesCache = new Cache<Set<string>>(2000, 5 * 60_000);
+// Set<groupId> системных групп (is_system = true) — всегда виртуальные члены каждого объекта
+const systemGroupIdsCache = new Cache<Set<string>>(1, 10 * 60_000);
 
 async function isAdmin(userId: string): Promise<boolean> {
   const cached = adminCache.get(userId);
@@ -56,7 +58,8 @@ async function isAdmin(userId: string): Promise<boolean> {
 
 /**
  * groupId -> набор действий, которые юзер может делать над этой группой
- * (объединение по всем ролям юзера).
+ * (объединение по всем ролям юзера). Включает как реальные членства (group_members),
+ * так и системные группы (is_system), которые действуют на все объекты.
  */
 async function getUserGroupPermissions(
   userId: string,
@@ -65,11 +68,13 @@ async function getUserGroupPermissions(
   if (cached) return cached;
 
   const { rows } = await pool.query<{ groupId: string; action: ObjectAction }>(
-    `SELECT DISTINCT gm.group_id AS "groupId", p.action
+    `SELECT DISTINCT p.group_id AS "groupId", p.action
      FROM permissions p
      JOIN user_roles ur ON ur.role_id = p.role_id
-     JOIN group_members gm ON gm.group_id = p.group_id
-     WHERE ur.user_id = $1`,
+     JOIN groups g ON g.id = p.group_id
+     LEFT JOIN group_members gm ON gm.group_id = p.group_id
+     WHERE ur.user_id = $1
+       AND (gm.object_id IS NOT NULL OR g.is_system)`,
     [userId],
   );
 
@@ -122,10 +127,8 @@ export async function can(
   const perms = await getUserGroupPermissions(userId);
 
   // Владелец-«bootstrap» только для read: пока объект не включён ни в одну
-  // группу, создатель читает его (совпадает с RLS-политикой *_owner_read,
-  // где is_owner(object_id) AND NOT в group_members). Как только объект
-  // передан в группу(ы) — неявный read владельца исчезает, доступ решают
-  // группы (и админ).
+  // РЕАЛЬНУЮ группу, создатель читает его (совпадает с RLS-политикой *_owner_read,
+  // где is_owner(object_id) AND NOT в group_members). Системные группы не считаются.
   if (action === 'read') {
     const groups = await getObjectGroups(objectId);
     if (groups.length === 0) {
@@ -136,14 +139,34 @@ export async function can(
 
   if (perms.size === 0) return false;
 
+  // Эффективные группы объекта = реальные членства + системные группы.
   const groups = await getObjectGroups(objectId);
-  if (groups.length === 0) return false;
+  const sysGroupIds = await getSystemGroupIds();
+  const effectiveGroups = groups.length > 0
+    ? [...new Set([...groups, ...sysGroupIds])]
+    : [...sysGroupIds];
 
-  for (const groupId of groups) {
+  if (effectiveGroups.length === 0) return false;
+
+  for (const groupId of effectiveGroups) {
     const actions = perms.get(groupId);
     if (actions && actions.has(action)) return true;
   }
   return false;
+}
+
+/**
+ * ID системных групп (is_system = true). Хранятся в кеше.
+ */
+async function getSystemGroupIds(): Promise<string[]> {
+  const cached = systemGroupIdsCache.get('system');
+  if (cached !== undefined) return [...cached];
+  const { rows } = await pool.query<{ id: string }>(
+    `SELECT id FROM groups WHERE is_system = true`,
+  );
+  const ids = new Set(rows.map((r) => r.id));
+  systemGroupIdsCache.set('system', ids);
+  return [...ids];
 }
 
 /**
@@ -236,6 +259,7 @@ export function invalidateGroup(groupId: string): void {
   // группа меняет membership/групповые права — сбрасываем кеш всех юзеров
   userGroupsCache.clear();
   objectGroupsCache.clear();
+  systemGroupIdsCache.clear();
 }
 
 /** Полностью сбросить ACL-кеши (например, при изменении прямых grants роли). */
@@ -246,4 +270,5 @@ export function clearAclCaches(): void {
   objectOwnerCache.clear();
   adminCache.clear();
   userCapabilitiesCache.clear();
+  systemGroupIdsCache.clear();
 }

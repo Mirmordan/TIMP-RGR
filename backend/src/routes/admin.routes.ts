@@ -254,7 +254,7 @@ adminRouter.get('/roles/:id', requireCapability('role:read'), async (req: Reques
  *     tags: [Admin]
  *     operationId: listAdminGroups
  *     summary: Список групп объектов
- *     description: Все группы объектов с количеством входящих в них объектов. Требуется capability group:read.
+ *     description: Все группы объектов с количеством входящих в них объектов и флагом isSystem. Требуется capability group:read.
  *     responses:
  *       '200':
  *         description: Массив групп
@@ -289,7 +289,7 @@ adminRouter.get('/groups', requireCapability('group:read'), async (_req: Request
  *     tags: [Admin]
  *     operationId: getAdminGroupObjects
  *     summary: Объекты группы
- *     description: Список объектов, входящих в группу. Требуется capability group:read.
+ *     description: Список объектов, входящих в группу. Для системной группы возвращает все объекты системы. Требуется capability group:read.
  *     parameters:
  *       - name: id
  *         in: path
@@ -860,7 +860,7 @@ adminRouter.put('/roles/:id/capabilities', requireCapability('admin:write'), asy
  *     tags: [Admin]
  *     operationId: createAdminGroup
  *     summary: Создание группы объектов
- *     description: Создаёт группу объектов с проверкой имени по шаблону (как у ролей). Требуется capability group:create.
+ *     description: Создаёт группу объектов с проверкой имени по шаблону (как у ролей). Имя «all» зарезервировано для системной группы. Требуется capability group:create.
  *     requestBody:
  *       required: true
  *       content:
@@ -915,7 +915,7 @@ adminRouter.post('/groups', requireCapability('group:create'), async (req: Reque
  *     tags: [Admin]
  *     operationId: patchAdminGroup
  *     summary: Переименование группы объектов
- *     description: Меняет имя группы объектов с проверкой по шаблону. Требуется capability group:update.
+ *     description: Меняет имя группы объектов с проверкой по шаблону. Системную группу переименовывать нельзя. Требуется capability group:update.
  *     parameters:
  *       - name: id
  *         in: path
@@ -985,7 +985,7 @@ adminRouter.patch('/groups/:id', requireCapability('group:update'), async (req: 
  *     tags: [Admin]
  *     operationId: deleteAdminGroup
  *     summary: Удаление группы объектов
- *     description: Удаляет группу только если на ней не висит ни прав, ни объектов. Требуется capability group:delete.
+ *     description: Удаляет группу только если на ней не висит ни прав, ни объектов. Системную группу удалять нельзя. Требуется capability group:delete.
  *     parameters:
  *       - name: id
  *         in: path
@@ -1039,7 +1039,7 @@ adminRouter.delete('/groups/:id', requireCapability('group:delete'), async (req:
  *     tags: [Admin]
  *     operationId: setAdminGroupObjects
  *     summary: Замена состава объектов группы
- *     description: Полностью заменяет набор объектов группы. Все objectIds должны существовать. Требуется capability permission:manage.
+ *     description: Полностью заменяет набор объектов группы. Системная группа не имеет явных членов (все объекты implicit). Требуется capability permission:manage.
  *     parameters:
  *       - name: id
  *         in: path
