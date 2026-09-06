@@ -267,3 +267,238 @@
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
+
+/* --- U4: карточка роли (пользователи / матрица / прямые выдачи) --- */
+
+.detailTitleWrap {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.detailSection {
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border-light);
+}
+
+.fullAccessBanner {
+  margin-bottom: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  font-size: 12px;
+  color: var(--text);
+  background: rgba(232, 168, 56, 0.08);
+  border: 1px solid rgba(232, 168, 56, 0.3);
+  border-radius: var(--radius);
+  letter-spacing: 0.04em;
+}
+
+.fullAccessBadge {
+  display: inline-block;
+  margin-right: 8px;
+  padding: 2px 10px;
+  border-radius: 9999px;
+  background: var(--warning-bg);
+  border: 1px solid rgba(232, 168, 56, 0.3);
+  font-family: var(--font-body);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--warning);
+  white-space: nowrap;
+}
+
+.fullAccessNote {
+  padding: var(--space-4) 0;
+  text-align: center;
+  font-size: 11px;
+  color: var(--text-dim);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.miniTableWrap {
+  overflow-x: auto;
+}
+
+.miniTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.miniTable th,
+.miniTable td {
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--border-light);
+  text-align: left;
+  vertical-align: middle;
+}
+
+.miniTable th {
+  font-family: var(--font-body);
+  font-weight: 500;
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.userLogin {
+  font-family: var(--font-mono);
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.badgeList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.objectNameCell {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text);
+}
+
+.monoId {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+.typeChip {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 9999px;
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  font-family: var(--font-body);
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+.actionChip {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 9999px;
+  background: var(--accent-bg);
+  border: 1px solid var(--accent-glow);
+  font-family: var(--font-body);
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent);
+  white-space: nowrap;
+}
+
+.searchLabel {
+  margin: var(--space-4) 0 var(--space-2);
+  font-family: var(--font-body);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.searchRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.searchInput {
+  flex: 1 1 240px;
+  height: 30px;
+  padding: 0 var(--space-3);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.searchInput::placeholder {
+  color: var(--text-dim);
+}
+
+.searchInput:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-glow);
+}
+
+.searchSelect,
+.actionSelect {
+  height: 30px;
+  padding: 0 var(--space-2);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  outline: none;
+  cursor: pointer;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.actionSelect {
+  height: 24px;
+  font-size: 11px;
+}
+
+.searchSelect:focus,
+.actionSelect:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-glow);
+}
+
+.searchStatus {
+  padding: var(--space-3) 0;
+  font-size: 11px;
+  color: var(--text-dim);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.searchCount {
+  margin: var(--space-3) 0 var(--space-2);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.grantsFail {
+  padding: var(--space-2) 0;
+}
+
+.grantsFailText {
+  margin-bottom: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  font-size: 12px;
+  color: var(--danger);
+  background: var(--danger-bg);
+  border: 1px solid rgba(232, 93, 117, 0.25);
+  border-radius: var(--radius);
+  letter-spacing: 0.04em;
+}
+
+.grantsFailActions {
+  display: flex;
+  gap: var(--space-2);
+}

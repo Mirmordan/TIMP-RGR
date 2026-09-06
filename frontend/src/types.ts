@@ -217,3 +217,32 @@ export interface StatsDiskWire {
   freeBytes: number | null;
   totalBytes: number | null;
 }
+
+// --- Роли и права: объекты, прямые grants (U4) ---
+
+/** Унифицированная запись объекта-кандидата для permission-UI (GET /admin/objects). */
+export interface AdminObject {
+  id: string;
+  type: string | null;
+  name: string | null;
+  description: string | null;
+  createdAt: string;
+}
+
+/** Ответ GET /admin/objects: объекты и общее количество. */
+export interface AdminObjectSearchResult {
+  objects: AdminObject[];
+  total: number;
+}
+
+/** Прямая выдача роли на объект (GET/PUT /admin/roles/:id/grants). */
+export interface AdminObjectGrant {
+  id: string;
+  roleId: string;
+  objectId: string;
+  objectType: string | null;
+  objectName: string | null;
+  objectDescription: string | null;
+  action: string;
+  createdAt: string;
+}

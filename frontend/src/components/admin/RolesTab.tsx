@@ -1,10 +1,18 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Table, type Column } from '../Table/Table';
 import { Button } from '../Button/Button';
 import { apiFetch } from '../../api';
 import { useNotify } from '../../notifications';
 import { Skeleton, SkeletonRows } from '../Skeleton/Skeleton';
-import type { AdminGroup, AdminPermission, AdminRole } from '../../types';
+import type {
+  AdminGroup,
+  AdminObject,
+  AdminObjectGrant,
+  AdminObjectSearchResult,
+  AdminPermission,
+  AdminRole,
+  AdminUser,
+} from '../../types';
 import styles from './RolesTab.module.css';
 
 const SYSTEM_ROLE_NAMES = ['admin', 'operator', 'viewer'];
@@ -17,12 +25,65 @@ const ACTIONS = [
   { value: 'list', label: 'список' },
 ] as const;
 
+/** Типы объектов-кандидатов в поиске прямых выдач. 'other' — всё кроме камер/потоков/записей. */
+const OBJECT_TYPE_FILTERS = [
+  { value: '', label: 'все типы' },
+  { value: 'device', label: 'камеры' },
+  { value: 'stream', label: 'потоки' },
+  { value: 'process', label: 'записи' },
+  { value: 'other', label: 'иные' },
+] as const;
+
+/** Остальные типы objects-каталога — серверный фильтр одиночный, для «иных» сливаем запросы. */
+const OTHER_OBJECT_TYPES = ['segment', 'chunk', 'incident'];
+
+const OBJECT_TYPE_LABELS: Record<string, string> = {
+  device: 'камера',
+  stream: 'поток',
+  process: 'запись',
+  segment: 'сегмент',
+  chunk: 'чанк',
+  incident: 'инцидент',
+};
+
 function entryKey(groupId: string, action: string) {
   return `${groupId}|${action}`;
 }
 
 function isSystemRole(role: AdminRole) {
   return SYSTEM_ROLE_NAMES.includes(role.name);
+}
+
+function isAdminRole(role: AdminRole) {
+  return role.name === 'admin';
+}
+
+function actionLabel(action: string) {
+  return ACTIONS.find(a => a.value === action)?.label ?? action;
+}
+
+function typeLabel(type: string | null) {
+  if (!type) return 'объект';
+  return OBJECT_TYPE_LABELS[type] ?? type;
+}
+
+function shortId(id: string) {
+  return id.length > 8 ? `${id.slice(0, 8)}…` : id;
+}
+
+function objectDisplayName(name: string | null, id: string) {
+  return name ? name : `#${id}`;
+}
+
+interface LocalGrant {
+  objectId: string;
+  objectType: string | null;
+  objectName: string | null;
+  action: string;
+}
+
+function grantKey(g: Pick<LocalGrant, 'objectId' | 'action'>) {
+  return `${g.objectId}|${g.action}`;
 }
 
 export function RolesTab() {
@@ -47,10 +108,34 @@ export function RolesTab() {
 
   const [actionError, setActionError] = useState('');
 
-  const [matrixRole, setMatrixRole] = useState<AdminRole | null>(null);
+  // --- Карточка роли: пользователи + матрица групп + прямые выдачи ---
+  const [activeRole, setActiveRole] = useState<AdminRole | null>(null);
   const [matrixDraft, setMatrixDraft] = useState<Set<string>>(new Set());
-  const [matrixSaving, setMatrixSaving] = useState(false);
   const [matrixError, setMatrixError] = useState('');
+
+  const [roleUsers, setRoleUsers] = useState<AdminUser[]>([]);
+  const [usersLoading, setUsersLoading] = useState(false);
+  const [usersError, setUsersError] = useState('');
+
+  const [grants, setGrants] = useState<LocalGrant[]>([]);
+  const [grantsLoading, setGrantsLoading] = useState(false);
+  const [grantsError, setGrantsError] = useState('');
+  /** true после успешной GET-загрузки прямых выдач — иначе PUT по пустому списку сотрёт их. */
+  const [grantsLoaded, setGrantsLoaded] = useState(false);
+
+  const [detailSaving, setDetailSaving] = useState(false);
+  const detailSeq = useRef(0);
+
+  // --- Поиск объектов для прямых выдач ---
+  const [query, setQuery] = useState('');
+  const [typeFilter, setTypeFilter] = useState('');
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [searchError, setSearchError] = useState('');
+  const [searchResults, setSearchResults] = useState<AdminObject[]>([]);
+  const [searchTotal, setSearchTotal] = useState(0);
+  const [rowActions, setRowActions] = useState<Record<string, string>>({});
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const searchSeq = useRef(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -82,6 +167,174 @@ export function RolesTab() {
     return () => { cancelled = true; };
   }, [tick]);
 
+  useEffect(() => () => {
+    detailSeq.current++;
+    searchSeq.current++;
+    if (searchTimer.current) window.clearTimeout(searchTimer.current);
+  }, []);
+
+  async function fetchObjects(q: string, type: string): Promise<AdminObjectSearchResult> {
+    const loadOne = async (t: string) => {
+      const params = new URLSearchParams({ limit: '50', q });
+      if (t !== '') params.set('type', t);
+      const r = await apiFetch(`/admin/objects?${params.toString()}`);
+      if (!r.ok) {
+        const d = await r.json().catch(() => ({}));
+        throw new Error(d.error || `Ошибка загрузки (${r.status})`);
+      }
+      return (await r.json()) as AdminObjectSearchResult;
+    };
+    if (type === 'other') {
+      const data = await Promise.all(OTHER_OBJECT_TYPES.map(t => loadOne(t)));
+      const merged = data
+        .flatMap(d => d.objects)
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+      return { objects: merged, total: data.reduce((sum, d) => sum + d.total, 0) };
+    }
+    return loadOne(type);
+  }
+
+  // Дебаунс-поиск объектов для блока «Прямой доступ».
+  useEffect(() => {
+    if (searchTimer.current) {
+      window.clearTimeout(searchTimer.current);
+      searchTimer.current = null;
+    }
+    if (!activeRole || isAdminRole(activeRole)) {
+      searchSeq.current++;
+      setSearchResults([]);
+      setSearchTotal(0);
+      setSearchError('');
+      setSearchLoading(false);
+      return;
+    }
+    const trimmed = query.trim();
+    const seq = ++searchSeq.current;
+    if (trimmed === '') {
+      setSearchResults([]);
+      setSearchTotal(0);
+      setSearchError('');
+      setSearchLoading(false);
+      return;
+    }
+    setSearchLoading(true);
+    setSearchError('');
+    searchTimer.current = window.setTimeout(() => {
+      searchTimer.current = null;
+      fetchObjects(trimmed, typeFilter)
+        .then(data => {
+          if (searchSeq.current !== seq) return;
+          setSearchResults(data.objects);
+          setSearchTotal(data.total);
+        })
+        .catch((e: unknown) => {
+          if (searchSeq.current !== seq) return;
+          setSearchError(e instanceof Error ? e.message : 'Не удалось загрузить объекты');
+        })
+        .finally(() => {
+          if (searchSeq.current === seq) setSearchLoading(false);
+        });
+    }, 250);
+  }, [query, typeFilter, activeRole]);
+
+  function closeRole() {
+    detailSeq.current++;
+    if (searchTimer.current) {
+      window.clearTimeout(searchTimer.current);
+      searchTimer.current = null;
+    }
+    setActiveRole(null);
+    setMatrixError('');
+    setDetailSaving(false);
+  }
+
+  function fetchRoleGrants(roleId: string, seq: number) {
+    setGrantsLoading(true);
+    setGrantsError('');
+    apiFetch(`/admin/roles/${roleId}/grants`)
+      .then(async r => {
+        if (!r.ok) {
+          const d = await r.json().catch(() => ({}));
+          throw new Error(d.error || `Ошибка загрузки (${r.status})`);
+        }
+        return (await r.json()) as AdminObjectGrant[];
+      })
+      .then(rows => {
+        if (detailSeq.current !== seq) return;
+        setGrants(rows.map(g => ({ objectId: g.objectId, objectType: g.objectType, objectName: g.objectName, action: g.action })));
+        setGrantsLoaded(true);
+      })
+      .catch((e: unknown) => {
+        if (detailSeq.current !== seq) return;
+        const msg = e instanceof Error ? e.message : 'Не удалось загрузить прямые доступы';
+        setGrantsLoaded(false);
+        setGrantsError(msg);
+        toast.error(msg);
+      })
+      .finally(() => {
+        if (detailSeq.current === seq) setGrantsLoading(false);
+      });
+  }
+
+  function retryGrantsLoad() {
+    if (!activeRole) return;
+    const seq = ++detailSeq.current;
+    fetchRoleGrants(activeRole.id, seq);
+  }
+
+  function openRole(row: AdminRole) {
+    setRenamingId(null);
+    setConfirmDeleteId(null);
+    setActionError('');
+    const granted = new Set<string>(
+      permissions.filter(p => p.roleId === row.id).map(p => entryKey(p.groupId, p.action)),
+    );
+    setActiveRole(row);
+    setMatrixDraft(granted);
+    setMatrixError('');
+    setDetailSaving(false);
+    setRoleUsers([]);
+    setUsersError('');
+    setGrants([]);
+    setGrantsLoaded(false);
+    setGrantsError('');
+    setQuery('');
+    setTypeFilter('');
+    setRowActions({});
+
+    const seq = ++detailSeq.current;
+
+    setUsersLoading(true);
+    apiFetch(`/admin/roles/${row.id}/users?limit=100`)
+      .then(async r => {
+        if (!r.ok) {
+          const d = await r.json().catch(() => ({}));
+          throw new Error(d.error || `Ошибка загрузки (${r.status})`);
+        }
+        return (await r.json()) as AdminUser[];
+      })
+      .then(users => {
+        if (detailSeq.current !== seq) return;
+        setRoleUsers(users);
+      })
+      .catch((e: unknown) => {
+        if (detailSeq.current !== seq) return;
+        const msg = e instanceof Error ? e.message : 'Не удалось загрузить пользователей';
+        setUsersError(msg);
+        toast.error(msg);
+      })
+      .finally(() => {
+        if (detailSeq.current === seq) setUsersLoading(false);
+      });
+
+    if (isAdminRole(row)) {
+      // admin — полный доступ, прямые выдачи не редактируются.
+      setGrantsLoading(false);
+      return;
+    }
+    fetchRoleGrants(row.id, seq);
+  }
+
   async function handleCreate(e: FormEvent) {
     e.preventDefault();
     const trimmed = name.trim();
@@ -111,10 +364,10 @@ export function RolesTab() {
   }
 
   function startRename(row: AdminRole) {
+    closeRole();
+    setConfirmDeleteId(null);
     setRenamingId(row.id);
     setDraftName(row.name);
-    setConfirmDeleteId(null);
-    setMatrixRole(null);
     setActionError('');
   }
 
@@ -151,6 +404,13 @@ export function RolesTab() {
     }
   }
 
+  function askDelete(row: AdminRole) {
+    closeRole();
+    setRenamingId(null);
+    setActionError('');
+    setConfirmDeleteId(row.id);
+  }
+
   async function handleDelete(row: AdminRole) {
     if (!confirmDeleteId || deleting) return;
     setDeleting(true);
@@ -162,7 +422,6 @@ export function RolesTab() {
         throw new Error(d.error || 'Не удалось удалить');
       }
       setConfirmDeleteId(null);
-      setMatrixRole(prev => (prev?.id === row.id ? null : prev));
       toast.success(`Роль «${row.name}» удалена`);
       setTick(t => t + 1);
     } catch (err: unknown) {
@@ -172,18 +431,6 @@ export function RolesTab() {
     } finally {
       setDeleting(false);
     }
-  }
-
-  function openMatrix(row: AdminRole) {
-    setRenamingId(null);
-    setConfirmDeleteId(null);
-    setActionError('');
-    setMatrixError('');
-    setMatrixRole(row);
-    const granted = new Set<string>(
-      permissions.filter(p => p.roleId === row.id).map(p => entryKey(p.groupId, p.action)),
-    );
-    setMatrixDraft(granted);
   }
 
   function togglePerm(groupId: string, action: string) {
@@ -199,34 +446,89 @@ export function RolesTab() {
     });
   }
 
-  async function handleMatrixSave() {
-    if (!matrixRole || matrixSaving) return;
-    setMatrixSaving(true);
+  function addGrant(object: Pick<AdminObject, 'id' | 'type' | 'name'>, action: string) {
+    if (!activeRole) return;
+    const entry: LocalGrant = { objectId: object.id, objectType: object.type, objectName: object.name, action };
+    if (grants.some(g => grantKey(g) === grantKey(entry))) return;
+    setGrants(prev => [...prev, entry]);
+  }
+
+  function removeGrant(key: string) {
+    setGrants(prev => prev.filter(g => grantKey(g) !== key));
+  }
+
+  async function handleDetailSave() {
+    if (!activeRole || detailSaving) return;
+    setDetailSaving(true);
     setMatrixError('');
+    setGrantsError('');
+    const failures: string[] = [];
+    let matrixSaved = false;
+    let grantsSaved = false;
+
+    // 1) Матрица группового доступа.
     try {
       const entries = [...matrixDraft].map(key => {
         const sep = key.indexOf('|');
         return { groupId: key.slice(0, sep), action: key.slice(sep + 1) };
       });
-      const r = await apiFetch(`/admin/roles/${matrixRole.id}/permissions`, {
+      const r = await apiFetch(`/admin/roles/${activeRole.id}/permissions`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ entries }),
       });
       if (!r.ok) {
         const d = await r.json().catch(() => ({}));
-        throw new Error(d.error || 'Не удалось сохранить');
+        throw new Error(d.error || 'Не удалось сохранить групповые права');
       }
-      setMatrixRole(null);
-      toast.success(`Права роли «${matrixRole.name}» сохранены`);
-      setTick(t => t + 1);
+      const updated = (await r.json()) as AdminPermission[];
+      setPermissions(prev => [...prev.filter(p => p.roleId !== activeRole.id), ...updated]);
+      matrixSaved = true;
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Не удалось сохранить';
+      const msg = `групповой доступ: ${err instanceof Error ? err.message : 'ошибка'}`;
+      // Матрица осталась локальным черновиком — повторное сохранение безопасно (полная замена).
       setMatrixError(msg);
-      toast.error(msg);
-    } finally {
-      setMatrixSaving(false);
+      failures.push(msg);
     }
+
+    // 2) Прямые выдачи на объекты. PUT — полная замена: без успешной GET-загрузки
+    // отправлять список нельзя (пустой grants сотрёт все выдачи роли).
+    if (!isAdminRole(activeRole)) {
+      if (!grantsLoaded) {
+        const msg = 'прямые доступы: список не загружен, изменения не отправлены — повторите загрузку';
+        setGrantsError(msg);
+        failures.push(msg);
+      } else {
+        try {
+          const r = await apiFetch(`/admin/roles/${activeRole.id}/grants`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ grants: grants.map(g => ({ objectId: g.objectId, action: g.action })) }),
+          });
+          if (!r.ok) {
+            const d = await r.json().catch(() => ({}));
+            throw new Error(d.error || 'Не удалось сохранить прямые доступы');
+          }
+          const updated = (await r.json()) as AdminObjectGrant[];
+          setGrants(updated.map(g => ({ objectId: g.objectId, objectType: g.objectType, objectName: g.objectName, action: g.action })));
+          grantsSaved = true;
+        } catch (err: unknown) {
+          const msg = `прямые доступы: ${err instanceof Error ? err.message : 'ошибка'}`;
+          // PUT — атомарная замена: сервер не изменился, локальный список — безопасный
+          // черновик для повторного «Сохранить» (inline-ошибка остаётся видимой).
+          setGrantsError(msg);
+          failures.push(msg);
+        }
+      }
+    }
+
+    setDetailSaving(false);
+    if (failures.length === 0) {
+      toast.success(`Роль «${activeRole.name}» обновлена`);
+      return;
+    }
+    const applied = matrixSaved || grantsSaved ? ' Сохранённое уже применено — проверьте ошибки секций и сохраните повторно.' : '';
+    toast.error(`${failures.join('; ')}.${applied}`);
   }
 
   function renderActions(row: AdminRole) {
@@ -257,7 +559,7 @@ export function RolesTab() {
     }
     return (
       <div className={styles.editorActions}>
-        <Button size="sm" variant="outline" onClick={() => openMatrix(row)}>
+        <Button size="sm" variant="outline" onClick={() => openRole(row)}>
           Права
         </Button>
         {!isSystemRole(row) && (
@@ -265,7 +567,7 @@ export function RolesTab() {
             <Button size="sm" variant="outline" onClick={() => startRename(row)}>
               Переименовать
             </Button>
-            <Button size="sm" variant="outline" onClick={() => setConfirmDeleteId(row.id)}>
+            <Button size="sm" variant="outline" onClick={() => askDelete(row)}>
               Удалить
             </Button>
           </>
@@ -274,22 +576,68 @@ export function RolesTab() {
     );
   }
 
-  function renderMatrix() {
-    if (!matrixRole) return null;
-    const isAdmin = matrixRole.name === 'admin';
+  function renderRoleUsers() {
     return (
-      <div className={styles.matrixBlock}>
+      <div className={styles.detailSection}>
         <div className={styles.matrixHead}>
-          <div className={styles.matrixTitle}>
-            Права роли: <span className={styles.matrixRoleName}>{matrixRole.name}</span>
-          </div>
-          {isAdmin ? (
-            <div className={styles.matrixHint}>admin — полный доступ, матрица не сохраняется</div>
-          ) : (
-            <div className={styles.matrixHint}>отметьте действия для каждой группы</div>
-          )}
+          <div className={styles.matrixTitle}>Пользователи роли</div>
+          <div className={styles.matrixHint}>состав меняется во вкладке «Пользователи» → кнопка «Роли»</div>
         </div>
-        {matrixError && <div className={styles.saveError}>{matrixError}</div>}
+        {usersError ? (
+          <div className={styles.noGroups}>{usersError}</div>
+        ) : usersLoading ? (
+          <SkeletonRows rows={3} cols={3} cellWidths={['30%', '46%', '52%']} />
+        ) : roleUsers.length === 0 ? (
+          <div className={styles.noGroups}>Пользователей с этой ролью нет</div>
+        ) : (
+          <div className={styles.miniTableWrap}>
+            <table className={styles.miniTable}>
+              <thead>
+                <tr>
+                  <th>Логин</th>
+                  <th>Роли</th>
+                  <th>Email</th>
+                </tr>
+              </thead>
+              <tbody>
+                {roleUsers.map(u => (
+                  <tr key={u.id}>
+                    <td className={styles.userLogin}>{u.username}</td>
+                    <td>
+                      <div className={styles.badgeList}>
+                        {u.roles.map(r => (
+                          <span key={r.id} className={styles.roleBadge}>{r.name}</span>
+                        ))}
+                      </div>
+                    </td>
+                    <td>{u.email || '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  function renderMatrix() {
+    const role = activeRole;
+    if (!role) return null;
+    const isAdmin = isAdminRole(role);
+    return (
+      <div className={styles.detailSection}>
+        <div className={styles.matrixHead}>
+          <div className={styles.matrixTitle}>Групповой доступ</div>
+          <div className={styles.matrixHint}>
+            {isAdmin
+              ? 'admin — полный доступ, матрица не редактируется'
+              : 'права на все объекты групп из вкладки «Группы объектов»'}
+          </div>
+        </div>
+        {isAdmin
+          ? null
+          : matrixError && <div className={styles.saveError}>{matrixError}</div>}
         {groups.length === 0 ? (
           <div className={styles.noGroups}>Групп нет</div>
         ) : (
@@ -327,14 +675,201 @@ export function RolesTab() {
             </table>
           </div>
         )}
+      </div>
+    );
+  }
+
+  function renderGrantsSearch() {
+    const trimmed = query.trim();
+    return (
+      <>
+        <div className={styles.searchRow}>
+          <input
+            className={styles.searchInput}
+            placeholder="имя или uuid объекта"
+            value={query}
+            onChange={e => setQuery(e.target.value)}
+            autoComplete="off"
+          />
+          <select
+            className={styles.searchSelect}
+            value={typeFilter}
+            onChange={e => setTypeFilter(e.target.value)}
+            aria-label="Тип объекта"
+          >
+            {OBJECT_TYPE_FILTERS.map(t => (
+              <option key={t.value} value={t.value}>{t.label}</option>
+            ))}
+          </select>
+        </div>
+        {searchError && <div className={styles.saveError}>{searchError}</div>}
+        {searchLoading ? (
+          <div className={styles.searchStatus}>поиск…</div>
+        ) : trimmed === '' ? (
+          <div className={styles.searchStatus}>начните вводить имя или часть uuid объекта</div>
+        ) : searchResults.length === 0 ? (
+          <div className={styles.searchStatus}>ничего не найдено</div>
+        ) : (
+          <>
+            <div className={styles.searchCount}>найдено: {searchTotal}</div>
+            <div className={styles.miniTableWrap}>
+              <table className={styles.miniTable}>
+                <thead>
+                  <tr>
+                    <th>Объект</th>
+                    <th>Тип</th>
+                    <th>ID</th>
+                    <th>Действие</th>
+                    <th />
+                  </tr>
+                </thead>
+                <tbody>
+                  {searchResults.map(obj => {
+                    const action = rowActions[obj.id] ?? 'read';
+                    const already = grants.some(g => grantKey(g) === `${obj.id}|${action}`);
+                    return (
+                      <tr key={obj.id}>
+                        <td className={styles.objectNameCell}>{objectDisplayName(obj.name, obj.id)}</td>
+                        <td><span className={styles.typeChip}>{typeLabel(obj.type)}</span></td>
+                        <td><span className={styles.monoId}>{shortId(obj.id)}</span></td>
+                        <td>
+                          <select
+                            className={styles.actionSelect}
+                            value={action}
+                            onChange={e => setRowActions(prev => ({ ...prev, [obj.id]: e.target.value }))}
+                            aria-label="Действие выдачи"
+                          >
+                            {ACTIONS.map(a => (
+                              <option key={a.value} value={a.value}>{a.label}</option>
+                            ))}
+                          </select>
+                        </td>
+                        <td>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={already}
+                            onClick={() => addGrant(obj, action)}
+                          >
+                            {already ? 'добавлено' : 'Добавить'}
+                          </Button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
+      </>
+    );
+  }
+
+  function renderGrants() {
+    const role = activeRole;
+    if (!role) return null;
+    const isAdmin = isAdminRole(role);
+    return (
+      <div className={styles.detailSection}>
+        <div className={styles.matrixHead}>
+          <div className={styles.matrixTitle}>Прямой доступ к объектам</div>
+          <div className={styles.matrixHint}>выдачи на отдельные камеры, потоки, записи и другие объекты</div>
+        </div>
+        {isAdmin ? (
+          <div className={styles.fullAccessNote}>
+            роли admin не нужны прямые выдачи — полный доступ на все объекты действует всегда
+          </div>
+        ) : grantsLoading ? (
+          <SkeletonRows rows={3} cols={4} cellWidths={['44%', '18%', '22%', '30%']} />
+        ) : grantsError && !grantsLoaded ? (
+          // Список не загружен: PUT по пустому grants сотрёт выдачи — показываем retry-блок.
+          <div className={styles.grantsFail}>
+            <div className={styles.grantsFailText}>{grantsError}</div>
+            <div className={styles.grantsFailActions}>
+              <Button size="sm" variant="outline" onClick={retryGrantsLoad}>
+                Повторить загрузку
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <>
+            {grantsError && <div className={styles.saveError}>{grantsError}</div>}
+            {grants.length === 0 ? (
+              <div className={styles.noGroups}>Прямых доступов нет</div>
+            ) : (
+              <div className={styles.miniTableWrap}>
+                <table className={styles.miniTable}>
+                  <thead>
+                    <tr>
+                      <th>Объект</th>
+                      <th>Тип</th>
+                      <th>ID</th>
+                      <th>Действие</th>
+                      <th />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {grants.map(g => (
+                      <tr key={grantKey(g)}>
+                        <td className={styles.objectNameCell}>{objectDisplayName(g.objectName, g.objectId)}</td>
+                        <td><span className={styles.typeChip}>{typeLabel(g.objectType)}</span></td>
+                        <td><span className={styles.monoId}>{shortId(g.objectId)}</span></td>
+                        <td><span className={styles.actionChip}>{actionLabel(g.action)}</span></td>
+                        <td>
+                          <Button size="sm" variant="outline" onClick={() => removeGrant(grantKey(g))}>
+                            Убрать
+                          </Button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            <div className={styles.searchLabel}>Добавить прямой доступ</div>
+            {renderGrantsSearch()}
+          </>
+        )}
+      </div>
+    );
+  }
+
+  function renderRoleDetail() {
+    if (!activeRole) return null;
+    const isAdmin = isAdminRole(activeRole);
+    return (
+      <div className={styles.matrixBlock}>
+        <div className={styles.matrixHead}>
+          <div className={styles.detailTitleWrap}>
+            <span className={styles.matrixTitle}>
+              Роль: <span className={styles.matrixRoleName}>{activeRole.name}</span>
+            </span>
+            <span className={isSystemRole(activeRole) ? styles.systemBadge : styles.roleBadge}>
+              {isSystemRole(activeRole) ? 'системная' : 'роль'}
+            </span>
+          </div>
+          <div className={styles.matrixHint}>
+            {isAdmin ? 'доступ зашит в систему и не редактируется' : 'отредактируйте доступ и сохраните'}
+          </div>
+        </div>
+        {isAdmin && (
+          <div className={styles.fullAccessBanner}>
+            <span className={styles.fullAccessBadge}>полный доступ</span>
+            роль admin имеет полный доступ ко всем объектам и действиям; прямое редактирование прав и выдач отключено
+          </div>
+        )}
+        {renderRoleUsers()}
+        {renderMatrix()}
+        {renderGrants()}
         <div className={styles.matrixActions}>
           {!isAdmin && (
-            <Button size="sm" variant="primary" onClick={handleMatrixSave} disabled={matrixSaving}>
-              {matrixSaving ? '…' : 'Сохранить'}
+            <Button size="sm" variant="primary" onClick={handleDetailSave} disabled={detailSaving}>
+              {detailSaving ? '…' : 'Сохранить'}
             </Button>
           )}
-          <Button size="sm" variant="outline" onClick={() => setMatrixRole(null)} disabled={matrixSaving}>
-            Отмена
+          <Button size="sm" variant="outline" onClick={closeRole} disabled={detailSaving}>
+            Закрыть
           </Button>
         </div>
       </div>
@@ -426,7 +961,7 @@ export function RolesTab() {
       </form>
       {actionError && <div className={styles.saveError}>{actionError}</div>}
       <Table columns={columns} data={roles} emptyText="Ролей нет" />
-      {renderMatrix()}
+      {renderRoleDetail()}
     </>
   );
 }
