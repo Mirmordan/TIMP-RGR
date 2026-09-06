@@ -5,6 +5,7 @@ import { DetailHeader, InfoRow, DetailGrid, styles } from '../components/Layout/
 import { Button } from '../components/Button/Button';
 import { CustomPlayer } from '../components/CustomPlayer/CustomPlayer';
 import { LiveViewer } from '../components/LiveViewer/LiveViewer';
+import viewStyles from './ProcessDetailPage.module.css';
 import { Skeleton } from '../components/Skeleton/Skeleton';
 import { useEntity } from '../hooks/useEntity';
 import { apiFetch } from '../api';
@@ -164,6 +165,8 @@ export function ProcessDetailPage() {
   const isRunning = process.status === 'running';
   const hasSegments = timeline && timeline.segments.length > 0;
   const openLiveSeg = timeline?.segments.find(s => s.endedAt === null) ?? null;
+  // Записанные (закрытые) сегменты — доступны в режиме «Сегменты».
+  const recordedSegs = (timeline?.segments ?? []).filter(s => !s.live);
   const liveViewerShown = isRunning && !!openLiveSeg && !forceArchive;
 
   const mtxPath = `process_${id}`;
@@ -209,10 +212,27 @@ export function ProcessDetailPage() {
           <h2 className={styles.sectionTitle} style={{ marginTop: 0, marginBottom: 0 }}>
             {isRunning ? 'Прямая трансляция' : 'Просмотр записи'}
           </h2>
-          {isRunning && !!openLiveSeg && forceArchive && (
-            <Button variant="danger" size="sm" onClick={() => setForceArchive(false)}>
-              ● LIVE
-            </Button>
+          {isRunning && (
+            <div className={viewStyles.viewToggle}>
+              <Button
+                variant={!forceArchive ? 'danger' : 'outline'}
+                size="sm"
+                disabled={!openLiveSeg}
+                title={!openLiveSeg ? 'Открытого сегмента нет — эфир недоступен' : undefined}
+                onClick={() => setForceArchive(false)}
+              >
+                ● Прямой эфир
+              </Button>
+              <Button
+                variant={forceArchive ? 'danger' : 'outline'}
+                size="sm"
+                disabled={recordedSegs.length === 0}
+                title={recordedSegs.length === 0 ? 'Записанных сегментов нет — доступен только эфир' : undefined}
+                onClick={() => setForceArchive(true)}
+              >
+                ▤ Сегменты
+              </Button>
+            </div>
           )}
         </div>
         {timeline ? (
@@ -240,9 +260,9 @@ export function ProcessDetailPage() {
 
       {hasSegments && (
         <>
-          <h2 className={styles.sectionTitle}>Сегменты ({timeline!.segments.filter(s => !s.live).length})</h2>
+          <h2 className={styles.sectionTitle}>Сегменты ({recordedSegs.length})</h2>
           <div className={styles.segmentList}>
-            {timeline!.segments.filter(s => !s.live).map((seg, i) => (
+            {recordedSegs.map((seg, i) => (
               <Card key={seg.id}>
                 <div
                   className={styles.segmentRow}

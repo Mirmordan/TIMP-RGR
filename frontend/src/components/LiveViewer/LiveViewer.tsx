@@ -49,6 +49,20 @@ export function LiveViewer({ processId }: LiveViewerProps) {
   const [autoplayBlocked, setAutoplayBlocked] = useState(false);
   const [muted, setMuted] = useState(true);
   const [edgeClock, setEdgeClock] = useState('');
+  // startedAt открытого сегмента — база «в эфире ДД.ММ.ГГГГ ЧЧ:ММ:СС» (текущая видимая секунда).
+  const [openSegStartedAt, setOpenSegStartedAt] = useState<string | null>(null);
+  const [liveTimeLabel, setLiveTimeLabel] = useState('');
+  const [liveLagLabel, setLiveLagLabel] = useState('');
+
+  // 1с-тикер (edge clock + «в эфире») создаётся один раз и читает свежие значения через рефы.
+  const openSegStartedAtRef = useRef<string | null>(null);
+  const noSignalRef = useRef(false);
+  const emptyWaitRef = useRef(false);
+  useEffect(() => {
+    openSegStartedAtRef.current = openSegStartedAt;
+    noSignalRef.current = noSignal;
+    emptyWaitRef.current = emptyWait;
+  }, [openSegStartedAt, noSignal, emptyWait]);
 
   // Активная live-секция (video смонтировано): нужно для зачистки по unmount.
   const liveActive = isLive && !waiting && !!openSeg;
@@ -72,6 +86,7 @@ export function LiveViewer({ processId }: LiveViewerProps) {
         setIsLive(live);
         setWaiting(live && !open);
         setOpenSeg(open);
+        setOpenSegStartedAt(open ? open.startedAt : null);
       } catch {
         // Сетевой сбой поллинга: плеер живёт на текущем инстансе, повторим на след. тике.
       }
@@ -85,19 +100,38 @@ export function LiveViewer({ processId }: LiveViewerProps) {
     };
   }, [processId]);
 
-  // --- Час «последнего чанка» (edge clock) ---
+  // --- Час «последнего чанка» (edge clock) + «в эфире» и задержка ---
   useEffect(() => {
     const tick = () => {
       const ts = lastChunkTsRef.current;
       if (ts === null) {
         setEdgeClock('--:--:--');
-        return;
+      } else {
+        const d = new Date(ts);
+        const hh = String(d.getHours()).padStart(2, '0');
+        const mm = String(d.getMinutes()).padStart(2, '0');
+        const ss = String(d.getSeconds()).padStart(2, '0');
+        setEdgeClock(`${hh}:${mm}:${ss}`);
       }
-      const d = new Date(ts);
-      const hh = String(d.getHours()).padStart(2, '0');
-      const mm = String(d.getMinutes()).padStart(2, '0');
-      const ss = String(d.getSeconds()).padStart(2, '0');
-      setEdgeClock(`${hh}:${mm}:${ss}`);
+
+      // Абсолютное время видимого кадра = startedAt открытого сегмента + video.currentTime.
+      const startedAt = openSegStartedAtRef.current;
+      const v = videoRef.current;
+      if (startedAt && v && v.currentTime > 0 && !noSignalRef.current && !emptyWaitRef.current) {
+        const startMs = new Date(startedAt).getTime();
+        if (Number.isFinite(startMs)) {
+          const frameMs = startMs + v.currentTime * 1000;
+          const d = new Date(frameMs);
+          const date = `${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')}.${d.getFullYear()}`;
+          const clock = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}`;
+          setLiveTimeLabel(`в эфире ${date} ${clock}`);
+          const lag = Math.max(0, Math.round((Date.now() - frameMs) / 1000));
+          setLiveLagLabel(`≈${lag}с`);
+          return;
+        }
+      }
+      setLiveTimeLabel('');
+      setLiveLagLabel('');
     };
     tick();
     const timer = setInterval(tick, 1000);
@@ -444,7 +478,15 @@ export function LiveViewer({ processId }: LiveViewerProps) {
           <span className={styles.liveDot} />
           LIVE
         </span>
-        <span className={styles.topClock}>последний чанк {edgeClock}</span>
+        <span className={styles.topRight}>
+          {!noSignal && !emptyWait && liveTimeLabel && (
+            <>
+              <span className={styles.liveNow}>{liveTimeLabel}</span>
+              {liveLagLabel && <span className={styles.liveLag}>{liveLagLabel}</span>}
+            </>
+          )}
+          <span className={styles.topClock}>последний чанк {edgeClock}</span>
+        </span>
       </div>
 
       <div className={styles.videoBox}>

@@ -45,8 +45,25 @@
   animation: livePulse 1.5s ease-in-out infinite;
 }
 .topClock {
-  margin-left: auto;
   color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
+}
+.topRight {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.liveNow {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
+}
+.liveLag {
+  color: var(--text-dim);
+  font-size: 9px;
+  opacity: 0.75;
   font-variant-numeric: tabular-nums;
   letter-spacing: 0.04em;
 }
