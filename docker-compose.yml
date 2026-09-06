@@ -58,6 +58,10 @@ services:
     build: ./ffmpeg-manager
     container_name: timp-rgr-ffmpegmanager-1
     restart: unless-stopped
+    # Страховка от регресса утечки orphan-ffmpeg (см. 93085ae): сверх — kernel
+    # чистит reclaimable, anon-рост упирается в лимит и контейнер перезапускается
+    # с boot-restore сессий вместо OOM-killer'а всего хоста.
+    mem_limit: 768m
     environment:
       PORT: 9999
       RECORD_ROOT: /data/chunks
