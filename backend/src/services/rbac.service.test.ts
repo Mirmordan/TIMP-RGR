@@ -39,7 +39,11 @@ vi.mock('../security/acl', () => ({
 }));
 
 vi.mock('../repositories/user.repository', () => ({
-  userRepository: { deleteById: vi.fn() },
+  userRepository: {
+    deleteById: vi.fn(),
+    findByUsername: vi.fn(),
+    findByEmail: vi.fn(),
+  },
 }));
 
 vi.mock('./audit.service', () => ({
@@ -51,6 +55,7 @@ import { invalidateUser, invalidateGroup } from '../security/acl';
 import { userRepository } from '../repositories/user.repository';
 import { auditService } from './audit.service';
 import { rbacService } from './rbac.service';
+import { assertPassword } from '../security/auth.service';
 
 const role = (id: string, name: string) => ({ id, name });
 const user = (id: string, roles: Array<{ id: string; name: string }> = []) => ({
@@ -212,5 +217,61 @@ describe('rbacService.deleteUser', () => {
         details: { username: 'alice' },
       }),
     );
+  });
+});
+
+describe('rbacService.createUser (парольная политика)', () => {
+  function mockNoClashes() {
+    (userRepository.findByUsername as unknown as Mock).mockResolvedValue(null);
+    (userRepository.findByEmail as unknown as Mock).mockResolvedValue(null);
+  }
+
+  it('без password генерируется временный пароль: 24 символа и валиден assertPassword', async () => {
+    mockNoClashes();
+    (rbacRepository.createUserWithViewerRole as unknown as Mock).mockResolvedValue('u-new');
+    (rbacRepository.findUserWithRoles as unknown as Mock).mockResolvedValue(
+      user('u-new', [role('rv', 'viewer')]),
+    );
+
+    const result = await rbacService.createUser(
+      { username: 'newuser', email: 'new@example.test' },
+      ACTOR,
+    );
+
+    expect(result.initialPassword).toBeDefined();
+    expect(result.initialPassword).toHaveLength(24);
+    expect(() => assertPassword(result.initialPassword as string)).not.toThrow();
+    expect(rbacRepository.createUserWithViewerRole).toHaveBeenCalledWith({
+      username: 'newuser',
+      email: 'new@example.test',
+      passwordHash: expect.any(String),
+    });
+  });
+
+  it('явный пароль короче 12 символов отбивается → 400', async () => {
+    mockNoClashes();
+    await expect(
+      rbacService.createUser(
+        { username: 'newuser', email: 'new@example.test', password: '12345678' },
+        ACTOR,
+      ),
+    ).rejects.toMatchObject({ status: 400, message: 'пароль минимум 12 символов' });
+    expect(rbacRepository.createUserWithViewerRole).not.toHaveBeenCalled();
+  });
+
+  it('явный пароль от 12 символов принимается', async () => {
+    mockNoClashes();
+    (rbacRepository.createUserWithViewerRole as unknown as Mock).mockResolvedValue('u-new');
+    (rbacRepository.findUserWithRoles as unknown as Mock).mockResolvedValue(
+      user('u-new', [role('rv', 'viewer')]),
+    );
+
+    const result = await rbacService.createUser(
+      { username: 'newuser', email: 'new@example.test', password: '123456789012' },
+      ACTOR,
+    );
+
+    expect(result.initialPassword).toBeUndefined();
+    expect(rbacRepository.createUserWithViewerRole).toHaveBeenCalledTimes(1);
   });
 });

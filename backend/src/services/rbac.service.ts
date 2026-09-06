@@ -47,9 +47,9 @@ function assertValidGroupName(name: unknown): asserts name is string {
   }
 }
 
-/** Криптостойкий временный пароль: 12 символов base64url (9 случайных байт). */
+/** Криптостойкий временный пароль: 24 символа base64url (18 случайных байт). */
 function generateTemporaryPassword(): string {
-  return randomBytes(9).toString('base64url');
+  return randomBytes(18).toString('base64url');
 }
 
 export const rbacService = {

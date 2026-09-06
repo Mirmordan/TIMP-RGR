@@ -229,66 +229,6 @@ authRouter.get('/me', authenticate, async (req: Request, res: Response) => {
 
 /**
  * @openapi
- * /auth/profile:
- *   patch:
- *     tags: [Auth]
- *     operationId: updateProfile
- *     summary: Обновление своего профиля
- *     description: Позволяет изменить собственные username/email. Валидация значений — как при создании пользователя.
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             $ref: '#/components/schemas/ProfilePatch'
- *     responses:
- *       '200':
- *         description: Профиль обновлён
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/AuthPayload'
- *       '400':
- *         description: Некорректные значения или не указано ни одного поля
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/Error'
- *       '401':
- *         description: Требуется авторизация
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/Error'
- *       '404':
- *         description: Пользователь не найден
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/Error'
- *       '409':
- *         description: username или email уже занят другим пользователем
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/Error'
- */
-authRouter.patch('/profile', authenticate, async (req: Request, res: Response) => {
-  try {
-    if (!req.user) {
-      res.status(401).json({ error: 'требуется авторизация' });
-      return;
-    }
-    const { username, email } = req.body ?? {};
-    await authService.updateProfile(req.user.id, { username, email });
-    res.json(await authPayload(req.user.id));
-  } catch (e: any) {
-    res.status(e instanceof AuthError ? e.status : 400).json({ error: e.message });
-  }
-});
-
-/**
- * @openapi
  * /auth/change-password:
  *   post:
  *     tags: [Auth]
@@ -316,7 +256,7 @@ authRouter.patch('/profile', authenticate, async (req: Request, res: Response) =
  *                       example: true
  *                 - $ref: '#/components/schemas/AuthPayload'
  *       '400':
- *         description: currentPassword не указан, новый пароль короче 8 символов или совпадает с текущим
+ *         description: currentPassword не указан, новый пароль короче 12 символов или совпадает с текущим
  *         content:
  *           application/json:
  *             schema:

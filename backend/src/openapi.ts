@@ -213,25 +213,12 @@ const definition = {
           password: { type: 'string' },
         },
       },
-      ProfilePatch: {
-        type: 'object',
-        description: 'Хотя бы одно из полей обязательно (username и/или email).',
-        properties: {
-          username: {
-            type: 'string',
-            minLength: 3,
-            maxLength: 32,
-            pattern: '^[a-zA-Z0-9][a-zA-Z0-9._-]{2,31}$',
-          },
-          email: { type: 'string', format: 'email' },
-        },
-      },
       ChangePasswordRequest: {
         type: 'object',
         required: ['currentPassword', 'newPassword'],
         properties: {
           currentPassword: { type: 'string', description: 'Текущий пароль.' },
-          newPassword: { type: 'string', minLength: 8 },
+          newPassword: { type: 'string', minLength: 12 },
         },
       },
       UserCreate: {
@@ -247,7 +234,7 @@ const definition = {
           email: { type: 'string', format: 'email' },
           password: {
             type: 'string',
-            minLength: 8,
+            minLength: 12,
             description: 'Пароль в открытом виде (хранится только хэш).',
           },
         },
@@ -265,7 +252,7 @@ const definition = {
           email: { type: 'string', format: 'email' },
           password: {
             type: 'string',
-            minLength: 8,
+            minLength: 12,
             description: 'Пароль в открытом виде (хранится только хэш).',
           },
         },
@@ -766,7 +753,7 @@ const definition = {
           email: { type: 'string', format: 'email' },
           password: {
             type: 'string',
-            minLength: 8,
+            minLength: 12,
             description:
               'Пароль. Если не указан (или пуст) — генерируется временный и возвращается один раз в initialPassword.',
           },
@@ -803,7 +790,7 @@ const definition = {
         properties: {
           password: {
             type: 'string',
-            minLength: 8,
+            minLength: 12,
             description: 'Новый пароль пользователя.',
           },
         },

@@ -135,3 +135,7 @@
   display: flex;
   justify-content: flex-end;
 }
+.accountNote {
+  font-size: 12px;
+  color: var(--text-dim);
+}

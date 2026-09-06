@@ -10,9 +10,9 @@ const ROLE_FALLBACK: Role = 'viewer';
 // Общие правила полей для профиля/пароля (username/email/password).
 const USERNAME_RE = /^[a-zA-Z0-9][a-zA-Z0-9._-]{2,31}$/;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const PASSWORD_MIN = 8;
+const PASSWORD_MIN = 12;
 
-/** Ошибка с HTTP-статусом (для /auth/profile и /auth/change-password). */
+/** Ошибка с HTTP-статусом (для /auth/change-password и админских user-эндпоинтов). */
 export class AuthError extends Error {
   status: number;
 
@@ -103,7 +103,7 @@ export const authService = {
     };
   },
 
-  /** Профиль: обновление своих username/email (пароль не трогаем). */
+  /** Обновление username/email пользователя (пароль не трогаем). Вызывается из rbac-сервиса (админ). */
   async updateProfile(userId: string, patch: { username?: string; email?: string }): Promise<void> {
     if (patch.username === undefined && patch.email === undefined) {
       throw new AuthError(400, 'укажите username или email');
