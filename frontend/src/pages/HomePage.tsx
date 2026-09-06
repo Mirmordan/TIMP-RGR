@@ -44,11 +44,53 @@ const TOOLTIP_STYLE: CSSProperties = {
   color: '#D4D8DE',
 };
 
+const HERO_PERKS = [
+  'Живой эфир камер в один клик — без записи, задержка в единицы секунд.',
+  'Архив записей с таймлайном: зоны «запись отсутствует», эфирный сегмент — как обычная запись.',
+  'Инциденты с выгрузкой фрагмента ±60 секунд.',
+  'Реестр камер и потоков с разграничением доступа.',
+  'Автоконтроль записей: потеря источника не оставляет «висячих» записей.',
+];
+
+const STACK_GROUPS: Array<{ name: string; items: string[] }> = [
+  { name: 'Frontend', items: ['TypeScript', 'React', 'Vite'] },
+  { name: 'Backend', items: ['TypeScript', 'Express', 'Swagger'] },
+  { name: 'Database', items: ['PostgreSQL'] },
+  { name: 'Media', items: ['mediaMTX', 'FFmpeg', 'ffmpeg-manager'] },
+  { name: 'Развёртывание', items: ['Node.js', 'npm', 'Docker', 'Docker Compose'] },
+];
+
+const SECTION_CARDS = [
+  {
+    to: '/processes',
+    icon: '▤',
+    title: 'Записи',
+    text: 'Архив сессий: таймлайн с пропусками, эфирный сегмент как запись, выгрузка фрагментов ±60с',
+  },
+  {
+    to: '/streams',
+    icon: '≋',
+    title: 'Потоки',
+    text: 'Живой эфир без записи в один клик; Ivideon и HLS-источники',
+  },
+  {
+    to: '/devices',
+    icon: '⛭',
+    title: 'Устройства',
+    text: 'Реестр камер: привязка потоков, кто и что видит',
+  },
+];
+
 interface DashboardData {
   overview: StatsOverviewWire;
   timeline: StatsTimelineRowWire[];
   incidents: StatsIncidentRowWire[];
   disk: StatsDiskWire;
+}
+
+interface DashboardCounts {
+  streams: number | null;
+  devices: number | null;
 }
 
 interface TimelineChart {
@@ -58,8 +100,10 @@ interface TimelineChart {
 
 export function HomePage() {
   const { user, capabilities } = useAuth();
+  const canViewIncidents = capabilities.includes('admin:read');
 
   const [data, setData] = useState<DashboardData | null>(null);
+  const [counts, setCounts] = useState<DashboardCounts>({ streams: null, devices: null });
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [tick, setTick] = useState(0);
@@ -68,20 +112,24 @@ export function HomePage() {
     let cancelled = false;
     setLoading(true);
     setLoadError('');
-    Promise.all([
+    const stats = [
       apiFetch('/stats/overview'),
       apiFetch('/stats/timeline?days=14'),
-      apiFetch('/stats/incidents?days=30'),
+      canViewIncidents ? apiFetch('/stats/incidents?days=30') : Promise.resolve(null),
       apiFetch('/stats/disk'),
-    ])
+    ];
+    Promise.all(stats)
       .then(async ([overviewRes, timelineRes, incidentsRes, diskRes]) => {
-        if (!overviewRes.ok || !timelineRes.ok || !incidentsRes.ok || !diskRes.ok) {
-          throw new Error(`Ошибка загрузки статистики (${overviewRes.status}/${timelineRes.status})`);
+        if (!overviewRes?.ok || !timelineRes?.ok || !diskRes?.ok) {
+          throw new Error(`Ошибка загрузки статистики (${overviewRes?.status ?? '-'}/${timelineRes?.status ?? '-'})`);
+        }
+        if (canViewIncidents && !incidentsRes?.ok) {
+          throw new Error(`Ошибка загрузки статистики (инциденты ${incidentsRes?.status ?? '-'})`);
         }
         return Promise.all([
           overviewRes.json(),
           timelineRes.json(),
-          incidentsRes.json(),
+          incidentsRes ? incidentsRes.json() : Promise.resolve([]),
           diskRes.json(),
         ]);
       })
@@ -100,6 +148,21 @@ export function HomePage() {
       .finally(() => {
         if (!cancelled) setLoading(false);
       });
+    return () => { cancelled = true; };
+  }, [tick, canViewIncidents]);
+
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all([
+      apiFetch('/streams?limit=1').then(r => (r.ok ? r.json() : null)).catch(() => null),
+      apiFetch('/devices?limit=1').then(r => (r.ok ? r.json() : null)).catch(() => null),
+    ]).then(([streams, devices]) => {
+      if (cancelled) return;
+      setCounts({
+        streams: typeof streams?.total === 'number' ? streams.total : null,
+        devices: typeof devices?.total === 'number' ? devices.total : null,
+      });
+    });
     return () => { cancelled = true; };
   }, [tick]);
 
@@ -147,13 +210,7 @@ export function HomePage() {
         <div className={styles.heroRow}>
           <div className={styles.heroBrand}>
             <div className={styles.heroIcon}>T</div>
-            <div>
-              <h1 className={styles.heroTitle}>ТИМП-РГР</h1>
-              <p className={styles.heroSub}>
-                Система управления записью видеонаблюдения: Express + PostgreSQL управляет процессами
-                записи, mediaMTX нарезает чанки из HLS/RTSP-потоков.
-              </p>
-            </div>
+            <h1 className={styles.heroTitle}>ТИМП-РГР</h1>
           </div>
           <div className={styles.heroUser}>
             <span className={styles.userName}>{user?.username ?? 'гость'}</span>
@@ -163,18 +220,41 @@ export function HomePage() {
             )}
           </div>
         </div>
-        <div className={styles.heroChips}>
-          <span className={styles.heroChip}>Express 5 + PostgreSQL + RLS</span>
-          <span className={styles.heroChip}>React 19 + Vite</span>
-          <span className={styles.heroChip}>mediaMTX (HLS → TS)</span>
-          <span className={styles.heroChip}>JWT + RBAC + ACL</span>
+
+        <ul className={styles.heroPerks}>
+          {HERO_PERKS.map(perk => (
+            <li key={perk} className={styles.heroPerk}>{perk}</li>
+          ))}
+        </ul>
+
+        <div className={styles.stack}>
+          {STACK_GROUPS.map(group => (
+            <div key={group.name} className={styles.stackRow}>
+              <span className={styles.stackGroup}>{group.name}</span>
+              <span className={styles.stackChips}>
+                {group.items.map(item => (
+                  <span key={item} className={styles.stackChip}>{item}</span>
+                ))}
+              </span>
+            </div>
+          ))}
         </div>
       </div>
+
+      <section className={styles.sectionCards} aria-label="Разделы">
+        {SECTION_CARDS.map(card => (
+          <Link key={card.to} to={card.to} className={styles.sectionCard}>
+            <span className={styles.sectionGlyph} aria-hidden="true">{card.icon}</span>
+            <span className={styles.sectionCardTitle}>{card.title}</span>
+            <span className={styles.sectionCardText}>{card.text}</span>
+          </Link>
+        ))}
+      </section>
 
       <section className={styles.dashboard} aria-label="Дашборд">
         <h2 className={styles.dashTitle}>Дашборд</h2>
 
-        {loading && <DashboardSkeleton />}
+        {loading && <DashboardSkeleton canViewIncidents={canViewIncidents} />}
 
         {!loading && loadError && (
           <div className={styles.failed}>
@@ -186,42 +266,55 @@ export function HomePage() {
         {!loading && !loadError && overview && (
           <>
             <div className={styles.tiles}>
-              <StatTile label="Записей">
+              <StatTile label="Сейчас в эфире">
+                <div className={styles.tileLive}>
+                  {overview.processes.running > 0 && <span className={styles.tileLiveDot} />}
+                  <span className={styles.tileValue}>{overview.processes.running.toLocaleString('ru-RU')}</span>
+                </div>
+                <div className={styles.tileSub}>сессий записи</div>
+              </StatTile>
+
+              <StatTile label="Записей всего">
                 <div className={styles.tileValue}>{overview.processes.total.toLocaleString('ru-RU')}</div>
-                {overview.processes.running > 0 && (
-                  <span className={styles.runningRow}>
-                    <span className={styles.runningDot} />
-                    {overview.processes.running} активн.
-                  </span>
+                {overview.processes.total - overview.processes.running > 0 && (
+                  <div className={styles.tileSub}>
+                    остановлено {(overview.processes.total - overview.processes.running).toLocaleString('ru-RU')}
+                  </div>
                 )}
+              </StatTile>
+
+              <StatTile label="Потоков">
+                <div className={styles.tileValue}>{counts.streams === null ? '—' : counts.streams.toLocaleString('ru-RU')}</div>
+              </StatTile>
+
+              <StatTile label="Камер">
+                <div className={styles.tileValue}>{counts.devices === null ? '—' : counts.devices.toLocaleString('ru-RU')}</div>
               </StatTile>
 
               <StatTile label="Отснято сегодня">
                 <div className={styles.tileValue}>{formatHours(overview.recordingTodayS)}</div>
               </StatTile>
 
-              <StatTile label="Всего записей">
+              <StatTile label="Всего">
                 <div className={styles.tileValue}>{overview.segments.count.toLocaleString('ru-RU')}</div>
                 <div className={styles.tileSub}>
                   {formatHours(overview.segments.durationS)} · {formatBytes(overview.segments.sizeBytes)}
                 </div>
               </StatTile>
 
-              <StatTile label="Инциденты 24ч">
-                <div className={styles.tileValue}>{overview.incidents.last24h.toLocaleString('ru-RU')}</div>
-                <div className={styles.sevRow}>
-                  {(Object.keys(SEVERITY_COLORS) as Array<keyof typeof SEVERITY_COLORS>).map(s => (
-                    <span key={s} className={styles.sevItem} title={`всего ${SEVERITY_LABELS[s].toLowerCase()}`}>
-                      <span className={styles.sevDot} style={{ background: SEVERITY_COLORS[s] }} />
-                      <span className={styles.sevCount}>{overview.incidents.bySeverity[s]}</span>
-                    </span>
-                  ))}
-                </div>
-              </StatTile>
-
-              <StatTile label="Камер">
-                <div className={styles.tileValue}>{overview.devices.visible.toLocaleString('ru-RU')}</div>
-              </StatTile>
+              {canViewIncidents && (
+                <StatTile label="Инциденты 24ч">
+                  <div className={styles.tileValue}>{overview.incidents.last24h.toLocaleString('ru-RU')}</div>
+                  <div className={styles.sevRow}>
+                    {(Object.keys(SEVERITY_COLORS) as Array<keyof typeof SEVERITY_COLORS>).map(s => (
+                      <span key={s} className={styles.sevItem} title={`всего ${SEVERITY_LABELS[s].toLowerCase()}`}>
+                        <span className={styles.sevDot} style={{ background: SEVERITY_COLORS[s] }} />
+                        <span className={styles.sevCount}>{overview.incidents.bySeverity[s]}</span>
+                      </span>
+                    ))}
+                  </div>
+                </StatTile>
+              )}
             </div>
 
             <div className={styles.gridArea}>
@@ -265,36 +358,40 @@ export function HomePage() {
                 </Card>
               </div>
 
-              <Card>
-                <div className={styles.chartBody}>
-                  <div className={styles.chartTitle}>Инциденты по дням, 30д</div>
-                  {incidentData.length === 0 ? (
-                    <div className={styles.chartEmpty}>Нет данных за период</div>
-                  ) : (
-                    <div className={styles.chartBox}>
-                      <ResponsiveContainer width="100%" height={260}>
-                        <BarChart data={incidentData} margin={{ top: 8, right: 12, left: 0, bottom: 4 }}>
-                          <CartesianGrid stroke={GRID_STROKE} strokeDasharray="3 3" vertical={false} />
-                          <XAxis dataKey="day" tickFormatter={fmtAxisDay} tick={AXIS_TICK} minTickGap={24} tickLine={false} axisLine={{ stroke: GRID_STROKE }} />
-                          <YAxis allowDecimals={false} tick={AXIS_TICK} width={28} tickLine={false} axisLine={false} />
-                          <Tooltip
-                            cursor={{ fill: 'rgba(255,255,255,0.05)' }}
-                            contentStyle={TOOLTIP_STYLE}
-                            labelStyle={{ color: '#D4D8DE' }}
-                            labelFormatter={label => fmtTooltipDay(String(label))}
-                          />
-                          <Legend wrapperStyle={{ fontSize: 11, color: '#6A7A8C', paddingTop: 6 }} iconSize={9} />
-                          <Bar dataKey="info" stackId="sev" name={SEVERITY_LABELS.info} fill={SEVERITY_COLORS.info} />
-                          <Bar dataKey="warning" stackId="sev" name={SEVERITY_LABELS.warning} fill={SEVERITY_COLORS.warning} />
-                          <Bar dataKey="critical" stackId="sev" name={SEVERITY_LABELS.critical} fill={SEVERITY_COLORS.critical} />
-                        </BarChart>
-                      </ResponsiveContainer>
-                    </div>
-                  )}
-                </div>
-              </Card>
+              {canViewIncidents && (
+                <Card>
+                  <div className={styles.chartBody}>
+                    <div className={styles.chartTitle}>Инциденты по дням, 30д</div>
+                    {incidentData.length === 0 ? (
+                      <div className={styles.chartEmpty}>Нет данных за период</div>
+                    ) : (
+                      <div className={styles.chartBox}>
+                        <ResponsiveContainer width="100%" height={260}>
+                          <BarChart data={incidentData} margin={{ top: 8, right: 12, left: 0, bottom: 4 }}>
+                            <CartesianGrid stroke={GRID_STROKE} strokeDasharray="3 3" vertical={false} />
+                            <XAxis dataKey="day" tickFormatter={fmtAxisDay} tick={AXIS_TICK} minTickGap={24} tickLine={false} axisLine={{ stroke: GRID_STROKE }} />
+                            <YAxis allowDecimals={false} tick={AXIS_TICK} width={28} tickLine={false} axisLine={false} />
+                            <Tooltip
+                              cursor={{ fill: 'rgba(255,255,255,0.05)' }}
+                              contentStyle={TOOLTIP_STYLE}
+                              labelStyle={{ color: '#D4D8DE' }}
+                              labelFormatter={label => fmtTooltipDay(String(label))}
+                            />
+                            <Legend wrapperStyle={{ fontSize: 11, color: '#6A7A8C', paddingTop: 6 }} iconSize={9} />
+                            <Bar dataKey="info" stackId="sev" name={SEVERITY_LABELS.info} fill={SEVERITY_COLORS.info} />
+                            <Bar dataKey="warning" stackId="sev" name={SEVERITY_LABELS.warning} fill={SEVERITY_COLORS.warning} />
+                            <Bar dataKey="critical" stackId="sev" name={SEVERITY_LABELS.critical} fill={SEVERITY_COLORS.critical} />
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </div>
+                    )}
+                  </div>
+                </Card>
+              )}
 
-              <DiskCard disk={disk} />
+              <div className={canViewIncidents ? undefined : styles.span2}>
+                <DiskCard disk={disk} />
+              </div>
             </div>
           </>
         )}
@@ -343,11 +440,11 @@ function DiskCard({ disk }: { disk: StatsDiskWire | undefined }) {
   );
 }
 
-function DashboardSkeleton() {
+function DashboardSkeleton({ canViewIncidents }: { canViewIncidents: boolean }) {
   return (
     <>
       <div className={styles.tiles}>
-        {Array.from({ length: 5 }, (_, i) => (
+        {Array.from({ length: canViewIncidents ? 7 : 6 }, (_, i) => (
           <div key={i} className={styles.tile}>
             <Skeleton width="55%" height={11} />
             <Skeleton width="70%" height={24} />
@@ -364,18 +461,22 @@ function DashboardSkeleton() {
             </div>
           </Card>
         </div>
-        <Card>
-          <div className={styles.chartBody}>
-            <Skeleton width={160} height={13} />
-            <Skeleton width="100%" height={240} />
-          </div>
-        </Card>
-        <Card>
-          <div className={styles.chartBody}>
-            <Skeleton width={120} height={13} />
-            <Skeleton width="100%" height={40} />
-          </div>
-        </Card>
+        {canViewIncidents && (
+          <Card>
+            <div className={styles.chartBody}>
+              <Skeleton width={160} height={13} />
+              <Skeleton width="100%" height={240} />
+            </div>
+          </Card>
+        )}
+        <div className={canViewIncidents ? undefined : styles.span2}>
+          <Card>
+            <div className={styles.chartBody}>
+              <Skeleton width={120} height={13} />
+              <Skeleton width="100%" height={40} />
+            </div>
+          </Card>
+        </div>
       </div>
     </>
   );
