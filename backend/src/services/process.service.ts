@@ -35,10 +35,11 @@ export const processService = {
     return processRepository.findById(id);
   },
 
-  async getAll(limit: number, offset: number): Promise<{ processes: RecordingProcess[]; total: number }> {
+  async getAll(limit: number, offset: number, q?: string): Promise<{ processes: RecordingProcess[]; total: number }> {
+    const search = q?.trim() || undefined;
     const [processes, total] = await Promise.all([
-      processRepository.findAll(limit, offset),
-      processRepository.count(),
+      processRepository.findAll(limit, offset, search),
+      processRepository.count(search),
     ]);
     return { processes, total };
   },

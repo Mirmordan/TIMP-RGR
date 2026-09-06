@@ -6,10 +6,11 @@ export const deviceService = {
     return deviceRepository.findById(id);
   },
 
-  async getAll(limit: number, offset: number): Promise<{ devices: RecordingDevice[]; total: number }> {
+  async getAll(limit: number, offset: number, q?: string): Promise<{ devices: RecordingDevice[]; total: number }> {
+    const search = q?.trim() || undefined;
     const [devices, total] = await Promise.all([
-      deviceRepository.findAll(limit, offset),
-      deviceRepository.count(),
+      deviceRepository.findAll(limit, offset, search),
+      deviceRepository.count(search),
     ]);
     return { devices, total };
   },

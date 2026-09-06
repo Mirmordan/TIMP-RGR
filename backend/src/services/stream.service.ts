@@ -6,10 +6,11 @@ export const streamService = {
     return streamRepository.findById(id);
   },
 
-  async getAll(limit: number, offset: number): Promise<{ streams: RecordingStream[]; total: number }> {
+  async getAll(limit: number, offset: number, q?: string): Promise<{ streams: RecordingStream[]; total: number }> {
+    const search = q?.trim() || undefined;
     const [streams, total] = await Promise.all([
-      streamRepository.findAll(limit, offset),
-      streamRepository.count(),
+      streamRepository.findAll(limit, offset, search),
+      streamRepository.count(search),
     ]);
     return { streams, total };
   },

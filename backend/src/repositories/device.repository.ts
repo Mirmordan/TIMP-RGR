@@ -8,13 +8,13 @@ export const deviceRepository = {
     return rows[0] ?? null;
   },
 
-  async findAll(limit: number, offset: number): Promise<RecordingDevice[]> {
-    const { rows } = await queryAs<RecordingDevice>(deviceQueries.findAll, [limit, offset]);
+  async findAll(limit: number, offset: number, q?: string): Promise<RecordingDevice[]> {
+    const { rows } = await queryAs<RecordingDevice>(deviceQueries.findAll, [limit, offset, q ?? null]);
     return rows;
   },
 
-  async count(): Promise<number> {
-    const { rows } = await queryAs<{ total: number }>(deviceQueries.count);
+  async count(q?: string): Promise<number> {
+    const { rows } = await queryAs<{ total: number }>(deviceQueries.count, [q ?? null]);
     return rows[0]?.total ?? 0;
   },
 

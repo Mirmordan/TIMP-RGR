@@ -32,6 +32,12 @@ streamRouter.use(authenticate);
  *         schema:
  *           type: integer
  *           default: 0
+ *       - name: q
+ *         in: query
+ *         description: Поиск по url потока или названию связанного устройства (подстрока, регистронезависимо).
+ *         required: false
+ *         schema:
+ *           type: string
  *     responses:
  *       '200':
  *         description: Список потоков и общее количество
@@ -58,7 +64,8 @@ streamRouter.use(authenticate);
 streamRouter.get('/', async (req: Request, res: Response) => {
   const limit = Number(req.query.limit) || 20;
   const offset = Number(req.query.offset) || 0;
-  const result = await streamService.getAll(limit, offset);
+  const q = typeof req.query.q === 'string' ? req.query.q : undefined;
+  const result = await streamService.getAll(limit, offset, q);
   res.json(result);
 });
 

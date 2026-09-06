@@ -8,13 +8,13 @@ export const streamRepository = {
     return rows[0] ?? null;
   },
 
-  async findAll(limit: number, offset: number): Promise<RecordingStream[]> {
-    const { rows } = await queryAs<RecordingStream>(streamQueries.findAll, [limit, offset]);
+  async findAll(limit: number, offset: number, q?: string): Promise<RecordingStream[]> {
+    const { rows } = await queryAs<RecordingStream>(streamQueries.findAll, [limit, offset, q ?? null]);
     return rows;
   },
 
-  async count(): Promise<number> {
-    const { rows } = await queryAs<{ total: number }>(streamQueries.count);
+  async count(q?: string): Promise<number> {
+    const { rows } = await queryAs<{ total: number }>(streamQueries.count, [q ?? null]);
     return rows[0]?.total ?? 0;
   },
 

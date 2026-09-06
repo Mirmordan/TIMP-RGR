@@ -31,6 +31,12 @@ processRouter.use(authenticate);
  *         schema:
  *           type: integer
  *           default: 0
+ *       - name: q
+ *         in: query
+ *         description: Поиск по url потока, названию связанного устройства или id процесса (подстрока, регистронезависимо).
+ *         required: false
+ *         schema:
+ *           type: string
  *     responses:
  *       '200':
  *         description: Список процессов и общее количество
@@ -57,7 +63,8 @@ processRouter.use(authenticate);
 processRouter.get('/', async (req: Request, res: Response) => {
   const limit = Number(req.query.limit) || 20;
   const offset = Number(req.query.offset) || 0;
-  const result = await processService.getAll(limit, offset);
+  const q = typeof req.query.q === 'string' ? req.query.q : undefined;
+  const result = await processService.getAll(limit, offset, q);
   res.json(result);
 });
 

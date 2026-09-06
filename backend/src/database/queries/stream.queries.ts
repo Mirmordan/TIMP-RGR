@@ -7,10 +7,15 @@ export const streamQueries = {
   findAll: `SELECT s.object_id AS "id", s.url, s.device_id AS "deviceId", s.source_fingerprint AS "sourceFingerprint", o.created_at AS "createdAt"
             FROM recording_streams s
             JOIN objects o ON o.id = s.object_id
+            LEFT JOIN recording_devices d ON d.object_id = s.device_id
+            WHERE ($3::text IS NULL OR s.url ILIKE '%' || $3 || '%' OR d.name ILIKE '%' || $3 || '%')
             ORDER BY o.created_at DESC
             LIMIT $1 OFFSET $2`,
 
-  count: `SELECT COUNT(*)::int AS "total" FROM recording_streams`,
+  count: `SELECT COUNT(*)::int AS "total"
+          FROM recording_streams s
+          LEFT JOIN recording_devices d ON d.object_id = s.device_id
+          WHERE ($1::text IS NULL OR s.url ILIKE '%' || $1 || '%' OR d.name ILIKE '%' || $1 || '%')`,
 
   insert: `INSERT INTO objects DEFAULT VALUES
            RETURNING id AS "objectId"`,

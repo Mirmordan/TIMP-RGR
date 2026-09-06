@@ -7,10 +7,13 @@ export const deviceQueries = {
   findAll: `SELECT d.object_id AS "id", d.name, d.type, o.created_at AS "createdAt"
             FROM recording_devices d
             JOIN objects o ON o.id = d.object_id
+            WHERE ($3::text IS NULL OR d.name ILIKE '%' || $3 || '%')
             ORDER BY o.created_at DESC
             LIMIT $1 OFFSET $2`,
 
-  count: `SELECT COUNT(*)::int AS "total" FROM recording_devices`,
+  count: `SELECT COUNT(*)::int AS "total"
+          FROM recording_devices d
+          WHERE ($1::text IS NULL OR d.name ILIKE '%' || $1 || '%')`,
 
   insert: `INSERT INTO objects DEFAULT VALUES
            RETURNING id AS "objectId"`,

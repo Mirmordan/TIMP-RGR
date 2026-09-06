@@ -11,10 +11,21 @@ export const processQueries = {
                    o.created_at AS "createdAt"
             FROM recording_processes p
             JOIN objects o ON o.id = p.object_id
+            LEFT JOIN recording_streams s ON s.object_id = p.stream_id
+            LEFT JOIN recording_devices d ON d.object_id = s.device_id
+            WHERE ($3::text IS NULL OR p.object_id::text ILIKE '%' || $3 || '%'
+                   OR s.url ILIKE '%' || $3 || '%'
+                   OR d.name ILIKE '%' || $3 || '%')
             ORDER BY o.created_at DESC
             LIMIT $1 OFFSET $2`,
 
-  count: `SELECT COUNT(*)::int AS "total" FROM recording_processes`,
+  count: `SELECT COUNT(*)::int AS "total"
+          FROM recording_processes p
+          LEFT JOIN recording_streams s ON s.object_id = p.stream_id
+          LEFT JOIN recording_devices d ON d.object_id = s.device_id
+          WHERE ($1::text IS NULL OR p.object_id::text ILIKE '%' || $1 || '%'
+                 OR s.url ILIKE '%' || $1 || '%'
+                 OR d.name ILIKE '%' || $1 || '%')`,
 
   /** Все процессы со статусом running + URL источника (recording_streams.url). */
   findRunningWithStream: `SELECT p.object_id AS "id", p.stream_id AS "streamId",
