@@ -48,6 +48,64 @@ async function getIvideonWsUrl(server, camera) {
   return data.result.url;
 }
 
+// ===== ffmpeg lifecycle: защита от утечки процессов =====
+// Каждый ffmpeg регистрируется в live-сете сессии (add на spawn, delete на close/error).
+// releaseProc() — мягкое закрытие: EOF на stdin + добиватель (SIGTERM через 5с, SIGKILL ещё через 3с).
+// forceKill() — немедленный SIGTERM + SIGKILL через 3с (для stop() и watchdog).
+// Таймеры добивания снимаются в момент фактического выхода процесса.
+const procMeta = new WeakMap();
+
+function registerProc(proc, live) {
+  procMeta.set(proc, { born: Date.now(), released: false, killed: false, t1: null, t2: null });
+  live.add(proc);
+  if (proc.stdin) proc.stdin.on('error', () => {});
+  const onExit = () => {
+    live.delete(proc);
+    const m = procMeta.get(proc);
+    if (m) {
+      if (m.t1) { clearTimeout(m.t1); m.t1 = null; }
+      if (m.t2) { clearTimeout(m.t2); m.t2 = null; }
+    }
+  };
+  proc.once('close', onExit);
+  proc.on('error', onExit);
+}
+
+function releaseProc(proc, name) {
+  const m = procMeta.get(proc);
+  if (!m || m.released) return;
+  m.released = true;
+  if (proc.exitCode !== null || proc.signalCode !== null) return;
+  try { if (proc.stdin && proc.stdin.writable) proc.stdin.end(); } catch {}
+  m.t1 = setTimeout(() => {
+    if (proc.exitCode === null && proc.signalCode === null) {
+      console.warn(`[${name}] ffmpeg (pid ${proc.pid}) alive 5s after EOF — SIGTERM`);
+      try { proc.kill('SIGTERM'); } catch {}
+    }
+  }, 5000);
+  m.t2 = setTimeout(() => {
+    if (proc.exitCode === null && proc.signalCode === null) {
+      console.warn(`[${name}] ffmpeg (pid ${proc.pid}) alive after SIGTERM — SIGKILL`);
+      try { proc.kill('SIGKILL'); } catch {}
+    }
+  }, 8000);
+}
+
+function forceKill(proc, name) {
+  const m = procMeta.get(proc);
+  if (!m || m.killed) return;
+  m.killed = true;
+  try { if (proc.stdin && proc.stdin.writable) proc.stdin.end(); } catch {}
+  if (proc.exitCode !== null || proc.signalCode !== null) return;
+  try { proc.kill('SIGTERM'); } catch {}
+  m.t2 = setTimeout(() => {
+    if (proc.exitCode === null && proc.signalCode === null) {
+      console.warn(`[${name}] ffmpeg (pid ${proc.pid}) alive after SIGTERM — SIGKILL`);
+      try { proc.kill('SIGKILL'); } catch {}
+    }
+  }, 3000);
+}
+
 function startIvideonStream(name, opts) {
   const { server, camera, recordDir } = opts;
   let ws = null;
@@ -59,22 +117,35 @@ function startIvideonStream(name, opts) {
   let currentFfmpeg = null;
   let currentFile = null;
   let currentStream = null;
+  let watchdog = null;
+  const live = new Set();
 
   function createNewSegment() {
-    if (currentFfmpeg) {
-      currentFfmpeg.stdin.end();
-    }
+    if (stopped) return null;
+    // Явное владение: до перезаписи держим ссылку на прежний процесс,
+    // закрываем его stdin (EOF) и вешаем гарантированного добивателя.
+    const prev = currentFfmpeg;
+    if (prev) releaseProc(prev, name);
     const fname = join(recordDir, `${timestamp()}.ts`);
     currentFile = fname;
-    currentFfmpeg = spawn('ffmpeg', [
+    const proc = spawn('ffmpeg', [
       '-f', 'mp4', '-i', 'pipe:0',
       '-c', 'copy',
       '-f', 'mpegts',
       '-y', fname
     ], { stdio: ['pipe', 'ignore', 'pipe'] });
-    currentFfmpeg.stderr.on('data', () => {});
-    currentFfmpeg.on('close', () => { currentFfmpeg = null; });
-    return currentFfmpeg;
+    currentFfmpeg = proc;
+    registerProc(proc, live);
+    proc.stderr.on('data', () => {});
+    proc.on('close', () => {
+      // Чистим переменную только если закрылся именно текущий процесс:
+      // close старого не должен затирать ссылку на новый spawn.
+      if (currentFfmpeg === proc) currentFfmpeg = null;
+    });
+    proc.on('error', () => {
+      if (currentFfmpeg === proc) currentFfmpeg = null;
+    });
+    return proc;
   }
 
   function connect() {
@@ -123,7 +194,7 @@ function startIvideonStream(name, opts) {
         console.log(`[${name}] WS closed`);
         const p = paths.get(name);
         if (p) { p.online = false; p.ready = false; }
-        if (currentFfmpeg && currentFfmpeg.stdin.writable) currentFfmpeg.stdin.end();
+        if (currentFfmpeg) releaseProc(currentFfmpeg, name);
         if (!stopped) reconnectTimer = setTimeout(connect, 3000);
       });
 
@@ -131,6 +202,7 @@ function startIvideonStream(name, opts) {
         console.log(`[${name}] WS error: ${err.message}`);
         const p = paths.get(name);
         if (p) { p.online = false; p.ready = false; }
+        if (currentFfmpeg) releaseProc(currentFfmpeg, name);
         if (!stopped) reconnectTimer = setTimeout(connect, 5000);
       });
 
@@ -140,14 +212,28 @@ function startIvideonStream(name, opts) {
     });
   }
 
+  // Watchdog сессии: страховка от любых гонок — ffmpeg из live (кроме текущего),
+  // живущий дольше 30с, принудительно добивается.
+  watchdog = setInterval(() => {
+    const now = Date.now();
+    for (const proc of live) {
+      if (proc === currentFfmpeg) continue;
+      const m = procMeta.get(proc);
+      if (m && now - m.born > 30000) {
+        console.warn(`[${name}] watchdog: stale ffmpeg (pid ${proc.pid}) alive >30s — force kill`);
+        forceKill(proc, name);
+      }
+    }
+  }, 10000);
   connect();
 
   return {
     stop() {
       stopped = true;
       if (reconnectTimer) clearTimeout(reconnectTimer);
-      if (ws) ws.close();
-      if (currentFfmpeg) currentFfmpeg.kill('SIGTERM');
+      if (watchdog) { clearInterval(watchdog); watchdog = null; }
+      if (ws) { try { ws.close(); } catch {} }
+      for (const proc of live) forceKill(proc, name);
     }
   };
 }
@@ -157,13 +243,19 @@ function startGenericStream(name, opts) {
   let ffmpeg = null;
   let stopped = false;
   let restartTimer = null;
+  const live = new Set();
 
   function start() {
     if (stopped) return;
+    // Если рестарт наступил раньше фактического выхода старого процесса —
+    // добить его до нового spawn, иначе останется сиротой.
+    if (ffmpeg && ffmpeg.exitCode === null && ffmpeg.signalCode === null) {
+      forceKill(ffmpeg, name);
+    }
     mkdirSync(recordDir, { recursive: true });
     const filePattern = join(recordDir, `${timestamp()}_%05d.ts`);
 
-    ffmpeg = spawn('ffmpeg', [
+    const proc = spawn('ffmpeg', [
       '-reconnect', '1', '-reconnect_streamed', '1', '-reconnect_delay_max', '5',
       '-i', source,
       '-c', 'copy',
@@ -172,8 +264,12 @@ function startGenericStream(name, opts) {
       '-y', filePattern
     ], { stdio: ['ignore', 'ignore', 'pipe'] });
 
-    ffmpeg.stderr.on('data', () => {});
-    ffmpeg.on('close', (code) => {
+    ffmpeg = proc;
+    registerProc(proc, live);
+    proc.stderr.on('data', () => {});
+    proc.on('close', () => {
+      // close только своего процесса затирает ссылку (идемпотентность по identity)
+      if (ffmpeg === proc) ffmpeg = null;
       const p = paths.get(name);
       if (p) { p.online = false; p.ready = false; }
       if (!stopped) restartTimer = setTimeout(start, 3000);
@@ -188,7 +284,7 @@ function startGenericStream(name, opts) {
     stop() {
       stopped = true;
       if (restartTimer) clearTimeout(restartTimer);
-      if (ffmpeg) ffmpeg.kill('SIGTERM');
+      for (const proc of live) forceKill(proc, name);
     }
   };
 }
