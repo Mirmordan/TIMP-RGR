@@ -180,7 +180,7 @@ function startIvideonStream(name, opts) {
       '-f', 'hls',
       '-hls_time', '2',
       '-hls_list_size', '8',
-      '-hls_flags', 'delete_segments+append_list',
+      '-hls_flags', 'delete_segments+append_list+program_date_time',
       '-hls_segment_type', 'mpegts',
       '-hls_segment_filename', join(hlsDir, 'seg_%05d.ts'),
       '-y', join(hlsDir, 'index.m3u8'),
