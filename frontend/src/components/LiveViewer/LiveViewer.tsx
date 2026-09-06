@@ -7,7 +7,20 @@ import type { TimelineData, TimelineSegment as Segment } from '../../types';
 
 // Preroll: сколько чанков (≈TARGETDURATION 2с) держаться за live-edge,
 // чтобы старт не упирался ровно в последний (ещё пишущийся) чанк.
-const LIVE_SYNC_DURATION_COUNT = 2;
+// LIVE_SYNC_S: абсолютная отсечка синхронизации hls.js от live-edge (сек).
+// Используется вместо liveSyncDurationCount т.к. TARGETDURATION хвоста раздут
+// гэпами реконнектов (~57с) — count-вариант уводил плеер на 100с+ от эфира.
+const LIVE_SYNC_S = 2;
+// LIVE_MAX_LATENCY_S: отставание от края, после которого hls сам перескакивает
+// на liveSync-позицию (иначе drift растёт до окна).
+const LIVE_MAX_LATENCY_S = 6;
+// LIVE_CATCHUP_GAP_S: порог жёсткого догона в 2с-тикере. maxLatency у hls мягкая
+// и на EVENT-окне сходится к ~40с; при разрыве больше этого — сами прыгаем на
+// liveSyncPosition (преролл 2с сохраняется).
+const LIVE_CATCHUP_GAP_S = 15;
+// BACK_BUFFER_S: сколько сыгранного буфера держать в MSE. Дефолт hls.js = Infinity
+// — без лимита многочасовой эфир накапливает гигабайты в памяти вкладки.
+const BACK_BUFFER_S = 30;
 // LIVE_TAIL_S: окно EVENT-плейлиста открытого сегмента — стартуем за N секунд до
 // живого хвоста (?start=anchor), чтобы манифест оставался маленьким и hls.js
 // корректно синкался к edge, а не начинал с чанка 0 многотысячного манифеста.
@@ -42,6 +55,12 @@ export function LiveViewer({ processId }: LiveViewerProps) {
   // Ре-якорь в полёте (destroy + новый инстанс): до MANIFEST_PARSED/LEVEL_LOADED
   // не триггерим повторный ре-якорь и не мешаем recovery-счётчиками.
   const reAnchoringRef = useRef(false);
+  // Разовый принудительный синк к liveSync-позиции на первом манифесте инстанса
+  // (EVENT-окно: hls может стартануть с начала окна, пока details ещё «не живые»).
+  // PDT текущего играемого чанка: media-таймлайн EVENT растянут фиктивными
+  // EXTINF гэпов записи — таймкод «в эфире» считаем от реального PROGRAM-DATE-TIME.
+  const fragMetaRef = useRef<{ pdtMs: number; start: number } | null>(null);
+  const edgeSeekRef = useRef(false);
   const emptyPollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const userPausedRef = useRef(false);
   const autoplayBlockedRef = useRef(false);
@@ -127,20 +146,27 @@ export function LiveViewer({ processId }: LiveViewerProps) {
         setEdgeClock(`${hh}:${mm}:${ss}`);
       }
 
-      // Абсолютное время видимого кадра = startedAt открытого сегмента +
-      // (anchor окна инстанса + video.currentTime).
+      // Абсолютное время кадра: от реального PDT играемого фрагмента
+      // (pdt + (currentTime − начало флага)). Фолбэк, если PDT нет:
+      // startedAt окна + anchor + media-time (был неточен из-за фиктивных EXTINF).
       const startedAt = openSegStartedAtRef.current;
       const v = videoRef.current;
-      if (startedAt && v && v.currentTime > 0 && !noSignalRef.current && !emptyWaitRef.current) {
-        const startMs = new Date(startedAt).getTime();
-        if (Number.isFinite(startMs)) {
-          const frameMs = startMs + (anchorRef.current + v.currentTime) * 1000;
+      if (v && v.currentTime > 0 && !noSignalRef.current && !emptyWaitRef.current) {
+        const meta = fragMetaRef.current;
+        let frameMs = NaN;
+        if (meta) {
+          frameMs = meta.pdtMs + (v.currentTime - meta.start) * 1000;
+        } else if (startedAt) {
+          const startMs = new Date(startedAt).getTime();
+          if (Number.isFinite(startMs)) frameMs = startMs + (anchorRef.current + v.currentTime) * 1000;
+        }
+        if (Number.isFinite(frameMs)) {
           const d = new Date(frameMs);
           const date = `${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')}.${d.getFullYear()}`;
           const clock = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}`;
           setLiveTimeLabel(`в эфире ${date} ${clock}`);
           const lag = Math.max(0, Math.round((Date.now() - frameMs) / 1000));
-          setLiveLagLabel(`≈${lag}с`);
+          setLiveLagLabel(`≈${lag}с задержка`);
           return;
         }
       }
@@ -150,6 +176,25 @@ export function LiveViewer({ processId }: LiveViewerProps) {
     tick();
     const timer = setInterval(tick, 1000);
     return () => clearInterval(timer);
+  }, []);
+
+  // finite-длительность EVENT-окна: уперлись в край буфера до прихода новых
+  // чанков — «ended». Не ждём stall-рекавери (10с), а сразу ре-синк к краю
+  // (2с-тикер добьёт по seekable), и пробуем играть дальше.
+  useEffect(() => {
+    const v = videoRef.current;
+    if (!v) return;
+    const onEnded = () => {
+      if (userPausedRef.current) return;
+      try {
+        let se = 0;
+        for (let i = 0; i < v.seekable.length; i++) se = Math.max(se, v.seekable.end(i));
+        if (se > 0) v.currentTime = Math.max(0, se - LIVE_SYNC_S);
+      } catch { /* seekable пуст */ }
+      v.play().catch(() => {});
+    };
+    v.addEventListener('ended', onEnded);
+    return () => v.removeEventListener('ended', onEnded);
   }, []);
 
   function teardownHls() {
@@ -199,6 +244,7 @@ export function LiveViewer({ processId }: LiveViewerProps) {
     if (!video) return;
     teardownHls();
     segIdRef.current = segId;
+    edgeSeekRef.current = false;
     stallStreakRef.current = 0;
     fatalNetRef.current = 0;
     retryAtRef.current = 0;
@@ -225,8 +271,20 @@ export function LiveViewer({ processId }: LiveViewerProps) {
       const hls = new Hls({
         enableWorker: true,
         lowLatencyMode: false,
-        liveDurationInfinity: true,
-        liveSyncDurationCount: LIVE_SYNC_DURATION_COUNT,
+        // Finite (не Infinity) — сознательно: при liveDurationInfinity hls.js
+        // теряет валидный liveSyncPosition и перестает держать playhead у края.
+        liveDurationInfinity: false,
+        // Абсолютная синхронизация к краю: liveSyncDurationCount перемножается с
+        // TARGETDURATION хвоста (раздут гэпами реконнектов до 57с) — плеер отъезжал
+        // на ~100с от live-edge. Паузы в 2-3с чанков хватает с запасом.
+        liveSyncDuration: LIVE_SYNC_S,
+        // Дрейф после первичного синка: hls синхронизирует ТОЛЬКО при загрузке
+        // манифеста, дальше playhead отстаёт от живущего края на длину сыгранного
+        // окна. maxLatency заставляет прыгать обратно к краю при отставании >6с.
+        liveMaxLatencyDuration: LIVE_MAX_LATENCY_S,
+        // MSE без этого растёт бесконечно: сыгранный буфер НЕ вытесняется
+        // (дефолт Infinity) — много часов эфира = гигабайты в браузере.
+        backBufferLength: BACK_BUFFER_S,
         maxBufferLength: 20,
         startLevel: -1,
       });
@@ -263,6 +321,13 @@ export function LiveViewer({ processId }: LiveViewerProps) {
         reAnchoringRef.current = false;
         resetHealth();
         const frags = data?.details?.fragments?.length ?? 0;
+        if (frags > 0 && !edgeSeekRef.current) {
+          const sync = hls.liveSyncPosition;
+          if (Number.isFinite(sync) && (sync as number) > 0) {
+            video.currentTime = sync as number;
+          }
+          edgeSeekRef.current = true;
+        }
         setLoading(false);
         if (frags > 0) {
           // Пустой EVENT-плейлист дождался первого чанка — стартуем воспроизведение.
@@ -273,9 +338,13 @@ export function LiveViewer({ processId }: LiveViewerProps) {
         }
       });
 
-      hls.on(Hls.Events.FRAG_BUFFERED, () => {
+      hls.on(Hls.Events.FRAG_BUFFERED, (_e, data) => {
         resetHealth();
         lastChunkTsRef.current = Date.now();
+        const f = (data as { frag?: { programDateTime?: number; start?: number } } | undefined)?.frag;
+        if (f && typeof f.programDateTime === 'number' && typeof f.start === 'number') {
+          fragMetaRef.current = { pdtMs: f.programDateTime, start: f.start };
+        }
       });
 
       hls.on(Hls.Events.ERROR, (_e, data) => {
@@ -361,6 +430,23 @@ export function LiveViewer({ processId }: LiveViewerProps) {
 
       if (healthy) {
         stallStreakRef.current = 0;
+        // Жёсткий догон к ЖИВОМУ краю. Ориентир — seekable.end (реальный край
+        // буфера), а НЕ hls.liveSyncPosition: тот считается по медиа-времени,
+        // а EXTINF фиктивных гэпов записи растягивают media timeline вперёд
+        // ( лаг «по liveSync» оказался бы мнимым). Прыгаем на seekEnd−preroll.
+        let seekEnd = 0;
+        for (let i = 0; i < v.seekable.length; i++) {
+          const e = v.seekable.end(i);
+          if (e > seekEnd) seekEnd = e;
+        }
+        const target = seekEnd - LIVE_SYNC_S;
+        if (
+          !userPausedRef.current &&
+          seekEnd > 0 && target > 0 &&
+          target - v.currentTime > LIVE_CATCHUP_GAP_S
+        ) {
+          v.currentTime = target;
+        }
         // Окно EVENT-плейлиста (?start= заморожен) с момента создания инстанса
         // отыграло > LIVE_REANCHOR_AFTER_S и снова выросло — «мягкий» ре-якорь:
         // destroy + пересоздание от свежего хвоста (новый anchor от текущего
@@ -442,7 +528,12 @@ export function LiveViewer({ processId }: LiveViewerProps) {
     userPausedRef.current = false;
     autoplayBlockedRef.current = false;
     setAutoplayBlocked(false);
-    const pos = hls.liveSyncPosition;
+    let seekEnd = 0;
+    for (let i = 0; i < v.seekable.length; i++) {
+      const e = v.seekable.end(i);
+      if (e > seekEnd) seekEnd = e;
+    }
+    const pos = seekEnd > 0 ? Math.max(0, seekEnd - LIVE_SYNC_S) : hls.liveSyncPosition;
     if (pos != null && Number.isFinite(pos)) {
       try {
         v.currentTime = Math.max(0, pos);
