@@ -116,6 +116,30 @@ const definition = {
           createdAt: { type: 'string', format: 'date-time' },
         },
       },
+      StreamView: {
+        type: 'object',
+        description:
+          'Результат открытия view-сессии: HLS-URL для просмотра «что сейчас на камере» без записи.',
+        required: ['hlsUrl', 'source', 'ttlS'],
+        properties: {
+          hlsUrl: {
+            type: 'string',
+            description:
+              'URL HLS-плейлиста: /hls/process_<id>/index.m3u8 или /live/process_<id>/index.m3u8 ' +
+              'когда запись идёт (source=process), иначе /hls/view_<streamId>/index.m3u8 или ' +
+              '/live/view_<streamId>/index.m3u8 выделенного view-пути (source=view).',
+          },
+          source: {
+            type: 'string',
+            enum: ['process', 'view'],
+            description: 'process — смотрим живой process-путь записи; view — поднят view-путь без записи.',
+          },
+          ttlS: {
+            type: 'integer',
+            description: 'Время жизни view-сессии, сек; продлевается каждым POST /streams/:id/view.',
+          },
+        },
+      },
       Process: {
         type: 'object',
         required: ['id', 'streamId', 'startedAt', 'status', 'createdAt'],

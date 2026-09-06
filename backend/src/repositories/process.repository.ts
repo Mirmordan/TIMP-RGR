@@ -33,6 +33,12 @@ export const processRepository = {
     return rows;
   },
 
+  /** Самый ранний running-процесс потока (для выбора process/view пути в view-сессии). */
+  async findRunningByStreamId(streamId: string): Promise<RunningProcessWithStream | null> {
+    const { rows } = await queryAs<RunningProcessWithStream>(processQueries.findRunningByStreamId, [streamId]);
+    return rows[0] ?? null;
+  },
+
   async create(streamId: string, startedAt: Date, status: string): Promise<RecordingProcess> {
     return inUserContext(async (client) => {
       const { rows: objRows } = await client.query<{ objectId: string }>(processQueries.insert);

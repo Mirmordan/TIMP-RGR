@@ -154,4 +154,24 @@ describe('recoveryService.reconcileOnStartup', () => {
     expect(removePath).toHaveBeenCalledTimes(1);
     expect(removePath).toHaveBeenCalledWith('process_ghost', undefined, state.ffmApi);
   });
+
+  it('орфанные view_* пути (рестарт бэкенда) удаляются из обоих медиа-сервисов при старте', async () => {
+    findRunning.mockResolvedValue([runningProcess('proc-1')]);
+    findByProcess.mockResolvedValue([{
+      id: 'seg-1', processId: 'proc-1', streamId: 'stream-proc-1', path: 'process_proc-1',
+      startedAt: new Date('2026-09-05T10:00:00.000Z'), endedAt: null,
+      fileCount: 0, durationS: 0, sizeBytes: 0, createdAt: new Date('2026-09-05T10:00:00.000Z'),
+    }]);
+    seedFetch(
+      jsonRes({ itemCount: 2, items: [{ name: 'process_proc-1' }, { name: 'view_stream-1' }] }),
+      jsonRes({ itemCount: 1, items: [{ name: 'view_stream-2' }] }),
+    );
+
+    await recoveryService.reconcileOnStartup();
+
+    expect(patchProcess).not.toHaveBeenCalled();
+    expect(removePath).toHaveBeenCalledTimes(2);
+    expect(removePath).toHaveBeenCalledWith('view_stream-1', undefined, state.ffmApi);
+    expect(removePath).toHaveBeenCalledWith('view_stream-2', undefined, state.mtxApi);
+  });
 });

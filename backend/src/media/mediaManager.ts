@@ -62,14 +62,18 @@ export const mediaManager = {
       sourceOnDemand?: boolean;
       record?: boolean;
       recordSegmentDuration?: string;
+      /** view-сессия: просмотр без записи (ffmpeg-manager не пишет архив, mediaMTX — record:false). */
+      view?: boolean;
     },
   ): Promise<void> {
     if (isIvideonUrl(opts.source)) {
       // Ivideon → ffmpeg-manager
       const { server, camera } = parseIvideonUrl(opts.source);
+      const body: Record<string, unknown> = { _ivideon: { server, camera } };
+      if (opts.view) body._view = true;
       await request(`${config.ffmpegManager.apiUrl}/v3/config/paths/add/${encodeURIComponent(name)}`, {
         method: 'POST',
-        body: JSON.stringify({ _ivideon: { server, camera } }),
+        body: JSON.stringify(body),
       });
     } else {
       // HLS → mediaMTX
@@ -77,12 +81,18 @@ export const mediaManager = {
         source: opts.source,
         sourceOnDemand: opts.sourceOnDemand ?? false,
         ...(opts.sourceFingerprint ? { sourceFingerprint: opts.sourceFingerprint } : {}),
-        record: opts.record ?? true,
-        recordFormat: 'mpegts',
-        recordPath: `${config.mediaMTX.recordRoot}/%path/%Y-%m-%d_%H-%M-%S-%f`,
-        recordPartDuration: '2s',
-        recordSegmentDuration: opts.recordSegmentDuration ?? '10s',
       };
+      if (opts.view) {
+        // view-путь: только просмотр — без записи, источник поднимается по требованию зрителя.
+        conf.record = false;
+        conf.sourceOnDemand = true;
+      } else {
+        conf.record = opts.record ?? true;
+        conf.recordFormat = 'mpegts';
+        conf.recordPath = `${config.mediaMTX.recordRoot}/%path/%Y-%m-%d_%H-%M-%S-%f`;
+        conf.recordPartDuration = '2s';
+        conf.recordSegmentDuration = opts.recordSegmentDuration ?? '10s';
+      }
       await request(`${config.mediaMTX.apiUrl}/v3/config/paths/add/${encodeURIComponent(name)}`, {
         method: 'POST',
         body: JSON.stringify(conf),

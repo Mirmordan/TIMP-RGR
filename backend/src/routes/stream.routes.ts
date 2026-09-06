@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import type { Request, Response } from 'express';
 import { streamService } from '../services/stream.service';
+import { streamViewService } from '../services/streamView.service';
 import { authenticate } from '../security/middleware/authenticate';
 import { requirePermission } from '../security/middleware/requirePermission';
 
@@ -108,6 +109,93 @@ streamRouter.get('/:id', requirePermission('read'), async (req: Request, res: Re
   const stream = await streamService.getById(id);
   if (!stream) return res.status(404).json({ error: 'поток не найден' });
   res.json(stream);
+});
+
+/**
+ * @openapi
+ * /streams/{id}/view:
+ *   post:
+ *     tags: [Streams]
+ *     operationId: viewStream
+ *     summary: Просмотр live-потока без записи (view-сессия)
+ *     description: Возвращает HLS-URL «что сейчас на камере». Если по потоку идёт живая запись и её путь онлайн — отдаётся HLS живого process-пути; иначе поднимается выделенный view-путь без записи (view_<id>, TTL продлевается каждым вызовом). Требуется право read на объект.
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         description: UUID потока.
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *     responses:
+ *       '200':
+ *         description: HLS-URL для просмотра
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/StreamView'
+ *       '401':
+ *         description: Требуется авторизация
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       '403':
+ *         description: Нет доступа к объекту
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       '404':
+ *         description: Поток не найден
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
+streamRouter.post('/:id/view', requirePermission('read'), async (req: Request, res: Response) => {
+  const id = req.params.id as string;
+  const result = await streamViewService.openView(id);
+  if (!result) return res.status(404).json({ error: 'поток не найден' });
+  res.json(result);
+});
+
+/**
+ * @openapi
+ * /streams/{id}/view:
+ *   delete:
+ *     tags: [Streams]
+ *     operationId: stopStreamView
+ *     summary: Остановить view-сессию потока
+ *     description: Немедленно останавливает view-путь потока (если он был поднят). Если просмотр шёл по живому process-пути записи — ничего не делает. Идемпотентна. Требуется право read на объект.
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         description: UUID потока.
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *     responses:
+ *       '204':
+ *         description: View-сессия остановлена
+ *       '401':
+ *         description: Требуется авторизация
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       '403':
+ *         description: Нет доступа к объекту
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
+streamRouter.delete('/:id/view', requirePermission('read'), async (req: Request, res: Response) => {
+  const id = req.params.id as string;
+  await streamViewService.stopView(id);
+  res.status(204).send();
 });
 
 /**

@@ -157,14 +157,16 @@ async function reconcileRunning(ffm: ServicePaths, mtx: ServicePaths): Promise<v
   await removeOrphanPaths(mtx, aliveIds);
 }
 
-/** Удалить из медиа-сервиса пути process_*, не относящиеся к живым записям. */
+/** Удалить из медиа-сервиса орфанные пути: process_* без живой записи и все view_*. */
 async function removeOrphanPaths(svc: ServicePaths, aliveIds: Set<string>): Promise<void> {
   if (!svc.ok) return; // сервис недоступен — список неавторитетен, пути не трогаем
   for (const name of svc.paths) {
     const m = /^process_(.+)$/.exec(name);
-    if (!m) continue; // чужие пути (camera_* и пр.) не трогаем
-    const processId = m[1]!;
-    if (aliveIds.has(processId)) continue; // живая запись
+    const isView = /^view_/.test(name);
+    if (!m && !isView) continue; // чужие пути (camera_* и пр.) не трогаем
+    if (m && aliveIds.has(m[1]!)) continue; // живая запись
+    // view_* пути: TTL-карта view-сессий живёт в памяти бэкенда — рестарт бэкенда
+    // осиротил их все (записи они не ведутся и в state не персистятся).
     try {
       await mediaManager.removePath(name, undefined, svc.apiUrl);
       console.log(`[reconcile] орфанный путь ${name} удалён из ${svc.label}`);

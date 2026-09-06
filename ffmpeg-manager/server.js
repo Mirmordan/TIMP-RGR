@@ -108,7 +108,7 @@ function forceKill(proc, name) {
 }
 
 function startIvideonStream(name, opts) {
-  const { server, camera, recordDir } = opts;
+  const { server, camera, recordDir, view } = opts;
   let ws = null;
   let ffmpeg = null;
   let stopped = false;
@@ -128,7 +128,8 @@ function startIvideonStream(name, opts) {
   let liveFfmpeg = null;
 
   function createNewSegment() {
-    if (stopped) return null;
+    if (stopped || view) return null;
+    // view-сессия: архив не пишется — только live-HLS пайп.
     // Явное владение: до перезаписи держим ссылку на прежний процесс,
     // закрываем его stdin (EOF) и вешаем гарантированного добивателя.
     const prev = currentFfmpeg;
@@ -367,6 +368,9 @@ function startGenericStream(name, opts) {
 function persistState() {
   const state = [];
   for (const [name, entry] of paths) {
+    // view-сессии в state не персистятся: они живут, пока их держит TTL-карта
+    // бэкенда, и не должны восстанавливаться после рестарта ffmpeg-manager.
+    if (entry.conf && entry.conf._view) continue;
     state.push({ name, conf: entry.conf });
   }
   const tmpFile = `${STATE_FILE}.tmp`;
@@ -400,19 +404,32 @@ async function addPath(name, conf) {
     throw new Error(`invalid path name: ${JSON.stringify(name)}`);
   }
 
+  const isView = !!(conf && conf._view);
   const recordDir = join(RECORD_ROOT, name);
-  mkdirSync(recordDir, { recursive: true });
+  // view-сессии архив не пишут — каталог чанков им не нужен.
+  if (!isView) mkdirSync(recordDir, { recursive: true });
 
   const entry = { name, conf, online: false, ready: false, source: conf.source || '', recordDir, stream: null, bytesReceived: 0 };
 
   if (conf._ivideon) {
-    entry.stream = startIvideonStream(name, { server: conf._ivideon.server, camera: conf._ivideon.camera, recordDir });
+    entry.stream = startIvideonStream(name, {
+      server: conf._ivideon.server, camera: conf._ivideon.camera, recordDir, view: isView,
+    });
   } else if (conf.source) {
     entry.stream = startGenericStream(name, { source: conf.source, recordDir });
   }
 
   paths.set(name, entry);
   return true;
+}
+
+/** Кол-во архивных .ts в каталоге сессии (у view-сессий каталога может не быть). */
+function countTsFiles(recordDir) {
+  try {
+    return readdirSync(recordDir).filter(f => f.endsWith('.ts')).length;
+  } catch {
+    return 0;
+  }
 }
 
 // ===== API =====
@@ -447,7 +464,7 @@ app.delete('/v3/config/paths/delete/:name', (req, res) => {
 app.get('/v3/paths/get/:name', (req, res) => {
   const entry = paths.get(req.params.name);
   if (!entry) return res.status(404).json({ status: 'error', error: 'not found' });
-  const files = readdirSync(entry.recordDir).filter(f => f.endsWith('.ts')).length;
+  const files = countTsFiles(entry.recordDir);
   res.json({
     name: entry.name, ready: entry.ready, online: entry.online,
     source: { type: entry.conf._ivideon ? 'ivideon' : 'hlsSource', id: '' },
@@ -459,7 +476,7 @@ app.get('/v3/paths/get/:name', (req, res) => {
 app.get('/v3/paths/list', (req, res) => {
   const items = [];
   for (const [name, entry] of paths) {
-    const files = readdirSync(entry.recordDir).filter(f => f.endsWith('.ts')).length;
+    const files = countTsFiles(entry.recordDir);
     items.push({
       name: entry.name, ready: entry.ready, online: entry.online,
       source: { type: entry.conf._ivideon ? 'ivideon' : 'hlsSource', id: '' },
