@@ -348,7 +348,7 @@ segmentRouter.get('/:id', requirePermission('read'), async (req: Request, res: R
  *     tags: [Segments]
  *     operationId: getSegmentPlaylist
  *     summary: HLS-плейлист сегмента
- *     description: Оконный m3u8-плейлист сегмента (VOD c ENDLIST для закрытого, EVENT для открытого). Требуется право read на объект.
+ *     description: Оконный m3u8-плейлист сегмента (VOD c ENDLIST для закрытого, EVENT для открытого). С параметром snapshot=1 открытый сегмент отдаётся как конечный VOD-снимок файлов, лежащих на диске на момент запроса (для архивного плеера «Сегменты»); для закрытого сегмента параметр игнорируется. Требуется право read на объект.
  *     parameters:
  *       - name: id
  *         in: path
@@ -364,6 +364,13 @@ segmentRouter.get('/:id', requirePermission('read'), async (req: Request, res: R
  *         schema:
  *           type: number
  *           default: 0
+ *       - name: snapshot
+ *         in: query
+ *         description: Для открытого сегмента вернуть конечный VOD-снимок текущих файлов на диске вместо EVENT-плейлиста (без дописывания хвоста).
+ *         required: false
+ *         schema:
+ *           type: boolean
+ *           default: false
  *     responses:
  *       '200':
  *         description: Текст m3u8-плейлиста
@@ -399,11 +406,14 @@ segmentRouter.get('/:id/playlist', requirePermission('read'), async (req: Reques
   // start — смещение внутри сегмента в секундах (окно плейлиста)
   const rawStart = Number(req.query.start);
   const startOffsetS = Number.isFinite(rawStart) && rawStart > 0 ? rawStart : 0;
+  // snapshot=1 — открытый сегмент отдаём конечным VOD-снимком (архивный плеер).
+  const snapshot = req.query.snapshot === '1' || req.query.snapshot === 'true';
 
-  const m3u8 = segmentService.getSegmentWindowM3u8(segment, startOffsetS);
-  // '' возвращается только для ЗАКРЫТОГО сегмента без файлов на диске (открытый без
-  // файлов отдаёт пустой EVENT-плейлист → 200, hls.js поллит его в ожидании чанков).
-  // Поэтому 404 здесь означает: закрытый сегмент, данных для воспроизведения нет.
+  const m3u8 = segmentService.getSegmentWindowM3u8(segment, startOffsetS, snapshot);
+  // '' возвращается для закрытого сегмента без файлов на диске и для пустого
+  // VOD-снимка открытого сегмента (файлов ещё нет — снапшот смотреть нечего).
+  // Открытый без snapshot отдаёт пустой EVENT-плейлист → 200, hls.js поллит его.
+  // Поэтому 404 здесь означает: данных для воспроизведения нет.
   if (!m3u8) return res.status(404).json({ error: 'файлы не найдены' });
 
   res.setHeader('Content-Type', 'application/vnd.apple.mpegurl');

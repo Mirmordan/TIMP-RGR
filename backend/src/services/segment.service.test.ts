@@ -110,4 +110,118 @@ describe('segmentService.getSegmentWindowM3u8', () => {
     expect(m3u8).toContain('/api/v1/recordings/process_proc-2/2026-09-05_10-00-30-000000.ts');
     expect(m3u8).not.toContain('/api/v1/recordings/process_proc-2/2026-09-05_10-00-00-000000.ts');
   });
+
+  it('открытый сегмент с файлами без snapshot → прежнее EVENT-поведение (без ENDLIST)', () => {
+    const dir = path.join(state.tmpBase, 'process_proc-3');
+    fs.mkdirSync(dir, { recursive: true });
+    for (const n of [
+      '2026-09-05_10-00-00-000000.ts',
+      '2026-09-05_10-00-10-000000.ts',
+      '2026-09-05_10-00-20-000000.ts',
+      '2026-09-05_10-00-30-000000.ts',
+    ]) {
+      fs.writeFileSync(path.join(dir, n), 'chunk');
+    }
+
+    const seg = makeSeg({
+      path: 'process_proc-3',
+      startedAt: new Date('2026-09-05T10:00:00.000Z'),
+    });
+    const m3u8 = segmentService.getSegmentWindowM3u8(seg, 0);
+    expect(m3u8).toContain('#EXT-X-PLAYLIST-TYPE:EVENT');
+    expect(m3u8).toContain('#EXT-X-MEDIA-SEQUENCE:0');
+    expect(m3u8).toContain('/api/v1/recordings/process_proc-3/2026-09-05_10-00-30-000000.ts');
+    expect(m3u8).not.toContain('#EXT-X-ENDLIST');
+  });
+
+  it('открытый сегмент с файлами + snapshot=true → конечный VOD-снимок c ENDLIST от начала', () => {
+    const seg = makeSeg({
+      path: 'process_proc-3',
+      startedAt: new Date('2026-09-05T10:00:00.000Z'),
+    });
+    const m3u8 = segmentService.getSegmentWindowM3u8(seg, 0, true);
+    expect(m3u8).toContain('#EXT-X-PLAYLIST-TYPE:VOD');
+    expect(m3u8).toContain('#EXT-X-MEDIA-SEQUENCE:0');
+    expect(m3u8).toContain('#EXT-X-ENDLIST');
+    expect(m3u8).toContain('/api/v1/recordings/process_proc-3/2026-09-05_10-00-00-000000.ts');
+    expect(m3u8).toContain('/api/v1/recordings/process_proc-3/2026-09-05_10-00-30-000000.ts');
+  });
+
+  it('открытый сегмент + snapshot=true + start внутри данных → VOD-окно от накрывающего чанка', () => {
+    const seg = makeSeg({
+      path: 'process_proc-3',
+      startedAt: new Date('2026-09-05T10:00:00.000Z'),
+    });
+    // Старт 10:00:15 → снимок с чанка 10:00:10 до последнего файла на диске.
+    const m3u8 = segmentService.getSegmentWindowM3u8(seg, 15, true);
+    expect(m3u8).toContain('#EXT-X-PLAYLIST-TYPE:VOD');
+    expect(m3u8).toContain('#EXT-X-MEDIA-SEQUENCE:1');
+    expect(m3u8).toContain('#EXT-X-ENDLIST');
+    expect(m3u8).toContain('/api/v1/recordings/process_proc-3/2026-09-05_10-00-10-000000.ts');
+    expect(m3u8).toContain('/api/v1/recordings/process_proc-3/2026-09-05_10-00-30-000000.ts');
+    expect(m3u8).not.toContain('/api/v1/recordings/process_proc-3/2026-09-05_10-00-00-000000.ts');
+  });
+
+  it('открытый сегмент без файлов + snapshot=true → пустая строка (смотреть нечего)', () => {
+    const dir = path.join(state.tmpBase, 'process_proc-4');
+    fs.mkdirSync(dir, { recursive: true });
+    const m3u8 = segmentService.getSegmentWindowM3u8(
+      makeSeg({ path: 'process_proc-4', startedAt: new Date('2026-09-05T10:00:00.000Z') }),
+      0,
+      true,
+    );
+    expect(m3u8).toBe('');
+  });
+});
+
+describe('segmentService.getTimeline', () => {
+  it('открытый сегмент: fileCount берётся из скана диска (в БД всегда 0); закрытый — из БД', () => {
+    const dir = path.join(state.tmpBase, 'process_proc-tl');
+    fs.mkdirSync(dir, { recursive: true });
+    for (const n of [
+      '2026-09-05_10-00-00-000000.ts',
+      '2026-09-05_10-00-10-000000.ts',
+      '2026-09-05_10-00-20-000000.ts',
+    ]) {
+      fs.writeFileSync(path.join(dir, n), 'chunk');
+    }
+
+    const openSeg = makeSeg({
+      id: 'seg-open',
+      path: 'process_proc-tl',
+      startedAt: new Date('2026-09-05T10:00:00.000Z'),
+      endedAt: null,
+      fileCount: 0,
+    });
+    const closedSeg = makeSeg({
+      id: 'seg-closed',
+      path: 'process_proc-tl-closed',
+      startedAt: new Date('2026-09-05T09:00:00.000Z'),
+      endedAt: new Date('2026-09-05T09:05:00.000Z'),
+      fileCount: 5,
+    });
+
+    const timeline = segmentService.getTimeline([closedSeg, openSeg], false);
+
+    // На диске 3 .ts, в БД у открытого 0 → таймлайн отдаёт реальное число чанков.
+    expect(timeline.segments.find(s => s.id === openSeg.id)!.fileCount).toBe(3);
+    // Закрытый сегмент не сканируется — сохраняется значение из БД.
+    expect(timeline.segments.find(s => s.id === closedSeg.id)!.fileCount).toBe(5);
+  });
+
+  it('открытый сегмент без файлов на диске → fileCount 0', () => {
+    const dir = path.join(state.tmpBase, 'process_proc-tl-empty');
+    fs.mkdirSync(dir, { recursive: true });
+
+    const openSeg = makeSeg({
+      id: 'seg-open-empty',
+      path: 'process_proc-tl-empty',
+      startedAt: new Date('2026-09-05T10:00:00.000Z'),
+      endedAt: null,
+      fileCount: 0,
+    });
+
+    const timeline = segmentService.getTimeline([openSeg], false);
+    expect(timeline.segments[0]!.fileCount).toBe(0);
+  });
 });

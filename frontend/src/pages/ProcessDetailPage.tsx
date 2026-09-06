@@ -165,12 +165,10 @@ export function ProcessDetailPage() {
   const isRunning = process.status === 'running';
   const hasSegments = timeline && timeline.segments.length > 0;
   const openLiveSeg = timeline?.segments.find(s => s.endedAt === null) ?? null;
-  // Записанные (закрытые) сегменты — доступны в режиме «Сегменты».
-  const recordedSegs = (timeline?.segments ?? []).filter(s => !s.live);
+  // Сегменты с записанными данными — доступны в режиме «Сегменты». Открытый сегмент
+  // c fileCount > 0 тоже показываем: в архивном плеере он играется VOD-снимком диска.
+  const recordedSegs = (timeline?.segments ?? []).filter(s => s.fileCount > 0);
   const liveViewerShown = isRunning && !!openLiveSeg && !forceArchive;
-
-  const mtxPath = `process_${id}`;
-  const liveUrl = `/live/${mtxPath}/index.m3u8`;
 
   return (
     <Layout>
@@ -242,7 +240,6 @@ export function ProcessDetailPage() {
             ) : (
               <CustomPlayer
                 processId={id!}
-                liveUrl={liveUrl}
                 timeline={timeline}
                 incidents={incidents}
                 onCreateIncident={handleCreateIncident}
@@ -271,7 +268,10 @@ export function ProcessDetailPage() {
                   title={liveViewerShown ? 'Открыть в плеере записи' : undefined}
                 >
                   <div className={styles.segmentInfo}>
-                    <span className={styles.segmentLabel}>Сегмент {i + 1}</span>
+                    <span className={styles.segmentLabel}>
+                      Сегмент {i + 1}
+                      {seg.live && <span className={styles.liveIndicator}>● LIVE</span>}
+                    </span>
                     <span className={styles.segmentMeta}>
                       {seg.fileCount} файлов · {formatSize(seg.sizeBytes)} · {formatDuration(seg.durationS)}
                     </span>

@@ -8,7 +8,6 @@ import type { RecordingIncident as Incident, TimelineData, TimelineSegment as Se
 
 interface CustomPlayerProps {
   processId: string;
-  liveUrl: string;
   timeline: TimelineData;
   incidents?: Incident[];
   onCreateIncident?: (data: { title: string; description?: string; timeOffsetS: number; severity: string }) => Promise<Incident>;
@@ -16,12 +15,8 @@ interface CustomPlayerProps {
   onDeleteIncident?: (id: string) => Promise<void>;
 }
 
-// Сколько подряд идущих fatal NETWORK_ERROR переживает live-режим до сдачи (оверлей).
-const LIVE_NET_RETRY_LIMIT = 6;
-
 export function CustomPlayer({
   processId,
-  liveUrl,
   timeline,
   incidents = [],
   onCreateIncident,
@@ -36,28 +31,20 @@ export function CustomPlayer({
   const totalDuration = timeline.totalDurationS || 1;
   const hasAnyData = timeline.totalDurationS > 0;
 
+  // Все сегменты таймлайна. Открытый (live) сегмент с данными играется как обычный
+  // VOD: запрос плейлиста идёт с snapshot=1, backend отдаёт конечный снимок диска.
   const recordedSegments = useMemo(
     () =>
-      timeline.segments
-        .filter((s) => !s.live)
-        .sort((a, b) => a.startOffsetS - b.startOffsetS),
+      [...timeline.segments].sort((a, b) => a.startOffsetS - b.startOffsetS),
     [timeline.segments]
   );
-
-  const liveSegment = useMemo(() => timeline.segments.find((s) => s.live), [timeline.segments]);
-
-  // Стабильный флаг авто-старта live (без объектов/массивов в deps эффекта).
-  const autoStartLive = timeline.live && recordedSegments.length === 0;
 
   // --- Core state ---
   const [playing, setPlaying] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [isLive, setIsLive] = useState(false);
   const [timelineTime, setTimelineTime] = useState(0);
   const [gapMode, setGapMode] = useState(false);
-  // Live-режим: открытый сегмент без чанков (пустой EVENT-плейлист) — «ждём данные».
-  const [liveWaiting, setLiveWaiting] = useState(false);
 
   // Refs for non-reactive access in callbacks/RAF
   const timelineTimeRef = useRef(0);
@@ -66,9 +53,6 @@ export function CustomPlayer({
   const loadedSegRef = useRef<Segment | null>(null);
   const windowAnchorRef = useRef(0);
   const gapTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const liveRef = useRef(false);
-  // Live-src текущего hls-инстанса: не пересоздаём плеер, пока источник не сменился.
-  const liveSrcRef = useRef<string | null>(null);
 
   // Hover-preview state: scrub within the loaded window while hovering the track.
   const hoverPreviewRef = useRef(false);
@@ -123,10 +107,6 @@ export function CustomPlayer({
   function setPlayingState(p: boolean) {
     playingRef.current = p;
     setPlaying(p);
-  }
-  function setLiveState(l: boolean) {
-    liveRef.current = l;
-    setIsLive(l);
   }
 
   function findSegmentAt(t: number): Segment | null {
@@ -183,7 +163,7 @@ export function CustomPlayer({
     const wasPreview = hoverPreviewRef.current;
     const v = videoRef.current;
     const seg = loadedSegRef.current;
-    if (wasPreview && v && seg && !gapModeRef.current && !liveRef.current && !v.ended) {
+    if (wasPreview && v && seg && !gapModeRef.current && !v.ended) {
       const media = hoverResumeTLRef.current - (seg.startOffsetS + windowAnchorRef.current);
       const dur = Number.isFinite(v.duration) ? v.duration : 0;
       v.currentTime = Math.max(0, Math.min(media, dur));
@@ -201,7 +181,7 @@ export function CustomPlayer({
     const seg = loadedSegRef.current;
     const pending = hoverPendingTLRef.current;
     if (!v || !seg || pending === null) return;
-    if (gapModeRef.current || liveRef.current || dragRef.current) return;
+    if (gapModeRef.current || dragRef.current) return;
     // Dirty states (buffering/seek in flight): don't jump.
     if (v.seeking || v.readyState < 2) return;
     const media = pending - (seg.startOffsetS + windowAnchorRef.current);
@@ -223,7 +203,7 @@ export function CustomPlayer({
   function startHoverTimer() {
     if (hoverTimerRef.current) return;
     hoverTimerRef.current = setInterval(() => {
-      if (dragRef.current || gapModeRef.current || liveRef.current) {
+      if (dragRef.current || gapModeRef.current) {
         endHoverPreview();
         return;
       }
@@ -247,7 +227,6 @@ export function CustomPlayer({
     setTL(atTime);
     setPlayingState(false);
     setLoading(false);
-    setLiveWaiting(false);
     setError('');
     if (autoPlay) startGapPlayback(atTime);
   }
@@ -286,7 +265,6 @@ export function CustomPlayer({
     stopGap();
     setGap(false);
     setError('');
-    setLiveWaiting(false);
     setLoading(true);
     setPlayingState(false);
 
@@ -300,7 +278,10 @@ export function CustomPlayer({
     const windowStartS = Math.floor(withinSeg);
     windowAnchorRef.current = windowStartS;
     const targetInWindow = withinSeg - windowStartS;
-    const url = `/api/v1/segments/${seg.id}/playlist?start=${windowStartS}`;
+    // Открытый сегмент в архивном плеере — конечный VOD-снимок диска (snapshot=1),
+    // без живой докатки хвоста (никакого EVENT-поллинга в этом плеере).
+    const snapshotParam = seg.live ? '&snapshot=1' : '';
+    const url = `/api/v1/segments/${seg.id}/playlist?start=${windowStartS}${snapshotParam}`;
 
     // Окно за концом данных закрытого сегмента backend отвечает 404 (''). hls.js
     // на 404-манифесте уходит в бесконечный NETWORK_ERROR-ретрай, поэтому манифест
@@ -416,16 +397,6 @@ export function CustomPlayer({
     stopGap();
     setDragTime(null);
 
-    // FIX: reset loadedSeg when going to live
-    if (liveSegment && target >= liveSegment.startOffsetS) {
-      loadedSegRef.current = null;
-      setGap(false);
-      setLiveState(true);
-      initLiveHls();
-      return;
-    }
-
-    setLiveState(false);
     const seg = findSegmentAt(target);
     if (!seg || seg.fileCount === 0) {
       enterGap(target, false);
@@ -435,178 +406,6 @@ export function CustomPlayer({
     const shouldPlay = autoPlay ?? !v.paused;
     loadSegment(seg, target, shouldPlay);
   }
-
-  // --- HLS live ---
-  function initLiveHls() {
-    const video = videoRef.current;
-    if (!video) return;
-
-    // Если есть открытый DB-сегмент — живьём играем хвост его EVENT-плейлиста
-    // (без ENDLIST → hls.js live-режим, подхватывает дописанные .ts).
-    // liveUrl (mediaMTX HLS) остаётся запасным путём, когда открытого сегмента нет.
-    const backendLive = !!liveSegment;
-    let src = '';
-    if (backendLive) {
-      const seg = liveSegment!;
-      // Guard: этот live-сегмент уже играет — не пересоздаём hls (поллинг таймлайна
-      // каждые 5 сек не должен убивать живой экземпляр после MANIFEST_PARSED).
-      if (hlsRef.current && liveSrcRef.current && liveSrcRef.current.indexOf(`/segments/${seg.id}/playlist`) !== -1) {
-        return;
-      }
-      // Якорь окна live: ~2 минуты от текущего момента (сек от startedAt сегмента).
-      // Строка src замораживается в liveSrcRef, поэтому при поллинге якорь не дрейфует.
-      const startedMs = new Date(seg.startedAt).getTime();
-      const elapsedS = Number.isFinite(startedMs) ? Math.floor((Date.now() - startedMs) / 1000) : 0;
-      const anchorS = Math.max(0, elapsedS - 120);
-      windowAnchorRef.current = anchorS;
-      src = `/api/v1/segments/${seg.id}/playlist?start=${anchorS}`;
-    } else if (hlsRef.current && liveSrcRef.current === liveUrl) {
-      return;
-    } else {
-      src = liveUrl;
-    }
-    if (!src) {
-      setError('Прямая трансляция недоступна');
-      return;
-    }
-    liveSrcRef.current = src;
-
-    destroyHls();
-    stopGap();
-    setGap(false);
-    setLoading(true);
-    setLiveWaiting(false);
-    setError('');
-    setPlayingState(false);
-    if (backendLive) {
-      loadedSegRef.current = liveSegment;
-    } else {
-      loadedSegRef.current = null;
-      windowAnchorRef.current = 0;
-    }
-
-    if (Hls.isSupported()) {
-      const hls = new Hls({
-        enableWorker: true,
-        lowLatencyMode: false,
-        maxBufferLength: 4,
-        maxMaxBufferLength: 8,
-        liveDurationInfinity: true,
-        startLevel: -1,
-      });
-
-      // Состояние одного live-инстанса: подряд идущие fatal NETWORK_ERROR и факт старта.
-      let netErrorCount = 0;
-      let playbackStarted = false;
-      // Таймер переспроса пустого live-манифеста (чанки ещё не появились).
-      let emptyPollTimer: ReturnType<typeof setTimeout> | null = null;
-
-      const stopEmptyPoll = () => {
-        if (emptyPollTimer) {
-          clearTimeout(emptyPollTimer);
-          emptyPollTimer = null;
-        }
-      };
-
-      const tryPlay = () => {
-        if (playbackStarted) return;
-        playbackStarted = true;
-        stopEmptyPoll();
-        setLiveWaiting(false);
-        setLoading(false);
-        video.play().then(() => setPlayingState(true)).catch(() => {});
-      };
-
-      hls.loadSource(src);
-      hls.attachMedia(video);
-
-      hls.on(Hls.Events.MANIFEST_PARSED, () => {
-        netErrorCount = 0;
-        stopEmptyPoll();
-        const frags = hls.levels[0]?.details?.fragments?.length ?? 0;
-        if (frags > 0) tryPlay();
-        else setLiveWaiting(true);
-      });
-
-      // Манифест перечитан (в т.ч. live-поллингом): как только в пустом EVENT-плейлисте
-      // появляются чанки — стартуем воспроизведение.
-      hls.on(Hls.Events.LEVEL_LOADED, (_e, data) => {
-        netErrorCount = 0;
-        stopEmptyPoll();
-        const frags = data.details?.fragments?.length ?? 0;
-        if (frags > 0) tryPlay();
-        else setLiveWaiting(true);
-      });
-
-      hls.on(Hls.Events.ERROR, (_e, data) => {
-        if (!data.fatal) {
-          // 200 пустой EVENT-манифест открытого сегмента: чанков ещё нет.
-          // hls.js сам перезапрашивает live-плейлист — не ретраим вручную.
-          if (data.details === Hls.ErrorDetails.LEVEL_EMPTY_ERROR) {
-            setLiveWaiting(true);
-          }
-          return;
-        }
-        // Пустой EVENT-манифест (0 чанков) hls.js эскалирует в fatal, пока нет
-        // предыдущего live-контекста — это НЕ сетевой сбой: пережидаем поллингом.
-        if (data.details === Hls.ErrorDetails.LEVEL_EMPTY_ERROR) {
-          setLiveWaiting(true);
-          if (!emptyPollTimer) {
-            emptyPollTimer = setTimeout(() => {
-              emptyPollTimer = null;
-              hls.startLoad();
-            }, 2000);
-          }
-          return;
-        }
-        if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
-          netErrorCount += 1;
-          if (netErrorCount >= LIVE_NET_RETRY_LIMIT) {
-            // Дальше не ретраим: destroy + оверлей; повторная попытка — кнопкой Live.
-            destroyHls();
-            liveSrcRef.current = null;
-            video.pause();
-            video.removeAttribute('src');
-            video.load();
-            loadedSegRef.current = null;
-            setLiveState(false);
-            setLiveWaiting(false);
-            setLoading(false);
-            setPlayingState(false);
-            setError('Прямая трансляция: сигнал не найден. Ожидание новых данных…');
-            return;
-          }
-          hls.startLoad(0);
-        } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
-          hls.recoverMediaError();
-        } else {
-          destroyHls();
-          liveSrcRef.current = null;
-          setLiveWaiting(false);
-          setLoading(false);
-          setPlayingState(false);
-          setError('Прямая трансляция недоступна');
-        }
-      });
-
-      hlsRef.current = hls;
-    } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-      video.src = src;
-      video.play().then(() => setPlayingState(true)).catch(() => {});
-      setLoading(false);
-    } else {
-      setError('HLS не поддерживается');
-      setLoading(false);
-    }
-  }
-
-  // --- Init: auto-start live if needed ---
-  useEffect(() => {
-    if (autoStartLive) {
-      initLiveHls();
-      setLiveState(true);
-    }
-  }, [autoStartLive, liveUrl]);
 
   // --- Cleanup on unmount ---
   useEffect(() => {
@@ -712,8 +511,8 @@ export function CustomPlayer({
       return;
     }
 
-    // No segment loaded and not live: find segment at current time and load it
-    if (!loadedSegRef.current && !isLive) {
+    // No segment loaded: find segment at current time and load it
+    if (!loadedSegRef.current) {
       // FIX: check if there are any recorded segments
       if (recordedSegments.length === 0) return;
       const segAtTime = findSegmentAt(timelineTimeRef.current);
@@ -723,12 +522,6 @@ export function CustomPlayer({
           : recordedSegments.find((s) => s.fileCount > 0) ?? recordedSegments[0];
       if (!target) return;
       loadSegment(target, timelineTimeRef.current, true);
-      return;
-    }
-
-    // Live mode, no segment: start live HLS
-    if (!loadedSegRef.current && isLive) {
-      initLiveHls();
       return;
     }
 
@@ -746,33 +539,6 @@ export function CustomPlayer({
     if (!el) return;
     if (document.fullscreenElement) document.exitFullscreen();
     else el.requestFullscreen();
-  }
-
-  function goLive() {
-    // FIX: check existence of live segment
-    if (!liveSegment) {
-      setError('Прямая трансляция недоступна');
-      return;
-    }
-    // Явный переход в live: убиваем прежний (возможно зависший после ошибки) инстанс,
-    // чтобы initLiveHls гарантированно создал свежий, а не наткнулся на guard.
-    destroyHls();
-    liveSrcRef.current = null;
-    setLiveState(true);
-    setGap(false);
-    loadedSegRef.current = null;
-    initLiveHls();
-  }
-
-  function goRecord() {
-    setLiveState(false);
-    setGap(false);
-    setLiveWaiting(false);
-    setLoading(false);
-    setError('');
-    if (recordedSegments.length > 0) {
-      loadSegment(recordedSegments[0]!, recordedSegments[0]!.startOffsetS, false);
-    }
   }
 
   // --- Fragment export (mp4 download) ---
@@ -1000,7 +766,7 @@ export function CustomPlayer({
     // Remember the latest hovered timeline position; a 300ms timer performs the
     // actual scrub (anti-lag), so micro mouse jitter does not seek every tick.
     hoverPendingTLRef.current = t;
-    if (!hoverTimerRef.current && !gapModeRef.current && !liveRef.current && loadedSegRef.current) {
+    if (!hoverTimerRef.current && !gapModeRef.current && loadedSegRef.current) {
       startHoverTimer();
     }
   }
@@ -1037,9 +803,7 @@ export function CustomPlayer({
         <div className={styles.playerMain}>
           <div className={styles.videoWrap}>
             {loading && (
-              <div className={`${styles.overlay} ${liveWaiting ? styles.gapOverlay : ''}`}>
-                {liveWaiting ? 'Запись идёт, ждём данные…' : 'Загрузка...'}
-              </div>
+              <div className={styles.overlay}>Загрузка...</div>
             )}
             {showGapOverlay && <div className={`${styles.overlay} ${styles.gapOverlay}`}>Запись отсутствует</div>}
             {error && <div className={`${styles.overlay} ${styles.errorOverlay}`}>{error}</div>}
@@ -1088,16 +852,6 @@ export function CustomPlayer({
 
             {hasAnyData && (
               <div className={styles.rightBtns}>
-                {timeline.live && (
-                  <Button
-                    variant={isLive ? 'danger' : 'outline'}
-                    size="sm"
-                    onClick={isLive ? goRecord : goLive}
-                  >
-                    {isLive ? 'Запись' : 'Live'}
-                  </Button>
-                )}
-                {liveSegment && !isLive && <span className={styles.liveBadge}>LIVE</span>}
                 {onCreateIncident && (
                   <button className={styles.btn} onClick={() => setShowIncidentModal(true)} title="Создать инцидент">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -1164,24 +918,11 @@ export function CustomPlayer({
                     return (
                       <div
                         key={seg.id}
-                        className={styles.segMarker}
+                        className={`${styles.segMarker} ${seg.live ? styles.segMarkerLive : ''}`}
                         style={{ left: `${left}%`, width: `${Math.min(100, width)}%` }}
                       />
                     );
                   })}
-
-                  {liveSegment &&
-                    (() => {
-                      const left = (liveSegment.startOffsetS / totalDuration) * 100;
-                      const width = (liveSegment.durationS / totalDuration) * 100;
-                      return (
-                        <div
-                          key={liveSegment.id}
-                          className={`${styles.segMarker} ${styles.segMarkerLive}`}
-                          style={{ left: `${left}%`, width: `${Math.min(100, width)}%` }}
-                        />
-                      );
-                    })()}
 
                   {incidents.map((inc) => {
                     const left = (inc.timeOffsetS / totalDuration) * 100;
@@ -1247,35 +988,24 @@ export function CustomPlayer({
               <div className={styles.timecodesList}>
                 {recordedSegments.length === 0 && <div className={styles.timecodesEmpty}>Нет сегментов</div>}
                 {recordedSegments.map((seg, i) => {
-                  const isActive = !isLive && !gapMode && loadedSegRef.current?.id === seg.id;
+                  const isActive = !gapMode && loadedSegRef.current?.id === seg.id;
                   return (
                     <div
                       key={seg.id}
-                      className={`${styles.timecodesItem} ${isActive ? styles.timecodesItemActive : ''}`}
+                      className={`${styles.timecodesItem} ${seg.live ? styles.timecodesItemLive : ''} ${isActive ? styles.timecodesItemActive : ''}`}
                       onClick={() => seekTo(seg.startOffsetS)}
                     >
-                      <span className={styles.timecodesIndex}>{i + 1}</span>
+                      <span className={styles.timecodesIndex}>{seg.live ? '●' : i + 1}</span>
                       <div className={styles.timecodesInfo}>
                         <div className={styles.timecodesTime}>{formatAbsoluteTime(seg.startOffsetS)}</div>
                         <div className={styles.timecodesMeta}>
+                          {seg.live ? 'Открытый, снимок · ' : ''}
                           {formatTime(seg.durationS)} · {seg.fileCount}ф · {formatSize(seg.sizeBytes)}
                         </div>
                       </div>
                     </div>
                   );
                 })}
-                {liveSegment && (
-                  <div
-                    className={`${styles.timecodesItem} ${styles.timecodesItemLive}`}
-                    onClick={() => seekTo(liveSegment.startOffsetS)}
-                  >
-                    <span className={styles.timecodesIndex}>●</span>
-                    <div className={styles.timecodesInfo}>
-                      <div className={styles.timecodesTime}>LIVE</div>
-                      <div className={styles.timecodesMeta}>Прямая трансляция</div>
-                    </div>
-                  </div>
-                )}
               </div>
             )}
 

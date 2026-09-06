@@ -225,18 +225,24 @@ function chunkDurations(files: { file: string; tsMs: number }[]): number[] {
  * startOffsetS — смещение (в секундах) от startedAt сегмента, с которого начать окно.
  *
  * Закрытый сегмент (endedAt != null): VOD c ENDLIST, чанки от startOffsetS до конца.
- * Открытый сегмент (endedAt == null): EVENT-плейлист без ENDLIST — hls.js
- * перезапрашивает URL и подхватывает дописанные .ts (живой DVR-хвост).
+ * Открытый сегмент (endedAt == null):
+ *   - по умолчанию: EVENT-плейлист без ENDLIST — hls.js перезапрашивает URL и
+ *     подхватывает дописанные .ts (живой DVR-хвост, для LiveViewer);
+ *   - snapshot=true: VOD-СНИМОК «что лежит на диске прямо сейчас» — все .ts от окна
+ *     до последнего файла на момент запроса, Playlist-Type:VOD, #EXT-X-ENDLIST.
+ *     Снимок конечен и докачиваться не будет (архивный плеер «Сегменты»).
  */
-function getSegmentWindowM3u8(seg: RecordingSegment, startOffsetS: number): string {
+function getSegmentWindowM3u8(seg: RecordingSegment, startOffsetS: number, snapshot = false): string {
   const files = segmentFilesOf(seg);
   const isOpen = seg.endedAt === null;
 
   // Открытый сегмент без чанков: валидный пустой EVENT-плейлист — hls.js принимает
   // такой манифест и поллит его, подхватывая появляющиеся .ts чанки живого DVR-хвоста.
   // Закрытый сегмент без файлов — данных нет вовсе: сигнализируем пустой строкой ('').
+  // VOD-снимок открытого сегмента (snapshot=true) тоже пустой: смотреть нечего — в
+  // отличие от EVENT-манифеста эфира снапшот никто докачивать не будет (404).
   if (files.length === 0) {
-    if (!isOpen) return '';
+    if (!isOpen || snapshot) return '';
     const pdt = new Date(seg.startedAt).toISOString().replace(/\.\d{3}Z$/, 'Z');
     return [
       '#EXTM3U',
@@ -272,7 +278,7 @@ function getSegmentWindowM3u8(seg: RecordingSegment, startOffsetS: number): stri
     '#EXTM3U',
     '#EXT-X-VERSION:3',
     `#EXT-X-TARGETDURATION:${Math.ceil(maxDur)}`,
-    isOpen ? '#EXT-X-PLAYLIST-TYPE:EVENT' : '#EXT-X-PLAYLIST-TYPE:VOD',
+    isOpen && !snapshot ? '#EXT-X-PLAYLIST-TYPE:EVENT' : '#EXT-X-PLAYLIST-TYPE:VOD',
     `#EXT-X-MEDIA-SEQUENCE:${firstIndex}`,
   ];
 
@@ -285,7 +291,7 @@ function getSegmentWindowM3u8(seg: RecordingSegment, startOffsetS: number): stri
     lines.push(`/api/v1/recordings/${seg.path}/${files[i]!.file}`);
   }
 
-  if (!isOpen) lines.push('#EXT-X-ENDLIST');
+  if (!isOpen || snapshot) lines.push('#EXT-X-ENDLIST');
   return lines.join('\n');
 }
 
@@ -390,8 +396,8 @@ export const segmentService = {
   },
 
   /** Оконный HLS-плейлист сегмента, начиная со смещения startOffsetS (сек). */
-  getSegmentWindowM3u8(seg: RecordingSegment, startOffsetS: number): string {
-    return getSegmentWindowM3u8(seg, startOffsetS);
+  getSegmentWindowM3u8(seg: RecordingSegment, startOffsetS: number, snapshot = false): string {
+    return getSegmentWindowM3u8(seg, startOffsetS, snapshot);
   },
 
   /** Объединённый m3u8 для всех сегментов процесса (непрерывное воспроизведение). */
@@ -483,11 +489,15 @@ export const segmentService = {
       const segStart = new Date(seg.startedAt).getTime();
       const segEnd = seg.endedAt ? new Date(seg.endedAt).getTime() : Date.now();
       const segDur = (segEnd - segStart) / 1000;
+      // У открытого сегмента fileCount в БД всегда 0 (проставляется при финализации),
+      // а .ts уже пишутся на диск — для фронтенда считаем реальное число чанков.
+      // Закрытые сегменты не сканируем: их fileCount корректен в БД.
+      const fileCount = seg.endedAt === null ? segmentFilesOf(seg).length : seg.fileCount;
       return {
         id: seg.id,
         startOffsetS: (segStart - rangeStart) / 1000,
         durationS: segDur,
-        fileCount: seg.fileCount,
+        fileCount,
         sizeBytes: seg.sizeBytes,
         startedAt: seg.startedAt,
         endedAt: seg.endedAt,
