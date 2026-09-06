@@ -17,6 +17,7 @@ const mocks = vi.hoisted(() => ({
   replaceRoleCapabilities: vi.fn(),
   logAudit: vi.fn(),
   userGetAll: vi.fn(),
+  deviceCreate: vi.fn(),
 }));
 
 vi.mock('../security/acl', () => ({
@@ -46,9 +47,14 @@ vi.mock('../services/user.service', () => ({
   userService: { getAll: (...a: unknown[]) => mocks.userGetAll(...a) },
 }));
 
+vi.mock('../services/device.service', () => ({
+  deviceService: { create: (...a: unknown[]) => mocks.deviceCreate(...a) },
+}));
+
 import app from '../app';
 import { createAccessToken } from '../security/tokens';
 
+// Порядок совпадает с CAPABILITY_CATALOG в security/capabilities.ts.
 const ALL_CODES = [
   'admin:read',
   'admin:write',
@@ -56,6 +62,24 @@ const ALL_CODES = [
   'user:read',
   'user:update',
   'user:delete',
+  'user:password:reset',
+  'role:read',
+  'role:create',
+  'role:update',
+  'role:delete',
+  'group:read',
+  'group:create',
+  'group:update',
+  'group:delete',
+  'permission:read',
+  'permission:manage',
+  'audit:read',
+  'audit:delete',
+  'camera:create',
+  'stream:create',
+  'process:create',
+  'chunk:create',
+  'media:export',
 ];
 
 // userId -> выданные спец-права (эмуляция union role_capabilities).
@@ -96,9 +120,15 @@ describe('specialPermissions.integration (route-level, роли и спец-пр
       return grants.get(userId)?.has(cap) ?? false;
     });
     mocks.userGetAll.mockResolvedValue([]);
+    mocks.deviceCreate.mockResolvedValue({
+      id: '11111111-2222-3333-4444-555555555555',
+      name: 'cam',
+      type: 'camera',
+      createdAt: '2026-01-01T00:00:00.000Z',
+    });
   });
 
-  async function api(method: 'GET' | 'PUT' | 'POST', path: string, userId: string, body?: unknown) {
+  async function api(method: 'GET' | 'PUT' | 'POST' | 'PATCH' | 'DELETE', path: string, userId: string, body?: unknown) {
     const headers: Record<string, string> = {
       Authorization: `Bearer ${createAccessToken(userId, `user_${userId}`, 'viewer')}`,
     };
@@ -113,14 +143,14 @@ describe('specialPermissions.integration (route-level, роли и спец-пр
   }
 
   describe('admin full (роль admin в сиде role_capabilities → все коды)', () => {
-    it('GET /admin/capabilities → 200 и каталог из 6 спец-прав', async () => {
+    it('GET /admin/capabilities → 200 и каталог из 24 спец-прав', async () => {
       grantAll('u-admin');
       const r = await api('GET', '/admin/capabilities', 'u-admin');
       expect(r.status).toBe(200);
       expect((r.body as Array<{ code: string }>).map((c) => c.code)).toEqual(ALL_CODES);
     });
 
-    it('GET /users → 200 (admin:read/admin:write и user:* доступны)', async () => {
+    it('GET /users → 200 (user:read доступен полному админу)', async () => {
       grantAll('u-admin');
       const r = await api('GET', '/users', 'u-admin');
       expect(r.status).toBe(200);
@@ -140,12 +170,59 @@ describe('specialPermissions.integration (route-level, роли и спец-пр
     });
   });
 
-  describe('кастомная роль с user:read', () => {
-    it('GET /users → 200, но POST /devices (admin:write) → 403', async () => {
+  describe('кастомная роль «device-manager» c единственным camera:create', () => {
+    it('POST /devices → 201, но никакие чтения /users, /roles, /groups, /admin и /stats/disk недоступны', async () => {
+      const uid = 'u-dm';
+      grant(uid, ['camera:create']);
+      const created = await api('POST', '/devices', uid, { name: 'cam-1', type: 'camera' });
+      expect(created.status).toBe(201);
+      expect(mocks.deviceCreate).toHaveBeenCalledWith('cam-1', 'camera');
+
+      expect((await api('GET', '/users', uid)).status).toBe(403);
+      expect((await api('GET', '/admin/roles', uid)).status).toBe(403);
+      expect((await api('GET', '/admin/groups', uid)).status).toBe(403);
+      expect((await api('GET', '/admin/permissions', uid)).status).toBe(403);
+      expect((await api('GET', '/admin/audit', uid)).status).toBe(403);
+      expect((await api('GET', '/admin/capabilities', uid)).status).toBe(403);
+      expect((await api('GET', '/stats/disk', uid)).status).toBe(403);
+      expect(mocks.findRoles).not.toHaveBeenCalled();
+      expect(mocks.userGetAll).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('кастомная роль только с user:read', () => {
+    it('GET /users → 200, но POST /devices (camera:create) → 403', async () => {
       const uid = 'u-custom-read';
       grant(uid, ['user:read']);
       expect((await api('GET', '/users', uid)).status).toBe(200);
       expect((await api('POST', '/devices', uid, { name: 'x', type: 'camera' })).status).toBe(403);
+    });
+  });
+
+  describe('кастомная роль только с role:read', () => {
+    const roleId = '00000000-0000-0000-0000-00000000cafe';
+    it('чтение ролей/каталога доступно, но любые мутации ролей и выдачи прав — 403', async () => {
+      const uid = 'u-role-read';
+      grant(uid, ['role:read']);
+      (mocks.findRoles as unknown as Mock).mockResolvedValue([]);
+      (mocks.findRoleById as unknown as Mock).mockResolvedValue({
+        id: roleId,
+        name: 'hr',
+        createdAt: '2026-01-01T00:00:00.000Z',
+      });
+      (mocks.findRoleCapabilities as unknown as Mock).mockResolvedValue([]);
+
+      expect((await api('GET', '/admin/roles', uid)).status).toBe(200);
+      expect((await api('GET', `/admin/roles/${roleId}`, uid)).status).toBe(200);
+      expect((await api('GET', `/admin/roles/${roleId}/capabilities`, uid)).status).toBe(200);
+      expect((await api('GET', '/admin/capabilities', uid)).status).toBe(200);
+
+      expect((await api('POST', '/admin/roles', uid, { name: 'nrole' })).status).toBe(403);
+      expect((await api('PATCH', `/admin/roles/${roleId}`, uid, { name: 'hr2' })).status).toBe(403);
+      expect((await api('DELETE', `/admin/roles/${roleId}`, uid)).status).toBe(403);
+      expect((await api('PUT', `/admin/roles/${roleId}/permissions`, uid, { entries: [] })).status).toBe(403);
+      expect((await api('PUT', `/admin/roles/${roleId}/capabilities`, uid, { capabilities: [] })).status).toBe(403);
+      expect((await api('PUT', `/admin/users/u1/roles`, uid, { roleNames: ['viewer'] })).status).toBe(403);
     });
   });
 

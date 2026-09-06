@@ -60,7 +60,7 @@ export const segmentQueries = {
                  ORDER BY s.started_at DESC`,
 
   // Супертип сегмента: type='segment', parent_id = процесс.
-  insert: `INSERT INTO objects (type, parent_id) VALUES ('segment', $1)
+  insert: `INSERT INTO objects (type, parent_id, owner_id) VALUES ('segment', $1, NULLIF(current_setting('app.user_id', true), '')::UUID)
            RETURNING id AS "objectId"`,
 
   insertSegment: `INSERT INTO recording_segments

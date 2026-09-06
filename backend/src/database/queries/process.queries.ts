@@ -69,7 +69,7 @@ export const processQueries = {
                           LIMIT 1`,
 
   // Супертип процесса: type='process', parent_id = поток (объект).
-  insert: `INSERT INTO objects (type, parent_id) VALUES ('process', $1)
+  insert: `INSERT INTO objects (type, parent_id, owner_id) VALUES ('process', $1, NULLIF(current_setting('app.user_id', true), '')::UUID)
            RETURNING id AS "objectId"`,
 
   insertProcess: `INSERT INTO recording_processes (object_id, stream_id, started_at, status)

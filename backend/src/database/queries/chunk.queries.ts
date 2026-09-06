@@ -41,7 +41,7 @@ export const chunkQueries = {
   count: `SELECT COUNT(*)::int AS "total" FROM recording_chunks`,
 
   // Супертип чанка: type='chunk', parent_id = процесс.
-  insert: `INSERT INTO objects (type, parent_id) VALUES ('chunk', $1)
+  insert: `INSERT INTO objects (type, parent_id, owner_id) VALUES ('chunk', $1, NULLIF(current_setting('app.user_id', true), '')::UUID)
            RETURNING id AS "objectId"`,
 
   insertChunk: `INSERT INTO recording_chunks (object_id, process_id, started_at, ended_at, url)

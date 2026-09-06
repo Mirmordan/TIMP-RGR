@@ -213,7 +213,7 @@ streamRouter.delete('/:id/view', requirePermission('read'), async (req: Request,
  *     tags: [Streams]
  *     operationId: createStream
  *     summary: Создание потока
- *     description: Создаёт новый поток-источник записи. Требуется capability admin:write.
+ *     description: Создаёт новый поток-источник записи. Требуется capability stream:create.
  *     requestBody:
  *       required: true
  *       content:
@@ -240,13 +240,13 @@ streamRouter.delete('/:id/view', requirePermission('read'), async (req: Request,
  *             schema:
  *               $ref: '#/components/schemas/Error'
  *       '403':
- *         description: Недостаточно прав (нужна capability admin:write)
+ *         description: Недостаточно прав (нужна capability stream:create)
  *         content:
  *           application/json:
  *             schema:
  *               $ref: '#/components/schemas/Error'
  */
-streamRouter.post('/', requireCapability('admin:write'), async (req: Request, res: Response) => {
+streamRouter.post('/', requireCapability('stream:create'), async (req: Request, res: Response) => {
   try {
     const { url, deviceId, sourceFingerprint } = req.body;
     const stream = await streamService.create(url, deviceId, sourceFingerprint);

@@ -5,19 +5,28 @@ import type { ObjectAction } from './types';
 /**
  * Application-level Access Control List.
  *
- * Повторяет логику RLS (has_permission) на уровне приложения, чтобы отдавать
- * 403 рано — до выполнения бизнес-логики и без похода в БД на каждый объект
- * (результаты кешируются в памяти). RLS в БД остаётся последним рубежом
- * и защищает от обхода этого слоя.
+ * Повторяет логику RLS (has_permission + owner_read) на уровне приложения,
+ * чтобы отдавать 403 рано — до выполнения бизнес-логики и без похода в БД
+ * на каждый объект (результаты кешируются в памяти). RLS в БД остаётся
+ * последним рубежом и защищает от обхода этого слоя.
  *
- * RBAC-таблицы (user_roles, permissions, group_members, groups) НЕ имеют RLS,
- * поэтому читаются напрямую.
+ * RBAC-таблицы (user_roles, permissions, group_members, groups) и objects
+ * (owner_id) НЕ имеют RLS, поэтому читаются напрямую.
+ *
+ * Семантика owner_read (совпадает с RLS-политиками *_owner_read): владелец
+ * (создатель) объекта читает его ТОЛЬКО пока объект не включён ни в одну
+ * группу. Как только объект передан в группу(ы) — видимость определяется
+ * исключительно групповыми правами (и админом). Это «bootstrap» для создания
+ * объектов не-админами (camera:create и т.п.): автор видит свой свежий объект
+ * до того, как администратор начнёт управлять доступом через группы.
  */
 
 // userId -> Map<groupId, Set<action>>  (union прав по всем ролям юзера)
 const userGroupsCache = new Cache<Map<string, Set<ObjectAction>>>(2000, 5 * 60_000);
 // objectId -> Set<groupId>
 const objectGroupsCache = new Cache<string[]>(2000, 5 * 60_000);
+// objectId -> owner_id ('' если владельца нет/объект не существует)
+const objectOwnerCache = new Cache<string>(2000, 5 * 60_000);
 // userId -> boolean (admin)
 const adminCache = new Cache<boolean>(2000, 5 * 60_000);
 // userId -> Set<Capability>  (union спец-прав по всем ролям юзера из role_capabilities)
@@ -82,6 +91,14 @@ async function getObjectGroups(objectId: string): Promise<string[]> {
 
 /**
  * Есть ли у юзера право action на конкретный объект.
+ *
+ * Семантика совпадает с RLS-политиками:
+ *  - admin видит всё;
+ *  - владелец (создатель) читает свой объект, только пока тот не включён
+ *    ни в одну группу (аналог *_owner_read = is_owner AND NOT в group_members);
+ *    как только объект передан в группу(ы) — неявный owner-read исчезает,
+ *    доступ определяется только групповыми правами (и админом);
+ *  - остальные — через права ролей на группы объекта.
  */
 export async function can(
   userId: string,
@@ -89,7 +106,22 @@ export async function can(
   action: ObjectAction,
 ): Promise<boolean> {
   if (await isAdmin(userId)) return true;
+
   const perms = await getUserGroupPermissions(userId);
+
+  // Владелец-«bootstrap» только для read: пока объект не включён ни в одну
+  // группу, создатель читает его (совпадает с RLS-политикой *_owner_read,
+  // где is_owner(object_id) AND NOT в group_members). Как только объект
+  // передан в группу(ы) — неявный read владельца исчезает, доступ решают
+  // группы (и админ).
+  if (action === 'read') {
+    const groups = await getObjectGroups(objectId);
+    if (groups.length === 0) {
+      const ownerId = await getObjectOwner(objectId);
+      if (ownerId === userId) return true;
+    }
+  }
+
   if (perms.size === 0) return false;
 
   const groups = await getObjectGroups(objectId);
@@ -100,6 +132,22 @@ export async function can(
     if (actions && actions.has(action)) return true;
   }
   return false;
+}
+
+/**
+ * owner_id объекта (из objects.owner_id, NULL если нет/объекта нет).
+ * objects без RLS, поэтому читается напрямую.
+ */
+async function getObjectOwner(objectId: string): Promise<string | null> {
+  const cached = objectOwnerCache.get(objectId);
+  if (cached !== undefined) return cached === '' ? null : cached;
+  const { rows } = await pool.query<{ ownerId: string | null }>(
+    `SELECT owner_id AS "ownerId" FROM objects WHERE id = $1`,
+    [objectId],
+  );
+  const ownerId = rows[0]?.ownerId ?? null;
+  objectOwnerCache.set(objectId, ownerId ?? '');
+  return ownerId;
 }
 
 /**
@@ -144,6 +192,7 @@ export function invalidateUser(userId: string): void {
 
 export function invalidateObject(objectId: string): void {
   objectGroupsCache.del(objectId);
+  objectOwnerCache.del(objectId);
 }
 
 export function invalidateGroup(groupId: string): void {

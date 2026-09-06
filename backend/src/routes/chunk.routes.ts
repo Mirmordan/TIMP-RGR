@@ -118,7 +118,7 @@ chunkRouter.get('/:id', requirePermission('read'), async (req: Request, res: Res
  *     tags: [Chunks]
  *     operationId: createChunk
  *     summary: Создание чанка
- *     description: Создаёт чанк записи. Требуется capability admin:write.
+ *     description: Создаёт чанк записи. Требуется capability chunk:create.
  *     requestBody:
  *       required: true
  *       content:
@@ -145,13 +145,13 @@ chunkRouter.get('/:id', requirePermission('read'), async (req: Request, res: Res
  *             schema:
  *               $ref: '#/components/schemas/Error'
  *       '403':
- *         description: Недостаточно прав (нужна capability admin:write)
+ *         description: Недостаточно прав (нужна capability chunk:create)
  *         content:
  *           application/json:
  *             schema:
  *               $ref: '#/components/schemas/Error'
  */
-chunkRouter.post('/', requireCapability('admin:write'), async (req: Request, res: Response) => {
+chunkRouter.post('/', requireCapability('chunk:create'), async (req: Request, res: Response) => {
   try {
     const { processId, startedAt, endedAt, url } = req.body;
     const chunk = await chunkService.create(

@@ -92,7 +92,11 @@ const definition = {
             type: 'array',
             items: {
               type: 'string',
-              enum: ['admin:read', 'admin:write', 'user:create', 'user:read', 'user:update', 'user:delete'],
+              enum: ['admin:read', 'admin:write', 'user:create', 'user:read', 'user:update', 'user:delete',
+              'user:password:reset', 'role:read', 'role:create', 'role:update', 'role:delete',
+              'group:read', 'group:create', 'group:update', 'group:delete', 'permission:read',
+              'permission:manage', 'audit:read', 'audit:delete', 'camera:create', 'stream:create',
+              'process:create', 'chunk:create', 'media:export'],
             },
             description: 'Актуальные system capabilities пользователя (union по его ролям из role_capabilities).',
           },
@@ -741,7 +745,11 @@ const definition = {
         properties: {
           code: {
             type: 'string',
-            enum: ['admin:read', 'admin:write', 'user:create', 'user:read', 'user:update', 'user:delete'],
+            enum: ['admin:read', 'admin:write', 'user:create', 'user:read', 'user:update', 'user:delete',
+              'user:password:reset', 'role:read', 'role:create', 'role:update', 'role:delete',
+              'group:read', 'group:create', 'group:update', 'group:delete', 'permission:read',
+              'permission:manage', 'audit:read', 'audit:delete', 'camera:create', 'stream:create',
+              'process:create', 'chunk:create', 'media:export'],
             description: 'Код спец-права (хранится в role_capabilities.capability).',
           },
           label: { type: 'string', description: 'Короткая подпись для UI.' },
@@ -758,7 +766,11 @@ const definition = {
             description: 'Коды спец-прав роли.',
             items: {
               type: 'string',
-              enum: ['admin:read', 'admin:write', 'user:create', 'user:read', 'user:update', 'user:delete'],
+              enum: ['admin:read', 'admin:write', 'user:create', 'user:read', 'user:update', 'user:delete',
+              'user:password:reset', 'role:read', 'role:create', 'role:update', 'role:delete',
+              'group:read', 'group:create', 'group:update', 'group:delete', 'permission:read',
+              'permission:manage', 'audit:read', 'audit:delete', 'camera:create', 'stream:create',
+              'process:create', 'chunk:create', 'media:export'],
             },
           },
         },

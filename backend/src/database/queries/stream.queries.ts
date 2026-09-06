@@ -43,7 +43,7 @@ export const streamQueries = {
                  OR o.description ILIKE '%' || $1 || '%')`,
 
   // Супертип потока: parent_id = объект устройства (device_id потока).
-  insert: `INSERT INTO objects (type, parent_id) VALUES ('stream', $1)
+  insert: `INSERT INTO objects (type, parent_id, owner_id) VALUES ('stream', $1, NULLIF(current_setting('app.user_id', true), '')::UUID)
            RETURNING id AS "objectId"`,
 
   insertStream: `INSERT INTO recording_streams (object_id, url, device_id, source_fingerprint) VALUES ($1, $2, $3, $4)

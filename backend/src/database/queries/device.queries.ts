@@ -31,7 +31,9 @@ export const deviceQueries = {
 
   // Общие метаданные (name) пишутся в objects; recording_devices.name остаётся
   // зеркалом для обратной совместимости API/столбца NOT NULL.
-  insert: `INSERT INTO objects (type, name) VALUES ('device', $1)
+  // owner_id проставляется из контекста запроса (кто создал — тот видит).
+  insert: `INSERT INTO objects (type, name, owner_id)
+           VALUES ('device', $1, NULLIF(current_setting('app.user_id', true), '')::UUID)
            RETURNING id AS "objectId"`,
 
   insertDevice: `INSERT INTO recording_devices (object_id, name, type) VALUES ($1, $2, $3)

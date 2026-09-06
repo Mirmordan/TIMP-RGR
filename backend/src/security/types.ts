@@ -8,6 +8,10 @@ export const ROLES: Role[] = ['admin', 'operator', 'viewer'];
  * эти capability связаны с управлением самой системой. Набор совпадает с
  * CHECK (capability IN (...)) в таблице role_capabilities и содержит только
  * коды, реально проверяемые requireCapability в коде.
+ *
+ * Гранулярность: роль/группа/право/аудит/доменные-создания выдаются
+ * отдельными кодами. admin:read — обзор панели/сводки (/stats/disk),
+ * admin:write — полный доступ (в т.ч. чувствительные выдачи ролей/спец-прав).
  */
 export type Capability =
   | 'admin:read'
@@ -15,7 +19,25 @@ export type Capability =
   | 'user:create'
   | 'user:read'
   | 'user:update'
-  | 'user:delete';
+  | 'user:delete'
+  | 'user:password:reset'
+  | 'role:read'
+  | 'role:create'
+  | 'role:update'
+  | 'role:delete'
+  | 'group:read'
+  | 'group:create'
+  | 'group:update'
+  | 'group:delete'
+  | 'permission:read'
+  | 'permission:manage'
+  | 'audit:read'
+  | 'audit:delete'
+  | 'camera:create'
+  | 'stream:create'
+  | 'process:create'
+  | 'chunk:create'
+  | 'media:export';
 
 /**
  * Объектные действия для ACL на группах объектов.

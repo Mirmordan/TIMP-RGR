@@ -13,6 +13,24 @@ export const CAPABILITIES: readonly Capability[] = [
   'user:read',
   'user:update',
   'user:delete',
+  'user:password:reset',
+  'role:read',
+  'role:create',
+  'role:update',
+  'role:delete',
+  'group:read',
+  'group:create',
+  'group:update',
+  'group:delete',
+  'permission:read',
+  'permission:manage',
+  'audit:read',
+  'audit:delete',
+  'camera:create',
+  'stream:create',
+  'process:create',
+  'chunk:create',
+  'media:export',
 ] as const;
 
 export function isCapability(value: string): value is Capability {
@@ -29,32 +47,122 @@ export interface CapabilityInfo {
 export const CAPABILITY_CATALOG: readonly CapabilityInfo[] = [
   {
     code: 'admin:read',
-    label: 'Панель администратора: чтение',
-    description: 'Просмотр панели /admin (пользователи, роли, группы, права, аудит) и /stats/disk.',
+    label: 'Администрирование: обзор',
+    description: 'Обзор/сводка панели администратора и глобальная статистика диска (/stats/disk).',
   },
   {
     code: 'admin:write',
-    label: 'Панель администратора: изменение',
-    description: 'Управление пользователями, ролями, группами и правами в /admin, очистка аудита, создание устройств/потоков/процессов/чанков.',
+    label: 'Администрирование: полный доступ',
+    description: 'Полный доступ к управлению системой: выдача ролей пользователям и спец-прав ролям (совместимость с прежним admin:write).',
   },
   {
     code: 'user:create',
     label: 'Пользователи: создание',
-    description: 'Создание пользователей через API /users.',
+    description: 'Создание пользователей (POST /admin/users, POST /users).',
   },
   {
     code: 'user:read',
     label: 'Пользователи: чтение',
-    description: 'Просмотр списка и карточек пользователей через API /users.',
+    description: 'Просмотр списка и карточек пользователей (GET /admin/users*, GET /users*).',
   },
   {
     code: 'user:update',
     label: 'Пользователи: изменение',
-    description: 'Редактирование пользователей через API /users (PUT/PATCH).',
+    description: 'Редактирование username/email пользователей (PATCH /admin/users/:id, PUT/PATCH /users/:id).',
   },
   {
     code: 'user:delete',
     label: 'Пользователи: удаление',
-    description: 'Удаление пользователей через API /users.',
+    description: 'Удаление пользователей (DELETE /admin/users/:id, DELETE /users/:id).',
+  },
+  {
+    code: 'user:password:reset',
+    label: 'Пользователи: сброс пароля',
+    description: 'Сброс/активация пароля пользователя админом (PUT /admin/users/:id/password).',
+  },
+  {
+    code: 'role:read',
+    label: 'Роли: чтение',
+    description: 'Просмотр ролей и их спец-прав (GET /admin/roles*, GET /admin/capabilities).',
+  },
+  {
+    code: 'role:create',
+    label: 'Роли: создание',
+    description: 'Создание кастомных ролей (POST /admin/roles).',
+  },
+  {
+    code: 'role:update',
+    label: 'Роли: изменение',
+    description: 'Переименование кастомных ролей (PATCH /admin/roles/:id).',
+  },
+  {
+    code: 'role:delete',
+    label: 'Роли: удаление',
+    description: 'Удаление кастомных ролей (DELETE /admin/roles/:id).',
+  },
+  {
+    code: 'group:read',
+    label: 'Группы объектов: чтение',
+    description: 'Просмотр групп объектов и их состава (GET /admin/groups*, GET /admin/groups/:id/objects).',
+  },
+  {
+    code: 'group:create',
+    label: 'Группы объектов: создание',
+    description: 'Создание групп объектов (POST /admin/groups).',
+  },
+  {
+    code: 'group:update',
+    label: 'Группы объектов: изменение',
+    description: 'Переименование групп объектов (PATCH /admin/groups/:id).',
+  },
+  {
+    code: 'group:delete',
+    label: 'Группы объектов: удаление',
+    description: 'Удаление групп объектов (DELETE /admin/groups/:id).',
+  },
+  {
+    code: 'permission:read',
+    label: 'Права доступа: чтение',
+    description: 'Просмотр прав ролей на группы объектов (GET /admin/permissions).',
+  },
+  {
+    code: 'permission:manage',
+    label: 'Права доступа: управление',
+    description: 'Изменение прав ролей на группы объектов и состава объектов групп (PUT /admin/roles/:id/permissions, PUT /admin/groups/:id/objects).',
+  },
+  {
+    code: 'audit:read',
+    label: 'Аудит: чтение',
+    description: 'Просмотр журнала аудита (GET /admin/audit).',
+  },
+  {
+    code: 'audit:delete',
+    label: 'Аудит: очистка',
+    description: 'Удаление записей журнала аудита (DELETE /admin/audit).',
+  },
+  {
+    code: 'camera:create',
+    label: 'Камеры: создание',
+    description: 'Создание устройств-камер (POST /devices).',
+  },
+  {
+    code: 'stream:create',
+    label: 'Потоки: создание',
+    description: 'Создание потоков-источников (POST /streams).',
+  },
+  {
+    code: 'process:create',
+    label: 'Записи: запуск процесса',
+    description: 'Создание процессов записи (POST /processes).',
+  },
+  {
+    code: 'chunk:create',
+    label: 'Чанки: создание',
+    description: 'Создание чанков записей (POST /chunks).',
+  },
+  {
+    code: 'media:export',
+    label: 'Медиа: экспорт',
+    description: 'Экспорт фрагмента записи в файл (GET /processes/:id/export).',
   },
 ];

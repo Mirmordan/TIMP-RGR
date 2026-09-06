@@ -125,7 +125,7 @@ deviceRouter.get('/:id', requirePermission('read'), async (req: Request, res: Re
  *     tags: [Devices]
  *     operationId: createDevice
  *     summary: Создание устройства
- *     description: Создаёт новое устройство записи. Требуется capability admin:write.
+ *     description: Создаёт новое устройство записи. Требуется capability camera:create.
  *     requestBody:
  *       required: true
  *       content:
@@ -152,13 +152,13 @@ deviceRouter.get('/:id', requirePermission('read'), async (req: Request, res: Re
  *             schema:
  *               $ref: '#/components/schemas/Error'
  *       '403':
- *         description: Недостаточно прав (нужна capability admin:write)
+ *         description: Недостаточно прав (нужна capability camera:create)
  *         content:
  *           application/json:
  *             schema:
  *               $ref: '#/components/schemas/Error'
  */
-deviceRouter.post('/', requireCapability('admin:write'), async (req: Request, res: Response) => {
+deviceRouter.post('/', requireCapability('camera:create'), async (req: Request, res: Response) => {
   try {
     const { name, type } = req.body;
     const device = await deviceService.create(name, type);

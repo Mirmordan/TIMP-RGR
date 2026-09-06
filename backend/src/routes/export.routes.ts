@@ -5,6 +5,7 @@ import * as path from 'path';
 import { exportService, ExportError } from '../services/export.service';
 import { authenticate } from '../security/middleware/authenticate';
 import { requirePermission } from '../security/middleware/requirePermission';
+import { requireCapability } from '../security/middleware/requireCapability';
 
 export const exportRouter = Router();
 
@@ -17,7 +18,7 @@ exportRouter.use(authenticate);
  *     tags: [Processes]
  *     operationId: exportProcessFragment
  *     summary: Экспорт фрагмента записи процесса в MP4
- *     description: Синхронно склеивает .ts чанки процесса, пересекающие окно [from, to] (секунды от начала таймлайна процесса), в один mp4-файл и отдаёт его на скачивание. Окно не должно превышать 900 секунд. Требуется право read на процесс.
+ *     description: Синхронно склеивает .ts чанки процесса, пересекающие окно [from, to] (секунды от начала таймлайна процесса), в один mp4-файл и отдаёт его на скачивание. Окно не должно превышать 900 секунд. Требуется capability media:export и право read на процесс.
  *     parameters:
  *       - name: id
  *         in: path
@@ -60,7 +61,7 @@ exportRouter.use(authenticate);
  *             schema:
  *               $ref: '#/components/schemas/Error'
  *       '403':
- *         description: Нет доступа к процессу
+ *         description: Нет capability media:export или нет доступа к процессу
  *         content:
  *           application/json:
  *             schema:
@@ -78,7 +79,7 @@ exportRouter.use(authenticate);
  *             schema:
  *               $ref: '#/components/schemas/Error'
  */
-exportRouter.get('/:id/export', requirePermission('read'), async (req: Request, res: Response) => {
+exportRouter.get('/:id/export', requireCapability('media:export'), requirePermission('read'), async (req: Request, res: Response) => {
   const processId = req.params.id as string;
   const fromS = Number(req.query.from);
   const toS = Number(req.query.to);
