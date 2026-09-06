@@ -32,11 +32,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   // При монтировании — пробуем достать сессию из cookies.
+  // /auth/me идёт через apiFetch: при протухшем access-токене он сам молча обновит
+  // сессию и повторит запрос; при неудаче состояние честно сбрасывается в «не залогинен».
   useEffect(() => {
     apiFetch('/auth/me')
-      .then(r => r.ok ? r.json() : null)
-      .then(data => applyAuth(data))
-      .catch(() => {})
+      .then(r => (r.ok ? r.json() : null))
+      .then(data => {
+        if (data?.user) {
+          applyAuth(data);
+        } else {
+          setUser(null);
+          setCapabilities([]);
+        }
+      })
+      .catch(() => {
+        setUser(null);
+        setCapabilities([]);
+      })
       .finally(() => setLoading(false));
   }, []);
 

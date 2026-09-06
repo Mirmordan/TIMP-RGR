@@ -186,6 +186,19 @@ export function HomePage() {
     return { data: dayList.map(d => recByDay.get(d) as Record<string, number | string>), devices };
   }, [data?.timeline]);
 
+  // «Отснято сегодня». Серверное recordingTodayS режет «сегодня» по календарю Postgres (UTC)
+  // и по дню СТАРТА сегмента: для живых/длинных сегментов, начатых вчера по UTC, в утренние
+  // часы локального дня оно даёт ложный 0. Когда оно 0 — берём сумму секунд из timeline за
+  // ЛОКАЛЬНЫЙ день пользователя (та же выборка, что у графика); нет локального дня — честный 0.
+  const recordedTodayS = useMemo<number>(() => {
+    const backend = data?.overview.recordingTodayS ?? 0;
+    if (backend > 0) return backend;
+    const rows = data?.timeline ?? [];
+    if (rows.length === 0) return 0;
+    const today = localDayKey(new Date());
+    return rows.reduce((acc, r) => (r.day === today ? acc + r.seconds : acc), 0);
+  }, [data]);
+
   const incidentData = useMemo<Array<Record<string, number | string>>>(() => {
     const rows = data?.incidents ?? [];
     if (rows.length === 0) return [];
@@ -292,7 +305,7 @@ export function HomePage() {
               </StatTile>
 
               <StatTile label="Отснято сегодня">
-                <div className={styles.tileValue}>{formatHours(overview.recordingTodayS)}</div>
+                <div className={styles.tileValue}>{formatHours(recordedTodayS)}</div>
               </StatTile>
 
               <StatTile label="Всего">
@@ -480,6 +493,13 @@ function DashboardSkeleton({ canViewIncidents }: { canViewIncidents: boolean }) 
       </div>
     </>
   );
+}
+
+/** Локальный календарный день как YYYY-MM-DD — ключ «day» строк /stats/timeline. */
+function localDayKey(d: Date): string {
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${d.getFullYear()}-${m}-${day}`;
 }
 
 function fmtAxisDay(day: string): string {

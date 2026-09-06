@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router';
+import { useNavigate, useSearchParams } from 'react-router';
 import { Header } from '../components/Header/Header';
 import { Footer } from '../components/Footer/Footer';
 import { Button } from '../components/Button/Button';
@@ -13,9 +13,14 @@ export function AuthPage() {
   const [loading, setLoading] = useState(false);
   const { login } = useAuth();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+
+  // Пришли сюда после неудачного обновления сессии (?expired=1) — показываем сообщение.
+  const [notice, setNotice] = useState(searchParams.get('expired') === '1' ? 'Сессия завершена. Войдите снова.' : '');
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    setNotice('');
     setError('');
     setLoading(true);
 
@@ -68,7 +73,7 @@ export function AuthPage() {
               />
             </div>
 
-            {error && <div className={styles.error}>{error}</div>}
+            {(notice || error) && <div className={styles.error}>{notice || error}</div>}
 
             <div className={styles.submit}>
               <Button type="submit" variant="primary" disabled={loading} style={{ width: '100%' }}>
