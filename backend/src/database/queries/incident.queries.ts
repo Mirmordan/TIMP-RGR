@@ -1,15 +1,18 @@
 /**
- * Инциденты: title/description — собственные (objects.name/description либо
- * зеркало recording_incidents). Родитель — процесс через objects.parent_id.
- * parentObjectId = COALESCE(objects.parent_id, process_id).
+ * Инциденты: name/description хранятся ТОЛЬКО в объекте-супертипе
+ * (objects.name/description). recording_incidents хранит доменные поля
+ * (process/segment/время/severity/автор) и связан с objects FK ON DELETE CASCADE.
+ * parentObjectId = objects.parent_id; parentType — тип родителя.
+ * title — устаревший алиас name для обратной совместимости.
  */
 const incidentSelect = `
   i.object_id AS "id", i.process_id AS "processId",
   i.segment_id AS "segmentId",
-  COALESCE(NULLIF(o.name, ''), i.title) AS "title",
-  COALESCE(NULLIF(o.description, ''), i.description) AS "description",
+  o.name AS "name",
+  o.name AS "title",
+  o.description AS "description",
   i.time_offset_s AS "timeOffsetS", i.severity,
-  COALESCE(o.parent_id, i.process_id) AS "parentObjectId",
+  o.parent_id AS "parentObjectId",
   parent.type AS "parentType",
   i.created_at AS "createdAt",
   u.username AS "createdBy"
@@ -17,7 +20,7 @@ const incidentSelect = `
 
 const incidentFrom = `
   FROM recording_incidents i
-  LEFT JOIN objects o ON o.id = i.object_id
+  JOIN objects o ON o.id = i.object_id
   LEFT JOIN objects parent ON parent.id = o.parent_id
   LEFT JOIN users u ON u.id = i.created_by
 `;
@@ -32,35 +35,30 @@ export const incidentQueries = {
                   WHERE i.process_id = $1
                   ORDER BY i.time_offset_s`,
 
-  // Супертип инцидента: type='incident', name/description = title/description,
-  // parent_id = процесс. Столбцы recording_incidents.title/description остаются зеркалом.
-  insert: `INSERT INTO objects (type, name, description, parent_id) VALUES ('incident', $1, $2, $3)
+  // Супертип инцидента: type='incident', name/description = общие метаданные,
+  // parent_id = процесс. Столбцов title/description в recording_incidents больше нет.
+  insert: `INSERT INTO objects (type, name, description, parent_id, owner_id)
+           VALUES ('incident', $1, $2, $3, NULLIF(current_setting('app.user_id', true), '')::UUID)
            RETURNING id AS "objectId"`,
 
   insertIncident: `INSERT INTO recording_incidents
-                   (object_id, process_id, segment_id, title, description, time_offset_s, severity, created_by)
-                   VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                   (object_id, process_id, segment_id, time_offset_s, severity, created_by)
+                   VALUES ($1, $2, $3, $4, $5, $6)
                    RETURNING object_id AS "id", process_id AS "processId",
-                             segment_id AS "segmentId", title, description,
+                             segment_id AS "segmentId",
                              time_offset_s AS "timeOffsetS", severity,
                              created_at AS "createdAt"`,
 
-  // Удаление инцидента: recording_incidents.object_id НЕ имеет FK на objects —
-  // строку удаляем явно (вместе с её супертипом), иначе остаётся orphan-строка.
-  deleteIncident: `DELETE FROM recording_incidents WHERE object_id = $1`,
+  // Удаление инцидента: достаточно удалить супертип — recording_incidents
+  // удаляется каскадом по FK object_id -> objects(id).
+  deleteById: `DELETE FROM objects WHERE id = $1`,
 
-  deleteObject: `DELETE FROM objects WHERE id = $1`,
+  setMetaName: `UPDATE objects SET name = $1 WHERE id = $2`,
+  setMetaDescription: `UPDATE objects SET description = $1 WHERE id = $2`,
 
-  setMeta: `UPDATE objects SET name = $1, description = $2 WHERE id = $3`,
-
-  updateById: `UPDATE recording_incidents
-               SET title = COALESCE($2, title),
-                   description = $3,
-                   severity = COALESCE($4, severity),
-                   time_offset_s = COALESCE($5, time_offset_s)
-               WHERE object_id = $1
-               RETURNING object_id AS "id", process_id AS "processId",
-                         segment_id AS "segmentId", title, description,
-                         time_offset_s AS "timeOffsetS", severity,
-                         created_at AS "createdAt"`,
+  updateIncident: `UPDATE recording_incidents
+                   SET severity = COALESCE($2, severity),
+                       time_offset_s = COALESCE($3, time_offset_s)
+                   WHERE object_id = $1
+                   RETURNING object_id AS "id"`,
 };

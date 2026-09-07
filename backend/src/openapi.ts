@@ -29,6 +29,7 @@ const definition = {
     { name: 'Segments', description: 'Сегменты записей (временные отрезки)' },
     { name: 'Recordings', description: 'Сводные операции над записями' },
     { name: 'Incidents', description: 'Инциденты на записях' },
+    { name: 'Objects', description: 'Общие объекты с name/description и родительской иерархией' },
     { name: 'Admin', description: 'Администрирование (роли, права, аудит)' },
     { name: 'Stats', description: 'Статистика по объектам' },
   ],
@@ -293,13 +294,25 @@ const definition = {
       },
       Incident: {
         type: 'object',
-        required: ['id', 'processId', 'title', 'timeOffsetS', 'severity', 'createdAt'],
+        required: ['id', 'processId', 'name', 'timeOffsetS', 'severity', 'createdAt'],
         properties: {
           id: { type: 'string' },
           processId: { type: 'string' },
           segmentId: { type: 'string' },
-          title: { type: 'string' },
-          description: { type: 'string' },
+          name: {
+            type: 'string',
+            nullable: true,
+            description: 'Название инцидента (objects.name).',
+          },
+          title: {
+            type: 'string',
+            description: 'Устаревший алиас name (для обратной совместимости).',
+          },
+          description: {
+            type: 'string',
+            nullable: true,
+            description: 'Описание инцидента (objects.description).',
+          },
           timeOffsetS: { type: 'number' },
           severity: { type: 'string', enum: ['info', 'warning', 'critical'] },
           parentObjectId: {
@@ -592,7 +605,7 @@ const definition = {
       },
       IncidentCreate: {
         type: 'object',
-        required: ['processId', 'title', 'timeOffsetS'],
+        required: ['processId', 'timeOffsetS'],
         properties: {
           processId: {
             type: 'string',
@@ -604,8 +617,16 @@ const definition = {
             format: 'uuid',
             description: 'ID сегмента (необязателен).',
           },
-          title: { type: 'string', description: 'Краткое название инцидента.' },
-          description: { type: 'string', description: 'Подробное описание (необязательно).' },
+          name: { type: 'string', description: 'Название инцидента (обязательно).' },
+          title: {
+            type: 'string',
+            description: 'Устаревший алиас name; используется, если name не передан.',
+          },
+          description: {
+            type: 'string',
+            nullable: true,
+            description: 'Подробное описание (необязательно).',
+          },
           timeOffsetS: {
             type: 'number',
             description: 'Смещение от начала записи в секундах.',
@@ -621,10 +642,25 @@ const definition = {
         type: 'object',
         description:
           'Частичное обновление инцидента; хотя бы одно поле обязательно. ' +
+          'name null/пусто — сброс названия; description null/пусто — очистка. ' +
+          'title — устаревший алиас name. ' +
           'Допустимые значения severity проверяются на уровне БД, невалидное значение не перехватывается валидатором API (приведёт к 5xx).',
         properties: {
-          title: { type: 'string', description: 'Краткое название инцидента.' },
-          description: { type: 'string', description: 'Подробное описание.' },
+          name: {
+            type: 'string',
+            nullable: true,
+            description: 'Название инцидента (objects.name).',
+          },
+          title: {
+            type: 'string',
+            nullable: true,
+            description: 'Устаревший алиас name; применяется, если name не передан.',
+          },
+          description: {
+            type: 'string',
+            nullable: true,
+            description: 'Описание инцидента (objects.description).',
+          },
           severity: {
             type: 'string',
             enum: ['info', 'warning', 'critical'],
@@ -633,6 +669,51 @@ const definition = {
           timeOffsetS: {
             type: 'number',
             description: 'Смещение от начала записи в секундах.',
+          },
+        },
+      },
+      ObjectMeta: {
+        type: 'object',
+        description: 'Объект любого типа с общими метаданными (эндпоинты /objects).',
+        required: ['id', 'createdAt'],
+        properties: {
+          id: { type: 'string', description: 'UUID объекта (objects.id).' },
+          type: { type: 'string', nullable: true, description: 'Тип объекта (device/stream/process/segment/chunk/incident).' },
+          name: { type: 'string', nullable: true, description: 'Эффективное название объекта.' },
+          rawName: { type: 'string', nullable: true, description: 'Собственный objects.name (override).' },
+          inheritedName: {
+            type: 'string',
+            nullable: true,
+            description: 'Название родителя (если своего override нет).',
+          },
+          description: { type: 'string', nullable: true, description: 'Описание объекта.' },
+          parentObjectId: {
+            type: 'string',
+            nullable: true,
+            description: 'ID родительского объекта (objects.parent_id).',
+          },
+          parentType: {
+            type: 'string',
+            nullable: true,
+            description: 'Тип родительского объекта, null для корня.',
+          },
+          createdAt: { type: 'string', format: 'date-time' },
+        },
+      },
+      ObjectMetadataPatch: {
+        type: 'object',
+        description: 'Обновление общих метаданных объекта (name/description).',
+        properties: {
+          name: {
+            type: 'string',
+            nullable: true,
+            description:
+              'Собственное название (override). null/пусто — сброс (для потоков/записей — наследование родителя); для устройства очистка запрещена.',
+          },
+          description: {
+            type: 'string',
+            nullable: true,
+            description: 'Описание; null/пусто — очистить.',
           },
         },
       },

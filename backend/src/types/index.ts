@@ -92,8 +92,10 @@ export interface RecordingIncident {
   id: string;
   processId: string;
   segmentId?: string;
-  title: string;
+  name: string;
   description?: string;
+  /** @deprecated алиас для name (обратная совместимость). */
+  title?: string;
   timeOffsetS: number;
   severity: 'info' | 'warning' | 'critical';
   parentObjectId?: string | null;

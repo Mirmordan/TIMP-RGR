@@ -10,8 +10,8 @@ interface CustomPlayerProps {
   processId: string;
   timeline: TimelineData;
   incidents?: Incident[];
-  onCreateIncident?: (data: { title: string; description?: string; timeOffsetS: number; severity: string }) => Promise<Incident>;
-  onUpdateIncident?: (id: string, data: { title: string; description?: string; severity: string }) => Promise<void>;
+  onCreateIncident?: (data: { name: string; description?: string; timeOffsetS: number; severity: string }) => Promise<Incident>;
+  onUpdateIncident?: (id: string, data: { name: string; description?: string | null; severity: string }) => Promise<void>;
   onDeleteIncident?: (id: string) => Promise<void>;
 }
 
@@ -64,13 +64,13 @@ export function CustomPlayer({
 
   // --- Incident modals ---
   const [showIncidentModal, setShowIncidentModal] = useState(false);
-  const [incidentTitle, setIncidentTitle] = useState('');
+  const [incidentName, setIncidentName] = useState('');
   const [incidentDesc, setIncidentDesc] = useState('');
   const [incidentSeverity, setIncidentSeverity] = useState<'info' | 'warning' | 'critical'>('warning');
   const [incidentSaving, setIncidentSaving] = useState(false);
 
   const [editIncident, setEditIncident] = useState<Incident | null>(null);
-  const [editTitle, setEditTitle] = useState('');
+  const [editName, setEditName] = useState('');
   const [editDesc, setEditDesc] = useState('');
   const [editSeverity, setEditSeverity] = useState<'info' | 'warning' | 'critical'>('info');
   const [editSaving, setEditSaving] = useState(false);
@@ -581,17 +581,17 @@ export function CustomPlayer({
 
   // --- Incident handlers ---
   async function saveIncident() {
-    if (!onCreateIncident || !incidentTitle.trim()) return;
+    if (!onCreateIncident || !incidentName.trim()) return;
     setIncidentSaving(true);
     try {
       await onCreateIncident({
-        title: incidentTitle.trim(),
+        name: incidentName.trim(),
         description: incidentDesc.trim() || undefined,
         timeOffsetS: timelineTimeRef.current,
         severity: incidentSeverity,
       });
       setShowIncidentModal(false);
-      setIncidentTitle('');
+      setIncidentName('');
       setIncidentDesc('');
       setTimecodesTab('incidents');
     } catch (err) {
@@ -603,12 +603,12 @@ export function CustomPlayer({
   }
 
   async function saveEditIncident() {
-    if (!onUpdateIncident || !editIncident || !editTitle.trim()) return;
+    if (!onUpdateIncident || !editIncident || !editName.trim()) return;
     setEditSaving(true);
     try {
       await onUpdateIncident(editIncident.id, {
-        title: editTitle.trim(),
-        description: editDesc.trim() || undefined,
+        name: editName.trim(),
+        description: editDesc.trim() || null,
         severity: editSeverity,
       });
       setEditIncident(null);
@@ -933,7 +933,7 @@ export function CustomPlayer({
                         key={inc.id}
                         className={styles.incidentMarker}
                         style={{ left: `${left}%` }}
-                        title={`${inc.title}${inc.description ? ': ' + inc.description : ''}`}
+                        title={`${inc.name ?? ''}${inc.description ? ': ' + inc.description : ''}`}
                       >
                         <div className={styles.incidentDot} style={{ background: color }} />
                       </div>
@@ -1023,7 +1023,7 @@ export function CustomPlayer({
                     >
                       <span className={styles.timecodesIndex} style={{ color: sevColor }}>●</span>
                       <div className={styles.timecodesInfo}>
-                        <div className={styles.timecodesTime}>{inc.title}</div>
+                        <div className={styles.timecodesTime}>{inc.name ?? ''}</div>
                         <div className={styles.timecodesMeta}>
                           {formatAbsoluteTime(inc.timeOffsetS)}
                           {inc.description ? ` · ${inc.description}` : ''}
@@ -1035,7 +1035,7 @@ export function CustomPlayer({
                           onClick={(e) => {
                             e.stopPropagation();
                             setEditIncident(inc);
-                            setEditTitle(inc.title);
+                            setEditName(inc.name ?? '');
                             setEditDesc(inc.description ?? '');
                             setEditSeverity(inc.severity);
                           }}
@@ -1095,8 +1095,8 @@ export function CustomPlayer({
                 Название
                 <input
                   className={styles.modalInput}
-                  value={incidentTitle}
-                  onChange={(e) => setIncidentTitle(e.target.value)}
+                  value={incidentName}
+                  onChange={(e) => setIncidentName(e.target.value)}
                   placeholder="Например: Подозрительный объект"
                   autoFocus
                 />
@@ -1128,7 +1128,7 @@ export function CustomPlayer({
             </div>
             <div className={styles.modalFooter}>
               <Button variant="outline" size="sm" onClick={() => setShowIncidentModal(false)}>Отмена</Button>
-              <Button variant="success" size="sm" onClick={saveIncident} disabled={!incidentTitle.trim() || incidentSaving}>
+              <Button variant="success" size="sm" onClick={saveIncident} disabled={!incidentName.trim() || incidentSaving}>
                 {incidentSaving ? '...' : 'Создать'}
               </Button>
             </div>
@@ -1148,8 +1148,8 @@ export function CustomPlayer({
                 Название
                 <input
                   className={styles.modalInput}
-                  value={editTitle}
-                  onChange={(e) => setEditTitle(e.target.value)}
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
                   autoFocus
                 />
               </label>
@@ -1194,7 +1194,7 @@ export function CustomPlayer({
               )}
               <div style={{ flex: 1 }} />
               <Button variant="outline" size="sm" onClick={() => setEditIncident(null)}>Отмена</Button>
-              <Button variant="success" size="sm" onClick={saveEditIncident} disabled={!editTitle.trim() || editSaving}>
+              <Button variant="success" size="sm" onClick={saveEditIncident} disabled={!editName.trim() || editSaving}>
                 {editSaving ? '...' : 'Сохранить'}
               </Button>
             </div>

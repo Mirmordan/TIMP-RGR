@@ -13,44 +13,29 @@ import { incidentQueries } from '../database/queries/incident.queries';
 const inUserContext = db.inUserContext as unknown as Mock;
 const queryAs = db.queryAs as unknown as Mock;
 
-function makeClient(sequence: unknown[]) {
-  const query = vi.fn();
-  for (const res of sequence) {
-    query.mockResolvedValueOnce(res);
-  }
-  return { query };
-}
-
 beforeEach(() => {
   queryAs.mockReset();
   inUserContext.mockReset();
 });
 
 describe('incidentRepository.deleteById', () => {
-  it('удаляет строку recording_incidents и её супертип objects (нет FK — удаляем явно)', async () => {
-    const client = makeClient([
-      { rows: [], rowCount: 1 }, // DELETE recording_incidents
-      { rows: [], rowCount: 1 }, // DELETE objects
-    ]);
-    inUserContext.mockImplementation(async (fn: (c: typeof client) => unknown) => fn(client));
+  it('удаляет супертип objects — recording_incidents удаляется каскадом по FK', async () => {
+    queryAs.mockResolvedValueOnce({ rows: [], rowCount: 1 });
 
     const deleted = await incidentRepository.deleteById('inc-1');
 
     expect(deleted).toBe(true);
-    expect(client.query).toHaveBeenNthCalledWith(1, incidentQueries.deleteIncident, ['inc-1']);
-    expect(client.query).toHaveBeenNthCalledWith(2, incidentQueries.deleteObject, ['inc-1']);
+    expect(queryAs).toHaveBeenCalledTimes(1);
+    expect(queryAs).toHaveBeenCalledWith(incidentQueries.deleteById, ['inc-1']);
   });
 
-  it('не трогает objects, если доменной строки инцидента нет (rowCount 0)', async () => {
-    const client = makeClient([
-      { rows: [], rowCount: 0 }, // DELETE recording_incidents → ничего
-    ]);
-    inUserContext.mockImplementation(async (fn: (c: typeof client) => unknown) => fn(client));
+  it('возвращает false, если объекта инцидента нет', async () => {
+    queryAs.mockResolvedValueOnce({ rows: [], rowCount: 0 });
 
     const deleted = await incidentRepository.deleteById('missing');
 
     expect(deleted).toBe(false);
-    expect(client.query).toHaveBeenCalledTimes(1);
-    expect(client.query).toHaveBeenCalledWith(incidentQueries.deleteIncident, ['missing']);
+    expect(queryAs).toHaveBeenCalledTimes(1);
+    expect(queryAs).toHaveBeenCalledWith(incidentQueries.deleteById, ['missing']);
   });
 });

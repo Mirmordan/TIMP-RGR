@@ -70,10 +70,12 @@ export interface RecordingIncident {
   id: string;
   processId: string;
   segmentId?: string;
-  title: string;
-  description?: string;
+  name: string | null;
+  description?: string | null;
   timeOffsetS: number;
   severity: 'info' | 'warning' | 'critical';
+  parentObjectId?: string | null;
+  parentType?: string | null;
   createdAt: string;
   createdBy?: string;
 }

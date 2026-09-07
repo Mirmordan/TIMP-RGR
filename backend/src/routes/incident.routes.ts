@@ -65,7 +65,7 @@ incidentRouter.get('/process/:processId', requirePermission('read', {
  *     tags: [Incidents]
  *     operationId: createIncident
  *     summary: Создание инцидента
- *     description: Создаёт инцидент на процессе записи. processId, title и timeOffsetS обязательны; createdBy проставляется из текущего пользователя. Требуется право write на процесс.
+ *     description: Создаёт инцидент на процессе записи. processId, name и timeOffsetS обязательны; title — устаревший алиас name. createdBy проставляется из текущего пользователя. Требуется право write на процесс.
  *     requestBody:
  *       required: true
  *       content:
@@ -80,7 +80,7 @@ incidentRouter.get('/process/:processId', requirePermission('read', {
  *             schema:
  *               $ref: '#/components/schemas/Incident'
  *       '400':
- *         description: Не указаны processId, title или timeOffsetS
+ *         description: Не указаны processId, name или timeOffsetS
  *         content:
  *           application/json:
  *             schema:
@@ -101,13 +101,14 @@ incidentRouter.get('/process/:processId', requirePermission('read', {
 incidentRouter.post('/', requirePermission('write', {
   idFrom: (req) => req.body.processId,
 }), async (req: Request, res: Response) => {
-  const { processId, segmentId, title, description, timeOffsetS, severity } = req.body;
-  if (!processId || !title || timeOffsetS === undefined) {
-    return res.status(400).json({ error: 'processId, title и timeOffsetS обязательны' });
+  const { processId, segmentId, name, title, description, timeOffsetS, severity } = req.body;
+  const incidentName = (name ?? title ?? '').toString().trim();
+  if (!processId || !incidentName || timeOffsetS === undefined) {
+    return res.status(400).json({ error: 'processId, name и timeOffsetS обязательны' });
   }
   const createdBy = (req as any).user?.id as string;
   const incident = await incidentRepository.create({
-    processId, segmentId, title, description,
+    processId, segmentId, name: incidentName, description,
     timeOffsetS, severity: severity || 'info', createdBy,
   });
   res.status(201).json(incident);
@@ -165,7 +166,7 @@ incidentRouter.delete('/:id', requirePermission('delete'), async (req: Request, 
  *     tags: [Incidents]
  *     operationId: patchIncident
  *     summary: Частичное обновление инцидента
- *     description: Обновляет только переданные поля (title/description/severity/timeOffsetS). Требуется право write на объект.
+ *     description: Обновляет только переданные поля (name/description/severity/timeOffsetS; title — устаревший алиас name). Требуется право write на объект.
  *     parameters:
  *       - name: id
  *         in: path
@@ -208,8 +209,15 @@ incidentRouter.delete('/:id', requirePermission('delete'), async (req: Request, 
  */
 incidentRouter.patch('/:id', requirePermission('write'), async (req: Request, res: Response) => {
   const id = req.params.id as string;
-  const { title, description, severity, timeOffsetS } = req.body;
-  const updated = await incidentRepository.updateById(id, { title, description, severity, timeOffsetS });
+  const { name, title, description, severity, timeOffsetS } = req.body;
+  // Если передан только устаревший title — используем его как name.
+  const effectiveName = name !== undefined ? name : title;
+  const updated = await incidentRepository.updateById(id, {
+    ...(effectiveName !== undefined ? { name: effectiveName } : {}),
+    ...(description !== undefined ? { description } : {}),
+    ...(severity !== undefined ? { severity } : {}),
+    ...(timeOffsetS !== undefined ? { timeOffsetS } : {}),
+  });
   if (!updated) return res.status(404).json({ error: 'инцидент не найден' });
   res.json(updated);
 });

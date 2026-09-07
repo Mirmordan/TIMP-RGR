@@ -86,7 +86,7 @@ export function ProcessDetailPage() {
     }
   }
 
-  async function handleCreateIncident(data: { title: string; description?: string; timeOffsetS: number; severity: string }) {
+  async function handleCreateIncident(data: { name: string; description?: string; timeOffsetS: number; severity: string }) {
     const r = await apiFetch('/incidents', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -104,7 +104,7 @@ export function ProcessDetailPage() {
     setIncidents(prev => prev.filter(i => i.id !== incidentId));
   }
 
-  async function handleUpdateIncident(incidentId: string, data: { title: string; description?: string; severity: string }) {
+  async function handleUpdateIncident(incidentId: string, data: { name: string; description?: string | null; severity: string }) {
     const r = await apiFetch(`/incidents/${incidentId}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
