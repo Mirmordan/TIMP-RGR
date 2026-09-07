@@ -100,7 +100,7 @@ interface TimelineChart {
 
 export function HomePage() {
   const { user, capabilities } = useAuth();
-  const canViewIncidents = capabilities.includes('admin:read');
+  const canDashboard = capabilities.includes('admin:read');
 
   const [data, setData] = useState<DashboardData | null>(null);
   const [counts, setCounts] = useState<DashboardCounts>({ streams: null, devices: null });
@@ -109,27 +109,28 @@ export function HomePage() {
   const [tick, setTick] = useState(0);
 
   useEffect(() => {
+    if (!canDashboard) return;
     let cancelled = false;
     setLoading(true);
     setLoadError('');
     const stats = [
       apiFetch('/stats/overview'),
       apiFetch('/stats/timeline?days=14'),
-      canViewIncidents ? apiFetch('/stats/incidents?days=30') : Promise.resolve(null),
+      apiFetch('/stats/incidents?days=30'),
       apiFetch('/stats/disk'),
     ];
     Promise.all(stats)
       .then(async ([overviewRes, timelineRes, incidentsRes, diskRes]) => {
-        if (!overviewRes?.ok || !timelineRes?.ok || !diskRes?.ok) {
-          throw new Error(`Ошибка загрузки статистики (${overviewRes?.status ?? '-'}/${timelineRes?.status ?? '-'})`);
-        }
-        if (canViewIncidents && !incidentsRes?.ok) {
-          throw new Error(`Ошибка загрузки статистики (инциденты ${incidentsRes?.status ?? '-'})`);
+        const failed = [['overview', overviewRes], ['timeline', timelineRes], ['incidents', incidentsRes], ['disk', diskRes]]
+          .filter(([, r]) => !r?.ok)
+          .map(([n, r]) => `${n}:${r?.status ?? '-'}`);
+        if (failed.length) {
+          throw new Error(`Ошибка загрузки статистики (${failed.join(', ')})`);
         }
         return Promise.all([
           overviewRes.json(),
           timelineRes.json(),
-          incidentsRes ? incidentsRes.json() : Promise.resolve([]),
+          incidentsRes.json(),
           diskRes.json(),
         ]);
       })
@@ -149,7 +150,7 @@ export function HomePage() {
         if (!cancelled) setLoading(false);
       });
     return () => { cancelled = true; };
-  }, [tick, canViewIncidents]);
+  }, [tick, canDashboard]);
 
   useEffect(() => {
     let cancelled = false;
@@ -264,58 +265,58 @@ export function HomePage() {
         ))}
       </section>
 
-      <section className={styles.dashboard} aria-label="Дашборд">
-        <h2 className={styles.dashTitle}>Дашборд</h2>
+      {canDashboard && (
+        <section className={styles.dashboard} aria-label="Дашборд">
+          <h2 className={styles.dashTitle}>Дашборд</h2>
 
-        {loading && <DashboardSkeleton canViewIncidents={canViewIncidents} />}
+          {loading && <DashboardSkeleton />}
 
-        {!loading && loadError && (
-          <div className={styles.failed}>
-            <div className={styles.errorText}>{loadError}</div>
-            <Button variant="outline" size="sm" onClick={() => setTick(t => t + 1)}>Повторить</Button>
-          </div>
-        )}
+          {!loading && loadError && (
+            <div className={styles.failed}>
+              <div className={styles.errorText}>{loadError}</div>
+              <Button variant="outline" size="sm" onClick={() => setTick(t => t + 1)}>Повторить</Button>
+            </div>
+          )}
 
-        {!loading && !loadError && overview && (
-          <>
-            <div className={styles.tiles}>
-              <StatTile label="Сейчас в эфире">
-                <div className={styles.tileLive}>
-                  {overview.processes.running > 0 && <span className={styles.tileLiveDot} />}
-                  <span className={styles.tileValue}>{overview.processes.running.toLocaleString('ru-RU')}</span>
-                </div>
-                <div className={styles.tileSub}>сессий записи</div>
-              </StatTile>
-
-              <StatTile label="Записей всего">
-                <div className={styles.tileValue}>{overview.processes.total.toLocaleString('ru-RU')}</div>
-                {overview.processes.total - overview.processes.running > 0 && (
-                  <div className={styles.tileSub}>
-                    остановлено {(overview.processes.total - overview.processes.running).toLocaleString('ru-RU')}
+          {!loading && !loadError && overview && (
+            <>
+              <div className={styles.tiles}>
+                <StatTile label="Сейчас в эфире">
+                  <div className={styles.tileLive}>
+                    {overview.processes.running > 0 && <span className={styles.tileLiveDot} />}
+                    <span className={styles.tileValue}>{overview.processes.running.toLocaleString('ru-RU')}</span>
                   </div>
-                )}
-              </StatTile>
+                  <div className={styles.tileSub}>сессий записи</div>
+                </StatTile>
 
-              <StatTile label="Потоков">
-                <div className={styles.tileValue}>{counts.streams === null ? '—' : counts.streams.toLocaleString('ru-RU')}</div>
-              </StatTile>
+                <StatTile label="Записей всего">
+                  <div className={styles.tileValue}>{overview.processes.total.toLocaleString('ru-RU')}</div>
+                  {overview.processes.total - overview.processes.running > 0 && (
+                    <div className={styles.tileSub}>
+                      остановлено {(overview.processes.total - overview.processes.running).toLocaleString('ru-RU')}
+                    </div>
+                  )}
+                </StatTile>
 
-              <StatTile label="Камер">
-                <div className={styles.tileValue}>{counts.devices === null ? '—' : counts.devices.toLocaleString('ru-RU')}</div>
-              </StatTile>
+                <StatTile label="Потоков">
+                  <div className={styles.tileValue}>{counts.streams === null ? '—' : counts.streams.toLocaleString('ru-RU')}</div>
+                </StatTile>
 
-              <StatTile label="Отснято сегодня">
-                <div className={styles.tileValue}>{formatHours(recordedTodayS)}</div>
-              </StatTile>
+                <StatTile label="Камер">
+                  <div className={styles.tileValue}>{counts.devices === null ? '—' : counts.devices.toLocaleString('ru-RU')}</div>
+                </StatTile>
 
-              <StatTile label="Всего">
-                <div className={styles.tileValue}>{overview.segments.count.toLocaleString('ru-RU')}</div>
-                <div className={styles.tileSub}>
-                  {formatHours(overview.segments.durationS)} · {formatBytes(overview.segments.sizeBytes)}
-                </div>
-              </StatTile>
+                <StatTile label="Отснято сегодня">
+                  <div className={styles.tileValue}>{formatHours(recordedTodayS)}</div>
+                </StatTile>
 
-              {canViewIncidents && (
+                <StatTile label="Всего">
+                  <div className={styles.tileValue}>{overview.segments.count.toLocaleString('ru-RU')}</div>
+                  <div className={styles.tileSub}>
+                    {formatHours(overview.segments.durationS)} · {formatBytes(overview.segments.sizeBytes)}
+                  </div>
+                </StatTile>
+
                 <StatTile label="Инциденты 24ч">
                   <div className={styles.tileValue}>{overview.incidents.last24h.toLocaleString('ru-RU')}</div>
                   <div className={styles.sevRow}>
@@ -327,51 +328,49 @@ export function HomePage() {
                     ))}
                   </div>
                 </StatTile>
-              )}
-            </div>
-
-            <div className={styles.gridArea}>
-              <div className={styles.span2}>
-                <Card>
-                  <div className={styles.chartBody}>
-                    <div className={styles.chartTitle}>Запись по дням, 14д</div>
-                    {timelineChart.devices.length === 0 ? (
-                      <div className={styles.chartEmpty}>Нет данных за период</div>
-                    ) : (
-                      <div className={styles.chartBox}>
-                        <ResponsiveContainer width="100%" height={300}>
-                          <AreaChart data={timelineChart.data} margin={{ top: 8, right: 12, left: 0, bottom: 4 }}>
-                            <CartesianGrid stroke={GRID_STROKE} strokeDasharray="3 3" vertical={false} />
-                            <XAxis dataKey="day" tickFormatter={fmtAxisDay} tick={AXIS_TICK} minTickGap={20} tickLine={false} axisLine={{ stroke: GRID_STROKE }} />
-                            <YAxis tickFormatter={fmtAxisSeconds} tick={AXIS_TICK} width={40} tickLine={false} axisLine={false} />
-                            <Tooltip
-                              contentStyle={TOOLTIP_STYLE}
-                              labelStyle={{ color: '#D4D8DE' }}
-                              labelFormatter={label => fmtTooltipDay(String(label))}
-                              formatter={(value) => formatHours(Number(value))}
-                            />
-                            <Legend wrapperStyle={{ fontSize: 11, color: '#6A7A8C', paddingTop: 6 }} iconSize={9} />
-                            {timelineChart.devices.map((device, i) => (
-                              <Area
-                                key={device}
-                                type="monotone"
-                                dataKey={device}
-                                stackId="rec"
-                                stroke={DEVICE_COLORS[i % DEVICE_COLORS.length]}
-                                fill={DEVICE_COLORS[i % DEVICE_COLORS.length]}
-                                fillOpacity={0.55}
-                                strokeWidth={1.2}
-                              />
-                            ))}
-                          </AreaChart>
-                        </ResponsiveContainer>
-                      </div>
-                    )}
-                  </div>
-                </Card>
               </div>
 
-              {canViewIncidents && (
+              <div className={styles.gridArea}>
+                <div className={styles.span2}>
+                  <Card>
+                    <div className={styles.chartBody}>
+                      <div className={styles.chartTitle}>Запись по дням, 14д</div>
+                      {timelineChart.devices.length === 0 ? (
+                        <div className={styles.chartEmpty}>Нет данных за период</div>
+                      ) : (
+                        <div className={styles.chartBox}>
+                          <ResponsiveContainer width="100%" height={300}>
+                            <AreaChart data={timelineChart.data} margin={{ top: 8, right: 12, left: 0, bottom: 4 }}>
+                              <CartesianGrid stroke={GRID_STROKE} strokeDasharray="3 3" vertical={false} />
+                              <XAxis dataKey="day" tickFormatter={fmtAxisDay} tick={AXIS_TICK} minTickGap={20} tickLine={false} axisLine={{ stroke: GRID_STROKE }} />
+                              <YAxis tickFormatter={fmtAxisSeconds} tick={AXIS_TICK} width={40} tickLine={false} axisLine={false} />
+                              <Tooltip
+                                contentStyle={TOOLTIP_STYLE}
+                                labelStyle={{ color: '#D4D8DE' }}
+                                labelFormatter={label => fmtTooltipDay(String(label))}
+                                formatter={(value) => formatHours(Number(value))}
+                              />
+                              <Legend wrapperStyle={{ fontSize: 11, color: '#6A7A8C', paddingTop: 6 }} iconSize={9} />
+                              {timelineChart.devices.map((device, i) => (
+                                <Area
+                                  key={device}
+                                  type="monotone"
+                                  dataKey={device}
+                                  stackId="rec"
+                                  stroke={DEVICE_COLORS[i % DEVICE_COLORS.length]}
+                                  fill={DEVICE_COLORS[i % DEVICE_COLORS.length]}
+                                  fillOpacity={0.55}
+                                  strokeWidth={1.2}
+                                />
+                              ))}
+                            </AreaChart>
+                          </ResponsiveContainer>
+                        </div>
+                      )}
+                    </div>
+                  </Card>
+                </div>
+
                 <Card>
                   <div className={styles.chartBody}>
                     <div className={styles.chartTitle}>Инциденты по дням, 30д</div>
@@ -400,15 +399,13 @@ export function HomePage() {
                     )}
                   </div>
                 </Card>
-              )}
 
-              <div className={canViewIncidents ? undefined : styles.span2}>
                 <DiskCard disk={disk} />
               </div>
-            </div>
-          </>
-        )}
-      </section>
+            </>
+          )}
+        </section>
+      )}
     </Layout>
   );
 }
@@ -453,11 +450,11 @@ function DiskCard({ disk }: { disk: StatsDiskWire | undefined }) {
   );
 }
 
-function DashboardSkeleton({ canViewIncidents }: { canViewIncidents: boolean }) {
+function DashboardSkeleton() {
   return (
     <>
       <div className={styles.tiles}>
-        {Array.from({ length: canViewIncidents ? 7 : 6 }, (_, i) => (
+        {Array.from({ length: 7 }, (_, i) => (
           <div key={i} className={styles.tile}>
             <Skeleton width="55%" height={11} />
             <Skeleton width="70%" height={24} />
@@ -474,15 +471,13 @@ function DashboardSkeleton({ canViewIncidents }: { canViewIncidents: boolean }) 
             </div>
           </Card>
         </div>
-        {canViewIncidents && (
-          <Card>
-            <div className={styles.chartBody}>
-              <Skeleton width={160} height={13} />
-              <Skeleton width="100%" height={240} />
-            </div>
-          </Card>
-        )}
-        <div className={canViewIncidents ? undefined : styles.span2}>
+        <Card>
+          <div className={styles.chartBody}>
+            <Skeleton width={160} height={13} />
+            <Skeleton width="100%" height={240} />
+          </div>
+        </Card>
+        <div>
           <Card>
             <div className={styles.chartBody}>
               <Skeleton width={120} height={13} />

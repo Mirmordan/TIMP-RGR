@@ -21,7 +21,7 @@ function parseDays(raw: unknown, fallback: number): number {
  *     tags: [Stats]
  *     operationId: getOverview
  *     summary: Сводная статистика
- *     description: Агрегированная статистика по процессам, сегментам, инцидентам, устройствам и записи за сегодня (в пределах видимости пользователя).
+ *     description: Агрегированная статистика по процессам, сегментам, инцидентам, устройствам и записи за сегодня (в пределах видимости пользователя). Требуется capability admin:read.
  *     responses:
  *       '200':
  *         description: Сводная статистика
@@ -35,8 +35,14 @@ function parseDays(raw: unknown, fallback: number): number {
  *           application/json:
  *             schema:
  *               $ref: '#/components/schemas/Error'
+ *       '403':
+ *         description: Недостаточно прав (нужна capability admin:read)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  */
-statsRouter.get('/overview', async (_req: Request, res: Response) => {
+statsRouter.get('/overview', requireCapability('admin:read'), async (_req: Request, res: Response) => {
   const overview = await statsService.getOverview();
   res.json(overview);
 });
@@ -48,7 +54,7 @@ statsRouter.get('/overview', async (_req: Request, res: Response) => {
  *     tags: [Stats]
  *     operationId: getTimeline
  *     summary: Таймлайн записей по дням и устройствам
- *     description: Бакеты «день × устройство» с длительностью записей за последние N дней. Ответ — массив строк.
+ *     description: Бакеты «день × устройство» с длительностью записей за последние N дней. Ответ — массив строк. Требуется capability admin:read.
  *     parameters:
  *       - name: days
  *         in: query
@@ -73,8 +79,14 @@ statsRouter.get('/overview', async (_req: Request, res: Response) => {
  *           application/json:
  *             schema:
  *               $ref: '#/components/schemas/Error'
+ *       '403':
+ *         description: Недостаточно прав (нужна capability admin:read)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  */
-statsRouter.get('/timeline', async (req: Request, res: Response) => {
+statsRouter.get('/timeline', requireCapability('admin:read'), async (req: Request, res: Response) => {
   const days = parseDays(req.query.days, 14);
   const rows = await statsService.getTimeline(days);
   res.json(rows);
@@ -87,7 +99,7 @@ statsRouter.get('/timeline', async (req: Request, res: Response) => {
  *     tags: [Stats]
  *     operationId: getIncidentTimeline
  *     summary: Инциденты по дням и важности
- *     description: Бакеты «день × severity» с количеством инцидентов за последние N дней. Ответ — массив строк.
+ *     description: Бакеты «день × severity» с количеством инцидентов за последние N дней. Ответ — массив строк. Требуется capability admin:read.
  *     parameters:
  *       - name: days
  *         in: query
@@ -112,8 +124,14 @@ statsRouter.get('/timeline', async (req: Request, res: Response) => {
  *           application/json:
  *             schema:
  *               $ref: '#/components/schemas/Error'
+ *       '403':
+ *         description: Недостаточно прав (нужна capability admin:read)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  */
-statsRouter.get('/incidents', async (req: Request, res: Response) => {
+statsRouter.get('/incidents', requireCapability('admin:read'), async (req: Request, res: Response) => {
   const days = parseDays(req.query.days, 30);
   const rows = await statsService.getIncidentsTimeline(days);
   res.json(rows);

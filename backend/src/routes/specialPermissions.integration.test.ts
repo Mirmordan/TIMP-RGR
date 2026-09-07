@@ -24,6 +24,10 @@ const mocks = vi.hoisted(() => ({
   logAudit: vi.fn(),
   userGetAll: vi.fn(),
   deviceCreate: vi.fn(),
+  statsGetOverview: vi.fn(),
+  statsGetTimeline: vi.fn(),
+  statsGetIncidentsTimeline: vi.fn(),
+  statsGetDisk: vi.fn(),
 }));
 
 vi.mock('../security/acl', () => ({
@@ -61,6 +65,15 @@ vi.mock('../services/user.service', () => ({
 
 vi.mock('../services/device.service', () => ({
   deviceService: { create: (...a: unknown[]) => mocks.deviceCreate(...a) },
+}));
+
+vi.mock('../services/stats.service', () => ({
+  statsService: {
+    getOverview: (...a: unknown[]) => mocks.statsGetOverview(...a),
+    getTimeline: (...a: unknown[]) => mocks.statsGetTimeline(...a),
+    getIncidentsTimeline: (...a: unknown[]) => mocks.statsGetIncidentsTimeline(...a),
+    getDisk: (...a: unknown[]) => mocks.statsGetDisk(...a),
+  },
 }));
 
 import app from '../app';
@@ -138,6 +151,17 @@ describe('specialPermissions.integration (route-level, роли и спец-пр
       type: 'camera',
       createdAt: '2026-01-01T00:00:00.000Z',
     });
+    mocks.statsGetOverview.mockResolvedValue({
+      processes: { total: 0, running: 0 },
+      segments: { count: 0, durationS: 0, sizeBytes: 0 },
+      incidents: { total: 0, bySeverity: { info: 0, warning: 0, critical: 0 }, last24h: 0 },
+      devices: { visible: 0 },
+      topDevices: [],
+      recordingTodayS: 0,
+    });
+    mocks.statsGetTimeline.mockResolvedValue([]);
+    mocks.statsGetIncidentsTimeline.mockResolvedValue([]);
+    mocks.statsGetDisk.mockResolvedValue({ chunksBytes: null, freeBytes: null, totalBytes: null });
   });
 
   async function api(method: 'GET' | 'PUT' | 'POST' | 'PATCH' | 'DELETE', path: string, userId: string, body?: unknown) {
@@ -199,6 +223,56 @@ describe('specialPermissions.integration (route-level, роли и спец-пр
       expect((await api('GET', '/stats/disk', uid)).status).toBe(403);
       expect(mocks.findRoles).not.toHaveBeenCalled();
       expect(mocks.userGetAll).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('дашборд /stats (overview/timeline/incidents) требует admin:read', () => {
+    const overview = {
+      processes: { total: 3, running: 1 },
+      segments: { count: 42, durationS: 7200, sizeBytes: 1048576 },
+      incidents: { total: 2, bySeverity: { info: 1, warning: 1, critical: 0 }, last24h: 1 },
+      devices: { visible: 5 },
+      topDevices: [
+        { id: 'd1', name: 'cam-1', durationS: 3600 },
+        { id: 'd2', name: 'cam-2', durationS: 1800 },
+      ],
+      recordingTodayS: 900,
+    };
+
+    it('БЕЗ admin:read → 403 у всех трёх эндпоинтов и БЕЗ обращения к statsService', async () => {
+      const uid = 'u-stats-none';
+      grant(uid, ['camera:create']);
+      expect((await api('GET', '/stats/overview', uid)).status).toBe(403);
+      expect((await api('GET', '/stats/timeline?days=14', uid)).status).toBe(403);
+      expect((await api('GET', '/stats/incidents?days=30', uid)).status).toBe(403);
+      expect(mocks.statsGetOverview).not.toHaveBeenCalled();
+      expect(mocks.statsGetTimeline).not.toHaveBeenCalled();
+      expect(mocks.statsGetIncidentsTimeline).not.toHaveBeenCalled();
+    });
+
+    it('с admin:read → 200 и данные от statsService', async () => {
+      const uid = 'u-stats-admin';
+      grant(uid, ['admin:read']);
+      mocks.statsGetOverview.mockResolvedValue(overview);
+      mocks.statsGetTimeline.mockResolvedValue([
+        { day: '2026-01-01', device: 'cam-1', seconds: 3600 },
+      ]);
+      mocks.statsGetIncidentsTimeline.mockResolvedValue([
+        { day: '2026-01-01', severity: 'info', count: 1 },
+      ]);
+
+      const overviewRes = await api('GET', '/stats/overview', uid);
+      expect(overviewRes.status).toBe(200);
+      expect(overviewRes.body).toEqual(overview);
+      expect(mocks.statsGetOverview).toHaveBeenCalledTimes(1);
+
+      const timelineRes = await api('GET', '/stats/timeline?days=14', uid);
+      expect(timelineRes.status).toBe(200);
+      expect(mocks.statsGetTimeline).toHaveBeenCalledWith(14);
+
+      const incidentsRes = await api('GET', '/stats/incidents?days=30', uid);
+      expect(incidentsRes.status).toBe(200);
+      expect(mocks.statsGetIncidentsTimeline).toHaveBeenCalledWith(30);
     });
   });
 
