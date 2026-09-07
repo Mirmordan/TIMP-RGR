@@ -1,0 +1,12 @@
+# Оверлей для изолированного compose-теста параллельно с dev-стеком:
+# docker compose -p timp-compose-test -f docker-compose.yml -f docker-compose.test.yml up -d --build db mtx ffmpegmanager app
+# Порты хоста сдвинуты, чтобы не пересекаться с запущенным legacy (db 5432, mtx 8888/9997/...).
+services:
+  mtx:
+    ports: !reset
+      - "18554:8554"
+      - "11935:1935"
+      - "18888:8888"
+      - "19996:9996"
+      - "18997:9997"
+      - "19998:9998"
