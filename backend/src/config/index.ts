@@ -14,6 +14,14 @@ export const config = {
     jwtRefreshSecret: process.env.JWT_REFRESH_SECRET || 'dev-refresh-secret-change-me',
     accessTokenTtl: process.env.JWT_ACCESS_TTL || '30m',
     refreshTokenTtl: process.env.JWT_REFRESH_TTL || '30d',
+    /**
+     * Secure-флаг у сессионных cookie. По умолчанию как в прод (NODE_ENV=production),
+     * но управляется явно: COOKIE_SECURE=0/false — для деплоя по HTTP без TLS
+     * (иначе браузер выбрасывает cookie и сессия мгновенно падает на 401).
+     */
+    cookieSecure: process.env.COOKIE_SECURE
+      ? !['0', 'false'].includes(process.env.COOKIE_SECURE.trim().toLowerCase())
+      : process.env.NODE_ENV === 'production',
   },
   db: {
     host: process.env.DB_HOST || 'localhost',

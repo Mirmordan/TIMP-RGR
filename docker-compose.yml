@@ -43,6 +43,8 @@ services:
       FFMPEG_MANAGER_RECORD_ROOT: /data/chunks
       JWT_SECRET: ${JWT_SECRET:-dev-secret-change-me}
       JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-dev-refresh-secret-change-me}
+      # Secure-cookie: по умолчанию как в проде; для деплоя по HTTP без TLS — 0 (см. README)
+      COOKIE_SECURE: ${COOKIE_SECURE:-1}
       # Swagger UI в проде по умолчанию выключен: SWAGGER_ENABLED=1 docker compose up -d app
       SWAGGER_ENABLED: ${SWAGGER_ENABLED:-0}
     ports:

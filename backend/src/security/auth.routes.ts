@@ -6,23 +6,22 @@ import { userRepository } from '../repositories/user.repository';
 import { rbacRepository } from '../repositories/rbac.repository';
 import { pool } from '../database/connection';
 import { auditService } from '../services/audit.service';
+import { config } from '../config';
 import type { Role, Capability } from './types';
 
 export const authRouter = Router();
 
-const isProd = process.env.NODE_ENV === 'production';
-
 function setAuthCookies(res: Response, accessToken: string, refreshToken: string): void {
   res.cookie('access_token', accessToken, {
     httpOnly: true,
-    secure: isProd,
+    secure: config.security.cookieSecure,
     sameSite: 'lax',
     path: '/',
     maxAge: 30 * 60 * 1000, // 30 минут
   });
   res.cookie('refresh_token', refreshToken, {
     httpOnly: true,
-    secure: isProd,
+    secure: config.security.cookieSecure,
     sameSite: 'lax',
     path: '/',
     maxAge: 30 * 24 * 60 * 60 * 1000, // 30 дней
