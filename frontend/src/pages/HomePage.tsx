@@ -121,7 +121,7 @@ export function HomePage() {
     ];
     Promise.all(stats)
       .then(async ([overviewRes, timelineRes, incidentsRes, diskRes]) => {
-        const failed = [['overview', overviewRes], ['timeline', timelineRes], ['incidents', incidentsRes], ['disk', diskRes]]
+        const failed = ([['overview', overviewRes], ['timeline', timelineRes], ['incidents', incidentsRes], ['disk', diskRes]] as [string, Response][])
           .filter(([, r]) => !r?.ok)
           .map(([n, r]) => `${n}:${r?.status ?? '-'}`);
         if (failed.length) {
