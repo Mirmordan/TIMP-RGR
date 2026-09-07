@@ -3,7 +3,7 @@ services:
     build: web-server
     network_mode: host
     volumes:
-      - /home/mirmordan/Projects/TIMP-RGR/data:/data:ro
+      - ./data:/data:ro
 
   db:
     build: database
