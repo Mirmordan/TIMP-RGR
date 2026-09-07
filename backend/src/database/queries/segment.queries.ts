@@ -7,6 +7,9 @@
  */
 const segmentNameExpr = "COALESCE(NULLIF(o.name, ''), NULLIF(po.name, ''), NULLIF(so.name, ''), d.name)";
 const segmentDescExpr = "COALESCE(NULLIF(o.description, ''), po.description)";
+// Собственный override сегмента и имя ближайшего родителя (процесса).
+const segmentRawNameExpr = "NULLIF(o.name, '')";
+const segmentInheritedExpr = "COALESCE(NULLIF(po.name, ''), NULLIF(so.name, ''), d.name)";
 
 const segmentJoins = `
   JOIN objects o ON o.id = s.object_id
@@ -24,6 +27,8 @@ const segmentSelect = `
   s.file_count AS "fileCount", s.duration_s AS "durationS",
   s.size_bytes AS "sizeBytes",
   ${segmentNameExpr} AS "name",
+  ${segmentRawNameExpr} AS "rawName",
+  ${segmentInheritedExpr} AS "inheritedName",
   ${segmentDescExpr} AS "description",
   s.process_id AS "parentObjectId",
   o.created_at AS "createdAt"

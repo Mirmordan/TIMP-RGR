@@ -5,8 +5,11 @@
  * (recording_streams → recording_devices). Невидимый пользователю родитель не
  * отдаёт метаданных. parentObjectId = p.stream_id (уже видимое поле процесса).
  * Цепочка имени: objects процесса → objects потока (если поток виден) → device.
+ * name — эффективное; rawName — objects.name процесса (override);
+ * inheritedName — название родителя (потока: его override → device), видимое без override.
  */
 const processNameExpr = "COALESCE(NULLIF(po.name, ''), NULLIF(so.name, ''), d.name)";
+const processInheritedExpr = "COALESCE(NULLIF(so.name, ''), d.name)";
 
 const processSelect = `
   p.object_id AS "id",
@@ -15,6 +18,8 @@ const processSelect = `
   p.ended_at AS "endedAt",
   p.status,
   ${processNameExpr} AS "name",
+  NULLIF(po.name, '') AS "rawName",
+  ${processInheritedExpr} AS "inheritedName",
   po.description AS "description",
   p.stream_id AS "parentObjectId",
   po.created_at AS "createdAt"

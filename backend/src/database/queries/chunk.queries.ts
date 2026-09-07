@@ -7,6 +7,9 @@
  */
 const chunkNameExpr = "COALESCE(NULLIF(o.name, ''), NULLIF(po.name, ''), NULLIF(so.name, ''), d.name)";
 const chunkDescExpr = "COALESCE(NULLIF(o.description, ''), po.description)";
+// Собственный override чанка и имя ближайшего родителя (процесса).
+const chunkRawNameExpr = "NULLIF(o.name, '')";
+const chunkInheritedExpr = "COALESCE(NULLIF(po.name, ''), NULLIF(so.name, ''), d.name)";
 
 const chunkJoins = `
   JOIN objects o ON o.id = c.object_id
@@ -21,6 +24,8 @@ export const chunkQueries = {
   findById: `SELECT c.object_id AS "id", c.process_id AS "processId",
                     c.started_at AS "startedAt", c.ended_at AS "endedAt", c.url,
                     ${chunkNameExpr} AS "name",
+                    ${chunkRawNameExpr} AS "rawName",
+                    ${chunkInheritedExpr} AS "inheritedName",
                     ${chunkDescExpr} AS "description",
                     c.process_id AS "parentObjectId",
                     o.created_at AS "createdAt"
@@ -31,6 +36,8 @@ export const chunkQueries = {
   findAll: `SELECT c.object_id AS "id", c.process_id AS "processId",
                    c.started_at AS "startedAt", c.ended_at AS "endedAt", c.url,
                    ${chunkNameExpr} AS "name",
+                   ${chunkRawNameExpr} AS "rawName",
+                   ${chunkInheritedExpr} AS "inheritedName",
                    ${chunkDescExpr} AS "description",
                    c.process_id AS "parentObjectId",
                    o.created_at AS "createdAt"

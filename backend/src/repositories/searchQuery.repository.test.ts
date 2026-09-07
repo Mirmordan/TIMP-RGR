@@ -78,4 +78,18 @@ describe('поиск q: SQL-параметры списочных репозит
     await processRepository.count();
     expect(queryAs).toHaveBeenCalledWith(processQueries.count, [null]);
   });
+
+  it('SELECT отдаёт rawName и inheritedName (для форм: override vs наследуемое)', () => {
+    // stream: rawName = собственный objects.name потока, inheritedName = имя устройства.
+    expect(streamQueries.findById).toContain('NULLIF(o.name, \'\') AS "rawName"');
+    expect(streamQueries.findById).toContain('d.name AS "inheritedName"');
+
+    // process: rawName = objects.name процесса, inheritedName = имя потока/устройства.
+    expect(processQueries.findById).toContain('NULLIF(po.name, \'\') AS "rawName"');
+    expect(processQueries.findById).toContain('AS "inheritedName"');
+
+    // Эффективный name и legacy-поля по-прежнему на месте (для поиска/UI).
+    expect(streamQueries.findAll).toContain("s.url ILIKE '%' || $3 || '%'");
+    expect(streamQueries.findById).toContain("COALESCE(NULLIF(o.name, ''), d.name) AS \"name\"");
+  });
 });

@@ -31,6 +31,15 @@ export interface CommonObjectMeta {
   parentObjectId?: string | null;
 }
 
+/**
+ * Поля для форм редактирования: rawName — собственный objects.name (override,
+ * NULL = наследуется); inheritedName — имя ближайшего видимого родителя.
+ */
+export interface NameSourceFields {
+  rawName?: string | null;
+  inheritedName?: string | null;
+}
+
 export interface RecordingDevice extends CommonObjectMeta {
   id: string;
   name: string;
@@ -38,7 +47,7 @@ export interface RecordingDevice extends CommonObjectMeta {
   createdAt: Date;
 }
 
-export interface RecordingStream extends CommonObjectMeta {
+export interface RecordingStream extends CommonObjectMeta, NameSourceFields {
   id: string;
   url: string;
   deviceId?: string;
@@ -46,7 +55,7 @@ export interface RecordingStream extends CommonObjectMeta {
   createdAt: Date;
 }
 
-export interface RecordingProcess extends CommonObjectMeta {
+export interface RecordingProcess extends CommonObjectMeta, NameSourceFields {
   id: string;
   streamId: string;
   startedAt: Date;
@@ -55,7 +64,7 @@ export interface RecordingProcess extends CommonObjectMeta {
   createdAt: Date;
 }
 
-export interface RecordingChunk extends CommonObjectMeta {
+export interface RecordingChunk extends CommonObjectMeta, NameSourceFields {
   id: string;
   processId: string;
   startedAt: Date;
@@ -64,7 +73,7 @@ export interface RecordingChunk extends CommonObjectMeta {
   createdAt: Date;
 }
 
-export interface RecordingSegment extends CommonObjectMeta {
+export interface RecordingSegment extends CommonObjectMeta, NameSourceFields {
   id: string;
   processId: string;
   streamId: string;

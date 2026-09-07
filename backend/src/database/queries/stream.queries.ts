@@ -3,6 +3,9 @@
  * fail-closed: собственное — objects потока; унаследованное — только из
  * RLS-таблицы recording_devices (невидимое устройство не отдаёт название).
  * parentObjectId = s.device_id (уже видимое поле потока).
+ * name — эффективное (для UI): явный override потока или название устройства.
+ * rawName — собственный objects.name потока (NULL = нет override).
+ * inheritedName — название родителя (устройства), которое видно при отсутствии override.
  */
 const streamSelect = `
   s.object_id AS "id",
@@ -10,6 +13,8 @@ const streamSelect = `
   s.device_id AS "deviceId",
   s.source_fingerprint AS "sourceFingerprint",
   COALESCE(NULLIF(o.name, ''), d.name) AS "name",
+  NULLIF(o.name, '') AS "rawName",
+  d.name AS "inheritedName",
   o.description AS "description",
   s.device_id AS "parentObjectId",
   o.created_at AS "createdAt"
