@@ -40,18 +40,12 @@ export function ProcessEditPage() {
   const navigate = useNavigate();
 
   const [streamId, setStreamId] = useState<string | null>(null);
-  const [name, setName] = useState('');
-  const [description, setDescription] = useState('');
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
-    if (process) {
-      setStreamId(process.streamId);
-      setName(process.rawName ?? '');
-      setDescription(process.description ?? '');
-    }
+    if (process) setStreamId(process.streamId);
   }, [process]);
 
   async function handleSubmit(e: React.FormEvent) {
@@ -63,7 +57,12 @@ export function ProcessEditPage() {
       const r = await apiFetch(`/processes/${id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ streamId, name: name.trim() || null, description: description.trim() || null }),
+        body: JSON.stringify({
+          streamId,
+          // Запись не хранит собственное имя/описание; их источник — родительские объекты.
+          name: null,
+          description: null,
+        }),
       });
       if (!r.ok) {
         const d = await r.json().catch(() => ({}));
@@ -92,10 +91,6 @@ export function ProcessEditPage() {
 
   if (loading) return <Layout><div className={styles.loading}>Загрузка...</div></Layout>;
 
-  const namePlaceholder = process?.inheritedName
-    ? `Наследуется от потока: ${process.inheritedName}`
-    : 'Наследуется';
-
   return (
     <Layout>
       <DetailHeader
@@ -119,26 +114,13 @@ export function ProcessEditPage() {
             />
           </div>
           <div className={styles.field}>
-            <label className={styles.label}>Название</label>
-            <input
-              className={styles.input}
-              value={name}
-              onChange={e => setName(e.target.value)}
-              placeholder={namePlaceholder}
-            />
-            {!process?.rawName && (
-              <div className={styles.hint}>Своё название не задано — отображается название потока.</div>
-            )}
+            <label className={styles.label}>Название объекта</label>
+            <input className={styles.input} value={process?.name ?? ''} readOnly />
+            <div className={styles.hint}>Наследуется от выбранного потока.</div>
           </div>
           <div className={styles.field}>
-            <label className={styles.label}>Описание</label>
-            <textarea
-              className={styles.textarea}
-              value={description}
-              onChange={e => setDescription(e.target.value)}
-              placeholder="необязательно"
-              rows={3}
-            />
+            <label className={styles.label}>Описание объекта</label>
+            <textarea className={styles.textarea} value={process?.description ?? ''} readOnly rows={3} />
           </div>
           {error && <div className={styles.error}>{error}</div>}
           <div className={styles.formActions}>

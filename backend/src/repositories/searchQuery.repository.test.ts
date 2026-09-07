@@ -50,7 +50,7 @@ describe('поиск q: SQL-параметры списочных репозит
     expect(streamQueries.findAll).toContain("s.url ILIKE '%' || $3 || '%'");
     expect(streamQueries.findAll).toContain("objects_effective_name(o.id) ILIKE '%' || $3 || '%'");
     expect(streamQueries.findAll).toContain("o.description ILIKE '%' || $3 || '%'");
-    expect(streamQueries.findAll).toContain('objects_effective_name(parent.id) AS "inheritedName"');
+    expect(streamQueries.findAll).toContain('objects_effective_name(o.id) AS "name"');
     expect(streamQueries.count).toContain("s.url ILIKE '%' || $1 || '%'");
 
     await streamRepository.findAll(10, 0);
@@ -72,7 +72,7 @@ describe('поиск q: SQL-параметры списочных репозит
     expect(processQueries.findAll).toContain("s.url ILIKE '%' || $3 || '%'");
     expect(processQueries.findAll).toContain("objects_effective_name(po.id) ILIKE '%' || $3 || '%'");
     expect(processQueries.findAll).toContain("po.description ILIKE '%' || $3 || '%'");
-    expect(processQueries.findAll).toContain('objects_effective_name(parent.id) AS "inheritedName"');
+    expect(processQueries.findAll).toContain('objects_effective_name(po.id) AS "name"');
     expect(processQueries.count).toContain("objects_effective_name(po.id) ILIKE '%' || $1 || '%'");
 
     await processRepository.findAll(10, 0);
@@ -81,15 +81,16 @@ describe('поиск q: SQL-параметры списочных репозит
     expect(queryAs).toHaveBeenCalledWith(processQueries.count, [null]);
   });
 
-  it('SELECT отдаёт rawName и inheritedName (для форм: override vs наследуемое)', () => {
-    // stream: rawName = собственный objects.name потока, inheritedName — имя родителя.
-    expect(streamQueries.findById).toContain('NULLIF(o.name, \'\') AS "rawName"');
-    expect(streamQueries.findById).toContain('objects_effective_name(parent.id) AS "inheritedName"');
+  it('SELECT отдаёт единое эффективное name и parentType (собственного raw-поля нет)', () => {
+    // stream/process используют только objects-иерархию; name уже резолвится helper-ем.
+    expect(streamQueries.findById).toContain('objects_effective_name(o.id) AS "name"');
     expect(streamQueries.findById).toContain('parent.type AS "parentType"');
+    expect(streamQueries.findById).not.toContain('rawName');
+    expect(streamQueries.findById).not.toContain('inheritedName');
 
-    // process: rawName = objects.name процесса, inheritedName — имя потока.
-    expect(processQueries.findById).toContain('NULLIF(po.name, \'\') AS "rawName"');
-    expect(processQueries.findById).toContain('objects_effective_name(parent.id) AS "inheritedName"');
+    expect(processQueries.findById).toContain('objects_effective_name(po.id) AS "name"');
     expect(processQueries.findById).toContain('parent.type AS "parentType"');
+    expect(processQueries.findById).not.toContain('rawName');
+    expect(processQueries.findById).not.toContain('inheritedName');
   });
 });

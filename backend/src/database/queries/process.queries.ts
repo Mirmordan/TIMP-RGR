@@ -14,8 +14,6 @@ const processSelect = `
   p.ended_at AS "endedAt",
   p.status,
   ${processNameExpr} AS "name",
-  NULLIF(po.name, '') AS "rawName",
-  objects_effective_name(parent.id) AS "inheritedName",
   po.description AS "description",
   po.parent_id AS "parentObjectId",
   parent.type AS "parentType",

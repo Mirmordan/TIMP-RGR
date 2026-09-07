@@ -24,39 +24,36 @@ export const deviceRepository = {
       const { rows: objRows } = await client.query<{ objectId: string }>(deviceQueries.insert, [name, description]);
       const objectId = objRows[0]?.objectId;
       if (!objectId) throw new Error('объект не создан');
-      // recording_devices.name — синхронное зеркало (RLS-домен, legacy API).
-      const { rows } = await client.query<RecordingDevice>(deviceQueries.insertDevice, [objectId, name, type]);
-      return rows[0]!;
+      const { rows: deviceRows } = await client.query<Pick<RecordingDevice, 'id' | 'type'>>(
+        deviceQueries.insertDevice, [objectId, type]);
+      return deviceRows[0] as unknown as RecordingDevice;
     });
   },
 
   async put(id: string, name: string, type: string, description: string | null = null): Promise<RecordingDevice | null> {
     return inUserContext(async (client) => {
-      const { rows } = await client.query<RecordingDevice>(deviceQueries.putDevice, [name, type, id]);
+      const { rows } = await client.query<Pick<RecordingDevice, 'id' | 'type'>>(deviceQueries.putDevice, [type, id]);
       const device = rows[0];
       if (!device) return null;
-      // PUT = полная замена: перезаписываем и name, и description (null — очистить).
+      // PUT = полная замена общих метаданных objects.name/description.
       await client.query(deviceQueries.setMeta, [name, description, id]);
-      return device;
+      return device as unknown as RecordingDevice;
     });
   },
 
   async patch(id: string, patch: { name?: string; type?: string; description?: string | null }): Promise<RecordingDevice | null> {
     return inUserContext(async (client) => {
-      const { rows } = await client.query<RecordingDevice>(
-        deviceQueries.patchDevice,
-        [patch.name ?? null, patch.type ?? null, id],
-      );
+      const { rows } = await client.query<Pick<RecordingDevice, 'id' | 'type'>>(
+        deviceQueries.patchDevice, [patch.type ?? null, id]);
       const device = rows[0];
       if (!device) return null;
-      // name зеркалим в objects (супертип), description — точечно в objects.
       if (patch.name !== undefined) {
         await client.query(deviceQueries.setMetaName, [patch.name, id]);
       }
       if (patch.description !== undefined) {
         await client.query(deviceQueries.setMetaDescription, [patch.description, id]);
       }
-      return device;
+      return device as unknown as RecordingDevice;
     });
   },
 

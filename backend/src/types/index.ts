@@ -22,24 +22,14 @@ export interface UserInput {
 
 /**
  * Общие поля супертипа objects, наследуемые доменными сущностями.
- * name/description — эффективные (резолвятся по цепочке parent_id);
- * parentObjectId — id родительского объекта (objects.parent_id);
- * parentType — тип родительского объекта (device/stream/process), NULL для корня.
+ * name/description — резолвятся objects_effective_name/description по parent_id;
+ * отдельного «своего» имени в доменных сущностях нет.
  */
 export interface CommonObjectMeta {
   name?: string | null;
   description?: string | null;
   parentObjectId?: string | null;
   parentType?: string | null;
-}
-
-/**
- * Поля для форм редактирования: rawName — собственный objects.name (override,
- * NULL = наследуется); inheritedName — имя ближайшего видимого родителя.
- */
-export interface NameSourceFields {
-  rawName?: string | null;
-  inheritedName?: string | null;
 }
 
 export interface RecordingDevice extends CommonObjectMeta {
@@ -49,7 +39,7 @@ export interface RecordingDevice extends CommonObjectMeta {
   createdAt: Date;
 }
 
-export interface RecordingStream extends CommonObjectMeta, NameSourceFields {
+export interface RecordingStream extends CommonObjectMeta {
   id: string;
   url: string;
   deviceId?: string;
@@ -57,7 +47,7 @@ export interface RecordingStream extends CommonObjectMeta, NameSourceFields {
   createdAt: Date;
 }
 
-export interface RecordingProcess extends CommonObjectMeta, NameSourceFields {
+export interface RecordingProcess extends CommonObjectMeta {
   id: string;
   streamId: string;
   startedAt: Date;
@@ -66,7 +56,7 @@ export interface RecordingProcess extends CommonObjectMeta, NameSourceFields {
   createdAt: Date;
 }
 
-export interface RecordingChunk extends CommonObjectMeta, NameSourceFields {
+export interface RecordingChunk extends CommonObjectMeta {
   id: string;
   processId: string;
   startedAt: Date;
@@ -75,7 +65,7 @@ export interface RecordingChunk extends CommonObjectMeta, NameSourceFields {
   createdAt: Date;
 }
 
-export interface RecordingSegment extends CommonObjectMeta, NameSourceFields {
+export interface RecordingSegment extends CommonObjectMeta {
   id: string;
   processId: string;
   streamId: string;

@@ -574,42 +574,69 @@ export const rbacRepository = {
     return rows[0] ?? null;
   },
 
-  /** Сколько прав и объектов висят на группе (для guard при удалении). */
-  async countGroupUsage(groupId: string): Promise<{ permissions: number; members: number }> {
-    const { rows } = await pool.query<{ permissions: number; members: number }>(
+  /** Сколько прав, членов и прямых выдач висит на группе (для guard при удалении). */
+  async countGroupUsage(groupId: string): Promise<{ permissions: number; members: number; directGrants: number }> {
+    const { rows } = await pool.query<{ permissions: number; members: number; directGrants: number }>(
       `SELECT (SELECT count(*)::int FROM permissions p WHERE p.group_id = $1) AS "permissions",
-              (SELECT count(*)::int FROM group_members gm WHERE gm.group_id = $1) AS "members"`,
+              (SELECT count(*)::int FROM group_members gm WHERE gm.group_id = $1) AS "members",
+              (SELECT count(*)::int FROM role_object_grants g WHERE g.object_id = $1) AS "directGrants"`,
       [groupId],
     );
-    return { permissions: rows[0]?.permissions ?? 0, members: rows[0]?.members ?? 0 };
+    return {
+      permissions: rows[0]?.permissions ?? 0,
+      members: rows[0]?.members ?? 0,
+      directGrants: rows[0]?.directGrants ?? 0,
+    };
   },
 
-async createGroup(name: string): Promise<RbacGroup> {
-    const { rows } = await pool.query<RbacGroup>(
-      `INSERT INTO groups (name) VALUES ($1)
-       RETURNING id, name, false AS "isSystem", 0::int AS "objectCount"`,
-      [name],
-    );
-    const row = rows[0];
-    if (!row) throw new Error('группа не создана');
-    return row;
+  async createGroup(name: string): Promise<RbacGroup> {
+    return withTransaction(async (client) => {
+      const { rows } = await client.query<{ id: string; name: string; isSystem: boolean }>(
+        `INSERT INTO groups (name) VALUES ($1)
+         RETURNING id, name, false AS "isSystem"`,
+        [name],
+      );
+      const row = rows[0];
+      if (!row) throw new Error('группа не создана');
+      await client.query(
+        `INSERT INTO objects (id, type, name, description, parent_id)
+         VALUES ($1, 'group', $2, NULL,
+                 'aaaaaaaa-0000-0000-0000-000000000001')`,
+        [row.id, row.name],
+      );
+      return { ...row, objectCount: 0 };
+    });
   },
 
   async renameGroup(id: string, name: string): Promise<RbacGroup | null> {
-    const { rows } = await pool.query<RbacGroup>(
-      `UPDATE groups SET name = $1 WHERE id = $2
-       RETURNING id,
-                name,
-                is_system AS "isSystem",
-                (SELECT count(*)::int FROM group_members gm WHERE gm.group_id = groups.id) AS "objectCount"`,
-      [name, id],
-    );
-    return rows[0] ?? null;
+    return withTransaction(async (client) => {
+      const { rows } = await client.query<RbacGroup>(
+        `UPDATE groups SET name = $1 WHERE id = $2
+         RETURNING id, name, is_system AS "isSystem", 0::int AS "objectCount"`,
+        [name, id],
+      );
+      const updated = rows[0];
+      if (!updated) return null;
+      await client.query(
+        `UPDATE objects SET name = $2
+         WHERE id = $1 AND type = 'group'`,
+        [id, name],
+      );
+      const count = (await client.query<{ count: number }>(
+        "SELECT count(*)::int AS count FROM group_members WHERE group_id = $1",
+        [id],
+      )).rows[0];
+      return { ...updated, objectCount: count?.count ?? 0 };
+    });
   },
 
   async deleteGroup(id: string): Promise<boolean> {
-    const result = await pool.query('DELETE FROM groups WHERE id = $1', [id]);
-    return (result.rowCount ?? 0) > 0;
+    return withTransaction(async (client) => {
+      const deleted = await client.query('DELETE FROM groups WHERE id = $1', [id]);
+      if ((deleted.rowCount ?? 0) === 0) return false;
+      await client.query("DELETE FROM objects WHERE id = $1 AND type = 'group'", [id]);
+      return true;
+    });
   },
 
   /** Заменить состав объектов группы (транзакция: DELETE + INSERT). */

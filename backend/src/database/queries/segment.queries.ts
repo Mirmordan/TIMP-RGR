@@ -9,8 +9,6 @@ const segmentNameExpr = "objects_effective_name(o.id)";
 // Описание сегмента: собственное или унаследованное через objects-иерархию
 // (fail-closed: нечитаемый родитель не отдаёт описание).
 const segmentDescExpr = "objects_effective_description(o.id)";
-const segmentRawNameExpr = "NULLIF(o.name, '')";
-
 const segmentJoins = `
   JOIN objects o ON o.id = s.object_id
   LEFT JOIN objects parent ON parent.id = o.parent_id
@@ -23,8 +21,6 @@ const segmentSelect = `
   s.file_count AS "fileCount", s.duration_s AS "durationS",
   s.size_bytes AS "sizeBytes",
   ${segmentNameExpr} AS "name",
-  ${segmentRawNameExpr} AS "rawName",
-  objects_effective_name(parent.id) AS "inheritedName",
   ${segmentDescExpr} AS "description",
   o.parent_id AS "parentObjectId",
   parent.type AS "parentType",

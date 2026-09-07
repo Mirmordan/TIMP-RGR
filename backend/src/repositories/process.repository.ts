@@ -1,5 +1,6 @@
 import type { RecordingProcess } from '../types';
 import { queryAs, inUserContext } from '../security/dbBridge';
+import { invalidateObjectHierarchy } from '../security/acl';
 import { processQueries } from '../database/queries/process.queries';
 import type { EntityMeta, EntityMetaPatch } from '../services/entityMeta';
 
@@ -55,22 +56,23 @@ export const processRepository = {
   },
 
   async put(id: string, streamId: string, startedAt: Date, endedAt: Date | null, status: string, meta: EntityMeta = { name: null, description: null }): Promise<RecordingProcess | null> {
-    return inUserContext(async (client) => {
+    const process = await inUserContext(async (client) => {
       const { rows } = await client.query<RecordingProcess>(processQueries.putProcess, [
         streamId, startedAt.toISOString(), endedAt?.toISOString() ?? null, status, id,
       ]);
-      const process = rows[0];
-      if (!process) return null;
+      if (!rows[0]) return null;
       // Синхронизируем родителя в супертипе при смене потока.
       await client.query(processQueries.setParent, [streamId, id]);
       // PUT = полная замена: перезаписываем и общие метаданные (null name = наследование).
       await client.query(processQueries.setMeta, [meta.name, meta.description, id]);
-      return process;
+      return rows[0];
     });
+    if (process) invalidateObjectHierarchy(id);
+    return process;
   },
 
   async patch(id: string, patch: { streamId?: string; startedAt?: Date; endedAt?: Date; endedAtClear?: boolean; status?: string } & EntityMetaPatch): Promise<RecordingProcess | null> {
-    return inUserContext(async (client) => {
+    const process = await inUserContext(async (client) => {
       const { rows } = await client.query<RecordingProcess>(
         processQueries.patchProcess,
         [
@@ -82,8 +84,7 @@ export const processRepository = {
           id,
         ],
       );
-      const process = rows[0];
-      if (!process) return null;
+      if (!rows[0]) return null;
       if (patch.streamId !== undefined) {
         await client.query(processQueries.setParent, [patch.streamId ?? null, id]);
       }
@@ -94,8 +95,10 @@ export const processRepository = {
       if (patch.description !== undefined) {
         await client.query(processQueries.setMetaDescription, [patch.description ?? null, id]);
       }
-      return process;
+      return rows[0];
     });
+    if (process) invalidateObjectHierarchy(id);
+    return process;
   },
 
   async deleteById(id: string): Promise<boolean> {

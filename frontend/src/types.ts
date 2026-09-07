@@ -16,17 +16,9 @@ export interface RecordingDevice {
   createdAt: string;
 }
 
-/**
- * Общие поля супертипа objects, которые возвращают GET-списки/детали:
- * name — эффективное название (собственное или унаследованное от родителя);
- * rawName — собственный objects.name (override; null = наследуется);
- * inheritedName — имя ближайшего родителя, видимое при отсутствии override;
- * parentObjectId — id родителя в иерархии objects.
- */
+/** Общие объекты доступа: name/description принадлежат objects, родительские значения наследуются. */
 interface CommonMetaFields {
   name: string | null;
-  rawName: string | null;
-  inheritedName: string | null;
   description: string | null;
   parentObjectId: string | null;
 }
@@ -59,8 +51,6 @@ export interface RecordingSegment {
   durationS: number;
   sizeBytes: string;
   name?: string | null;
-  rawName?: string | null;
-  inheritedName?: string | null;
   description?: string | null;
   parentObjectId?: string | null;
   createdAt: string;

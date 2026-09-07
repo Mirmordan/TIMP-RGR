@@ -9,8 +9,6 @@ const chunkNameExpr = "objects_effective_name(o.id)";
 // Описание чанка: собственное или унаследованное через objects-иерархию
 // (fail-closed: нечитаемый родитель не отдаёт описание).
 const chunkDescExpr = "objects_effective_description(o.id)";
-const chunkRawNameExpr = "NULLIF(o.name, '')";
-
 const chunkJoins = `
   JOIN objects o ON o.id = c.object_id
   LEFT JOIN objects parent ON parent.id = o.parent_id
@@ -20,8 +18,6 @@ const chunkSelect = `
   c.object_id AS "id", c.process_id AS "processId",
   c.started_at AS "startedAt", c.ended_at AS "endedAt", c.url,
   ${chunkNameExpr} AS "name",
-  ${chunkRawNameExpr} AS "rawName",
-  objects_effective_name(parent.id) AS "inheritedName",
   ${chunkDescExpr} AS "description",
   o.parent_id AS "parentObjectId",
   parent.type AS "parentType",

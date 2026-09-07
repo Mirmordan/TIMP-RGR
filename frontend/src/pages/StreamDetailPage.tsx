@@ -28,12 +28,9 @@ export function StreamDetailPage() {
       <Card>
         <DetailGrid>
           <InfoRow label="Название">{stream.name ?? '—'}</InfoRow>
-          <InfoRow label="Своё название">
-            {stream.rawName ?? (stream.inheritedName ? `— (наследуется: ${stream.inheritedName})` : '— (наследуется)')}
-          </InfoRow>
           <InfoRow label="Описание">{stream.description ?? '—'}</InfoRow>
           <InfoRow label="URL">{stream.url}</InfoRow>
-          <InfoRow label="Устройство">{stream.inheritedName ?? (stream.deviceId ? '—' : 'Не привязано')}</InfoRow>
+          <InfoRow label="Родительский объект" mono>{stream.parentObjectId ?? '—'}</InfoRow>
           <InfoRow label="Устройство (ID)" mono>{stream.deviceId ?? '—'}</InfoRow>
           <InfoRow label="Fingerprint" mono>{stream.sourceFingerprint ?? '—'}</InfoRow>
           <InfoRow label="ID" mono>{stream.id}</InfoRow>

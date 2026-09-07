@@ -1,5 +1,6 @@
 import type { RecordingStream } from '../types';
 import { queryAs, inUserContext } from '../security/dbBridge';
+import { invalidateObjectHierarchy } from '../security/acl';
 import { streamQueries } from '../database/queries/stream.queries';
 import type { EntityMeta, EntityMetaPatch } from '../services/entityMeta';
 
@@ -32,26 +33,26 @@ export const streamRepository = {
   },
 
   async put(id: string, url: string, deviceId?: string, sourceFingerprint?: string, meta: EntityMeta = { name: null, description: null }): Promise<RecordingStream | null> {
-    return inUserContext(async (client) => {
+    const stream = await inUserContext(async (client) => {
       const { rows } = await client.query<RecordingStream>(streamQueries.putStream, [url, deviceId ?? null, sourceFingerprint ?? null, id]);
-      const stream = rows[0];
-      if (!stream) return null;
+      if (!rows[0]) return null;
       // Синхронизируем родителя в супертипе при смене устройства потока.
       await client.query(streamQueries.setParent, [deviceId ?? null, id]);
       // PUT = полная замена: перезаписываем и общие метаданные (null name = наследование).
       await client.query(streamQueries.setMeta, [meta.name, meta.description, id]);
-      return stream;
+      return rows[0];
     });
+    if (stream) invalidateObjectHierarchy(id);
+    return stream;
   },
 
   async patch(id: string, patch: { url?: string; deviceId?: string; sourceFingerprint?: string } & EntityMetaPatch): Promise<RecordingStream | null> {
-    return inUserContext(async (client) => {
+    const stream = await inUserContext(async (client) => {
       const { rows } = await client.query<RecordingStream>(
         streamQueries.patchStream,
         [patch.url ?? null, patch.deviceId ?? null, patch.sourceFingerprint ?? null, id],
       );
-      const stream = rows[0];
-      if (!stream) return null;
+      if (!rows[0]) return null;
       if (patch.deviceId !== undefined) {
         await client.query(streamQueries.setParent, [patch.deviceId ?? null, id]);
       }
@@ -62,8 +63,10 @@ export const streamRepository = {
       if (patch.description !== undefined) {
         await client.query(streamQueries.setMetaDescription, [patch.description ?? null, id]);
       }
-      return stream;
+      return rows[0];
     });
+    if (stream) invalidateObjectHierarchy(id);
+    return stream;
   },
 
   async deleteById(id: string): Promise<boolean> {

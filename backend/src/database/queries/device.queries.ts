@@ -1,7 +1,6 @@
 /**
- * Устройство — корень иерархии объектов (parent_id = NULL): name/description
- * из супертипа objects (objects.name — полный владелец; recording_devices.name —
- * синхронное зеркало для legacy/RBAC). parentType не используется.
+ * Название и описание устройства живут только в objects(name/description).
+ * Доменная таблица recording_devices хранит технические поля (тип), не имя.
  */
 const deviceSelect = `
   d.object_id AS "id",
@@ -21,7 +20,7 @@ export const deviceQueries = {
             FROM recording_devices d
             JOIN objects o ON o.id = d.object_id
             WHERE ($3::text IS NULL
-                   OR objects_effective_name(o.id) ILIKE '%' || $3 || '%'
+                    OR objects_effective_name(o.id) ILIKE '%' || $3 || '%'
                    OR o.description ILIKE '%' || $3 || '%'
                    OR o.id::text ILIKE '%' || $3 || '%')
             ORDER BY o.created_at DESC
@@ -31,30 +30,25 @@ export const deviceQueries = {
           FROM recording_devices d
           JOIN objects o ON o.id = d.object_id
           WHERE ($1::text IS NULL
-                 OR objects_effective_name(o.id) ILIKE '%' || $1 || '%'
+                  OR objects_effective_name(o.id) ILIKE '%' || $1 || '%'
                  OR o.description ILIKE '%' || $1 || '%'
                  OR o.id::text ILIKE '%' || $1 || '%')`,
 
-  // Общие метаданные (name/description) — полный владелец objects; recording_devices.name
-  // остаётся синхронным зеркалом (для RLS-наследования и столбца NOT NULL):
-  // пишется одновременно с objects.name в одном репозитории/транзакции.
+  // Общие метаданные устройства — единственный носитель: objects(name/description).
   // owner_id проставляется из контекста запроса (кто создал — тот видит).
   insert: `INSERT INTO objects (type, name, description, owner_id)
            VALUES ('device', $1, $2, NULLIF(current_setting('app.user_id', true), '')::UUID)
            RETURNING id AS "objectId"`,
 
-  insertDevice: `INSERT INTO recording_devices (object_id, name, type) VALUES ($1, $2, $3)
-                 RETURNING object_id AS "id", name, type`,
+  insertDevice: `INSERT INTO recording_devices (object_id, type) VALUES ($1, $2)
+                 RETURNING object_id AS "id", type`,
 
-  putDevice: `UPDATE recording_devices SET name = $1, type = $2 WHERE object_id = $3
-              RETURNING object_id AS "id", name, type`,
+  putDevice: `UPDATE recording_devices SET type = $1 WHERE object_id = $2
+              RETURNING object_id AS "id", type`,
 
-  // NULL = не менять поле; передаём null для тех, что без изменений
-  patchDevice: `UPDATE recording_devices
-                SET name = COALESCE($1, name),
-                    type = COALESCE($2, type)
-                WHERE object_id = $3
-                RETURNING object_id AS "id", name, type`,
+  patchDevice: `UPDATE recording_devices SET type = COALESCE($1, type)
+                WHERE object_id = $2
+                RETURNING object_id AS "id", type`,
 
   // Точная перезапись общих метаданных устройства (PUT и осознанный PATCH).
   setMeta: `UPDATE objects SET name = $1, description = $2 WHERE id = $3`,

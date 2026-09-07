@@ -183,9 +183,6 @@ export function ProcessDetailPage() {
             {isRunning && <span className={styles.liveIndicator}>● LIVE</span>}
           </InfoRow>
           <InfoRow label="Название">{process.name ?? '—'}</InfoRow>
-          <InfoRow label="Своё название">
-            {process.rawName ?? (process.inheritedName ? `— (наследуется: ${process.inheritedName})` : '— (наследуется)')}
-          </InfoRow>
           <InfoRow label="Описание">{process.description ?? '—'}</InfoRow>
           <InfoRow label="Поток" mono>{process.streamId}</InfoRow>
           <InfoRow label="Старт">{new Date(process.startedAt).toLocaleString('ru-RU')}</InfoRow>

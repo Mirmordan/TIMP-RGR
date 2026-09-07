@@ -376,10 +376,10 @@ async deleteGroup(id: string, actor: AuditActor): Promise<void> {
     if (group.isSystem) throw new HttpError(400, 'системную группу удалять нельзя');
 
     const usage = await rbacRepository.countGroupUsage(id);
-    if (usage.permissions > 0 || usage.members > 0) {
+    if (usage.permissions > 0 || usage.members > 0 || usage.directGrants > 0) {
       throw new HttpError(
         409,
-        `группа используется: ${usage.permissions} прав, ${usage.members} объектов`,
+        `группа используется: ${usage.permissions} прав, ${usage.members} объектов, ${usage.directGrants} прямых выдач`,
       );
     }
     const deleted = await rbacRepository.deleteGroup(id);

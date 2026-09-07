@@ -35,11 +35,6 @@ const columns: Column<Stream>[] = [
     ),
   },
   { key: 'url', header: 'Источник', render: v => truncate(v as string) },
-  {
-    key: 'inheritedName',
-    header: 'Устройство',
-    render: (v, row) => (v as string) ?? (row.deviceId ? `#${row.deviceId.slice(0, 8)}` : '—'),
-  },
   { key: 'id', header: 'ID', mono: true },
 ];
 

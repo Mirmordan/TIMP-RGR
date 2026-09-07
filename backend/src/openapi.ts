@@ -127,19 +127,7 @@ const definition = {
             nullable: true,
             description: 'Эффективное название: собственное (objects.name) или унаследованное от устройства.',
           },
-          rawName: {
-            type: 'string',
-            nullable: true,
-            description:
-              'Собственное название потока (objects.name, явный override). ' +
-              'NULL/пусто — своего названия нет, отображается наследуемое (inheritedName).',
-          },
-          inheritedName: {
-            type: 'string',
-            nullable: true,
-            description: 'Название родителя (устройства) — то, что видно при отсутствии собственного override.',
-          },
-          description: { type: 'string', nullable: true, description: 'Описание (общее поле objects).' },
+          description: { type: 'string', nullable: true, description: 'Эффективное описание объекта (резолвится по parent_id).' },
           parentObjectId: {
             type: 'string',
             nullable: true,
@@ -191,20 +179,7 @@ const definition = {
             nullable: true,
             description: 'Эффективное название записи (собственное или унаследованное от потока/устройства).',
           },
-          rawName: {
-            type: 'string',
-            nullable: true,
-            description:
-              'Собственное название записи (objects.name, явный override). ' +
-              'NULL/пусто — своего названия нет, отображается наследуемое (inheritedName).',
-          },
-          inheritedName: {
-            type: 'string',
-            nullable: true,
-            description:
-              'Название родителя (потока: его override или имя устройства) — то, что видно при отсутствии собственного override.',
-          },
-          description: { type: 'string', nullable: true, description: 'Описание (общее поле objects).' },
+          description: { type: 'string', nullable: true, description: 'Эффективное описание объекта (резолвится по parent_id).' },
           parentObjectId: {
             type: 'string',
             nullable: true,
@@ -227,17 +202,7 @@ const definition = {
           startedAt: { type: 'string', format: 'date-time' },
           endedAt: { type: 'string', format: 'date-time' },
           url: { type: 'string' },
-          name: { type: 'string', nullable: true, description: 'Эффективное название (унаследованное).' },
-          rawName: {
-            type: 'string',
-            nullable: true,
-            description: 'Собственное название чанка (objects.name); обычно NULL.',
-          },
-          inheritedName: {
-            type: 'string',
-            nullable: true,
-            description: 'Название ближайшего родителя (процесса/потока/устройства).',
-          },
+          name: { type: 'string', nullable: true, description: 'Эффективное имя объекта.' },
           description: { type: 'string', nullable: true },
           parentObjectId: { type: 'string', nullable: true, description: 'ID родительского объекта (процесса).' },
           parentType: {
@@ -271,17 +236,7 @@ const definition = {
           fileCount: { type: 'integer' },
           durationS: { type: 'number', description: 'Длительность, секунды.' },
           sizeBytes: { type: 'integer' },
-          name: { type: 'string', nullable: true, description: 'Эффективное название (унаследованное).' },
-          rawName: {
-            type: 'string',
-            nullable: true,
-            description: 'Собственное название сегмента (objects.name); обычно NULL.',
-          },
-          inheritedName: {
-            type: 'string',
-            nullable: true,
-            description: 'Название ближайшего родителя (процесса/потока/устройства).',
-          },
+          name: { type: 'string', nullable: true, description: 'Эффективное имя объекта.' },
           description: { type: 'string', nullable: true },
           parentObjectId: { type: 'string', nullable: true, description: 'ID родительского объекта (процесса).' },
           parentType: {
@@ -679,14 +634,8 @@ const definition = {
         properties: {
           id: { type: 'string', description: 'UUID объекта (objects.id).' },
           type: { type: 'string', nullable: true, description: 'Тип объекта (device/stream/process/segment/chunk/incident).' },
-          name: { type: 'string', nullable: true, description: 'Эффективное название объекта.' },
-          rawName: { type: 'string', nullable: true, description: 'Собственный objects.name (override).' },
-          inheritedName: {
-            type: 'string',
-            nullable: true,
-            description: 'Название родителя (если своего override нет).',
-          },
-          description: { type: 'string', nullable: true, description: 'Описание объекта.' },
+          name: { type: 'string', nullable: true, description: 'Эффективное название объекта (собственное или унаследованное от parent).' },
+          description: { type: 'string', nullable: true, description: 'Эффективное описание объекта.' },
           parentObjectId: {
             type: 'string',
             nullable: true,

@@ -1,5 +1,6 @@
 import type { RecordingChunk } from '../types';
 import { queryAs, inUserContext } from '../security/dbBridge';
+import { invalidateObjectHierarchy } from '../security/acl';
 import { chunkQueries } from '../database/queries/chunk.queries';
 
 export const chunkRepository = {
@@ -32,19 +33,20 @@ export const chunkRepository = {
   },
 
   async put(id: string, processId: string, startedAt: Date, endedAt: Date, url: string): Promise<RecordingChunk | null> {
-    return inUserContext(async (client) => {
+    const chunk = await inUserContext(async (client) => {
       const { rows } = await client.query<RecordingChunk>(chunkQueries.put, [
         processId, startedAt.toISOString(), endedAt.toISOString(), url, id,
       ]);
-      const chunk = rows[0];
-      if (!chunk) return null;
+      if (!rows[0]) return null;
       await client.query(chunkQueries.setParent, [processId, id]);
-      return chunk;
+      return rows[0];
     });
+    if (chunk) invalidateObjectHierarchy(id);
+    return chunk;
   },
 
   async patch(id: string, patch: { processId?: string; startedAt?: Date; endedAt?: Date; url?: string }): Promise<RecordingChunk | null> {
-    return inUserContext(async (client) => {
+    const chunk = await inUserContext(async (client) => {
       const { rows } = await client.query<RecordingChunk>(
         chunkQueries.patch,
         [
@@ -55,13 +57,14 @@ export const chunkRepository = {
           id,
         ],
       );
-      const chunk = rows[0];
-      if (!chunk) return null;
+      if (!rows[0]) return null;
       if (patch.processId !== undefined) {
         await client.query(chunkQueries.setParent, [patch.processId, id]);
       }
-      return chunk;
+      return rows[0];
     });
+    if (chunk) invalidateObjectHierarchy(id);
+    return chunk;
   },
 
   async deleteById(id: string): Promise<boolean> {

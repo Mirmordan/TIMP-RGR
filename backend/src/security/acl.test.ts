@@ -15,49 +15,23 @@ import {
 
 const poolQuery = pool.query as unknown as Mock;
 
-const IS_ADMIN_RE = /r\.name = 'admin'/;
-const PERMS_RE = /FROM permissions p/;
-const OBJ_GROUPS_RE = /object_id = \$1/;
+const OBJECT_CAN_RE = /object_can\(/;
 const CAPABILITIES_RE = /role_capabilities/;
-const OWNER_RE = /FROM objects WHERE id = \$1/;
-const DIRECT_GRANTS_RE = /role_object_grants/;
-const SYSTEM_GROUPS_RE = /is_system = true/;
+const IS_ADMIN_RE = /r\.name = 'admin'/;
 
 interface SeedRows {
   adminExists?: boolean;
-  perms?: Array<{ groupId: string; action: string }>;
-  objGroups?: string[];
   capabilities?: string[];
-  ownerId?: string | null;
-  directGrants?: Array<{ objectId: string; action: string }>;
-  systemGroupIds?: string[];
 }
 
-/** Настроить pool.query: отдаём строки в зависимости от текста SQL. */
 function seed(rows: SeedRows = {}): void {
   poolQuery.mockImplementation((sql: unknown) => {
     const text = String(sql);
+    if (OBJECT_CAN_RE.test(text)) {
+      return Promise.resolve({ rows: [{ allowed: false }] });
+    }
     if (IS_ADMIN_RE.test(text)) {
       return Promise.resolve({ rows: [{ exists: rows.adminExists ?? false }] });
-    }
-    if (DIRECT_GRANTS_RE.test(text)) {
-      return Promise.resolve({
-        rows: (rows.directGrants ?? []).map((g) => ({ objectId: g.objectId, action: g.action })),
-      });
-    }
-    if (PERMS_RE.test(text)) {
-      return Promise.resolve({ rows: (rows.perms ?? []).map((r) => ({ groupId: r.groupId, action: r.action })) });
-    }
-    if (SYSTEM_GROUPS_RE.test(text)) {
-      return Promise.resolve({ rows: (rows.systemGroupIds ?? []).map((id) => ({ id })) });
-    }
-    if (OBJ_GROUPS_RE.test(text)) {
-      return Promise.resolve({ rows: (rows.objGroups ?? []).map((g) => ({ groupId: g })) });
-    }
-    if (OWNER_RE.test(text)) {
-      return Promise.resolve({
-        rows: rows.ownerId === undefined || rows.ownerId === null ? [] : [{ ownerId: rows.ownerId }],
-      });
     }
     if (CAPABILITIES_RE.test(text)) {
       return Promise.resolve({
@@ -78,91 +52,17 @@ beforeEach(() => {
 });
 
 describe('acl.can', () => {
-  it('admin: can(...) === true без прочих запросов', async () => {
-    seed({ adminExists: true });
-    await expect(can('adm-u', 'any-obj', 'delete')).resolves.toBe(true);
-    expect(queryCount()).toBe(1); // только isAdmin
-  });
-
-  it('юзер с read на группу объекта → true', async () => {
-    seed({ perms: [{ groupId: 'gA', action: 'read' }], objGroups: ['gA'] });
+  it('делегает полное решение (admin, group, direct grants, parent inheritance, owner) в object_can', async () => {
+    poolQuery
+      .mockResolvedValueOnce({ rows: [{ allowed: true }] })
+      .mockResolvedValueOnce({ rows: [{ allowed: false }] });
     await expect(can('usr-a', 'obj-a', 'read')).resolves.toBe(true);
-  });
-
-  it('объект в чужой группе → false', async () => {
-    seed({ perms: [{ groupId: 'gA', action: 'read' }], objGroups: ['gB'] });
-    await expect(can('usr-b', 'obj-b', 'read')).resolves.toBe(false);
-  });
-
-  it('владелец читает свой объект, пока тот не в группах (bootstrap read)', async () => {
-    seed({ perms: [], objGroups: [], ownerId: 'own-u' });
-    await expect(can('own-u', 'obj-own1', 'read')).resolves.toBe(true);
-  });
-
-  it('владелец ТЕРЯЕТ read после включения объекта в группу без прав на неё', async () => {
-    // объект уже в группе gX, у владельца прав на gX нет → owner-bootstrap не работает
-    seed({ perms: [], objGroups: ['gX'], ownerId: 'own2-u' });
-    await expect(can('own2-u', 'obj-own2', 'read')).resolves.toBe(false);
-  });
-
-  it('владелец читает объект в группе, если у роли есть read на эту группу', async () => {
-    seed({ perms: [{ groupId: 'gX', action: 'read' }], objGroups: ['gX'], ownerId: 'own3-u' });
-    await expect(can('own3-u', 'obj-own3', 'read')).resolves.toBe(true);
-  });
-
-  it('owner-bootstrap даёт только read: write/delete на свой объект без прав → false', async () => {
-    seed({ perms: [], objGroups: [], ownerId: 'own4-u' });
-    await expect(can('own4-u', 'obj-own4', 'write')).resolves.toBe(false);
-    await expect(can('own4-u', 'obj-own4', 'delete')).resolves.toBe(false);
-  });
-
-  it('не-владелец без прав не читает объект без групп', async () => {
-    seed({ perms: [], objGroups: [], ownerId: 'other-u' });
-    await expect(can('usr-x', 'obj-own5', 'read')).resolves.toBe(false);
-  });
-
-  it('прямой grant роли на объект → true без групп и без owner-статуса', async () => {
-    seed({ perms: [], objGroups: [], directGrants: [{ objectId: 'obj-dg', action: 'read' }] });
-    await expect(can('usr-dg', 'obj-dg', 'read')).resolves.toBe(true);
-    await expect(can('usr-dg', 'obj-dg', 'write')).resolves.toBe(false);
-  });
-
-  it('прямой grant не на тот объект → false', async () => {
-    seed({
-      perms: [],
-      objGroups: [],
-      ownerId: 'other-u',
-      directGrants: [{ objectId: 'obj-other', action: 'read' }],
-    });
-    await expect(can('usr-dg2', 'obj-own5', 'read')).resolves.toBe(false);
-  });
-
-  it('юзер без прав на не-read действие → false и БЕЗ запроса объектных групп', async () => {
-    seed({ perms: [] });
-    await expect(can('usr-c', 'obj-c', 'delete')).resolves.toBe(false);
-    expect(queryCount()).toBe(3); // isAdmin + getUserDirectGrants + getUserGroupPermissions
-  });
-
-  it('системная группа: юзер с perms на system group читает объект без реальных групп', async () => {
-    seed({ perms: [{ groupId: 'sysG', action: 'read' }], objGroups: [], systemGroupIds: ['sysG'] });
-    await expect(can('usr-sys', 'obj-sys', 'read')).resolves.toBe(true);
-    await expect(can('usr-sys', 'obj-sys', 'write')).resolves.toBe(false);
-  });
-
-  it('системная группа: perms читает объект c реальной группой + system group', async () => {
-    seed({ perms: [{ groupId: 'sysG', action: 'read' }], objGroups: ['realG'], systemGroupIds: ['sysG'] });
-    await expect(can('usr-sys2', 'obj-sys2', 'read')).resolves.toBe(true);
-  });
-
-  it('invalidateUser/invalidateObject: повторный can снова идёт в БД', async () => {
-    seed({ perms: [{ groupId: 'gOther', action: 'read' }], objGroups: ['invG'] });
-    await can('inv-u', 'inv-o', 'read');
-    expect(queryCount()).toBe(5); // isAdmin + directGrants + perms + objGroups + sysGroups
-
-    invalidateUser('inv-u');
-    invalidateObject('inv-o');
-    await can('inv-u', 'inv-o', 'read');
-    expect(queryCount()).toBe(9); // 5 + 4 (sysGroups cached)
+    await expect(can('usr-a', 'obj-a', 'write')).resolves.toBe(false);
+    expect(poolQuery).toHaveBeenNthCalledWith(
+      1,
+      'SELECT object_can($1::uuid, $2::text, $3::uuid) AS "allowed"',
+      ['obj-a', 'read', 'usr-a'],
+    );
   });
 });
 

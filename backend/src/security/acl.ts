@@ -2,43 +2,8 @@ import { pool } from '../database/connection';
 import { Cache } from './permissionCache';
 import type { ObjectAction } from './types';
 
-/**
- * Application-level Access Control List.
- *
- * Повторяет логику RLS (has_permission + owner_read) на уровне приложения,
- * чтобы отдавать 403 рано — до выполнения бизнес-логики и без похода в БД
- * на каждый объект (результаты кешируются в памяти). RLS в БД остаётся
- * последним рубежом и защищает от обхода этого слоя.
- *
- * RBAC-таблицы (user_roles, permissions, group_members, groups,
- * role_object_grants) и objects (owner_id) НЕ имеют RLS, поэтому читаются
- * напрямую.
- *
- * Семантика owner_read (совпадает с RLS-политиками *_owner_read): владелец
- * (создатель) объекта читает его ТОЛЬКО пока объект не включён ни в одну
- * группу. Как только объект передан в группу(ы) — видимость определяется
- * исключительно групповыми правами (и админом). Это «bootstrap» для создания
- * объектов не-админами (camera:create и т.п.): автор видит свой свежий объект
- * до того, как администратор начнёт управлять доступом через группы.
- *
- * Прямые grants ролей на объекты (role_object_grants) действуют безусловно
- * (не зависят от группового членства) и объединяются с групповыми правами.
- */
-
-// userId -> Map<objectId, Set<action>> (union прямых grants ролей юзера)
-const userDirectGrantsCache = new Cache<Map<string, Set<ObjectAction>>>(2000, 5 * 60_000);
-// userId -> Map<groupId, Set<action>>  (union прав по всем ролям юзера)
-const userGroupsCache = new Cache<Map<string, Set<ObjectAction>>>(2000, 5 * 60_000);
-// objectId -> Set<groupId>
-const objectGroupsCache = new Cache<string[]>(2000, 5 * 60_000);
-// objectId -> owner_id ('' если владельца нет/объект не существует)
-const objectOwnerCache = new Cache<string>(2000, 5 * 60_000);
-// userId -> boolean (admin)
 const adminCache = new Cache<boolean>(2000, 5 * 60_000);
-// userId -> Set<Capability>  (union спец-прав по всем ролям юзера из role_capabilities)
 const userCapabilitiesCache = new Cache<Set<string>>(2000, 5 * 60_000);
-// Set<groupId> системных групп (is_system = true) — всегда виртуальные члены каждого объекта
-const systemGroupIdsCache = new Cache<Set<string>>(1, 10 * 60_000);
 
 async function isAdmin(userId: string): Promise<boolean> {
   const cached = adminCache.get(userId);
@@ -57,156 +22,29 @@ async function isAdmin(userId: string): Promise<boolean> {
 }
 
 /**
- * groupId -> набор действий, которые юзер может делать над этой группой
- * (объединение по всем ролям юзера). Включает как реальные членства (group_members),
- * так и системные группы (is_system), которые действуют на все объекты.
- */
-async function getUserGroupPermissions(
-  userId: string,
-): Promise<Map<string, Set<ObjectAction>>> {
-  const cached = userGroupsCache.get(userId);
-  if (cached) return cached;
-
-  const { rows } = await pool.query<{ groupId: string; action: ObjectAction }>(
-    `SELECT DISTINCT p.group_id AS "groupId", p.action
-     FROM permissions p
-     JOIN user_roles ur ON ur.role_id = p.role_id
-     JOIN groups g ON g.id = p.group_id
-     LEFT JOIN group_members gm ON gm.group_id = p.group_id
-     WHERE ur.user_id = $1
-       AND (gm.object_id IS NOT NULL OR g.is_system)`,
-    [userId],
-  );
-
-  const map = new Map<string, Set<ObjectAction>>();
-  for (const r of rows) {
-    const set = map.get(r.groupId);
-    if (set) set.add(r.action);
-    else map.set(r.groupId, new Set([r.action]));
-  }
-  userGroupsCache.set(userId, map);
-  return map;
-}
-
-async function getObjectGroups(objectId: string): Promise<string[]> {
-  const cached = objectGroupsCache.get(objectId);
-  if (cached) return cached;
-  const { rows } = await pool.query<{ groupId: string }>(
-    `SELECT gm.group_id AS "groupId" FROM group_members gm WHERE gm.object_id = $1`,
-    [objectId],
-  );
-  const groups = rows.map((r) => r.groupId);
-  objectGroupsCache.set(objectId, groups);
-  return groups;
-}
-
-/**
- * Есть ли у юзера право action на конкретный объект.
+ * Application-level Access Control List.
  *
- * Семантика совпадает с RLS-политиками:
- *  - admin видит всё;
- *  - прямые grants ролей на объект (role_object_grants) действуют безусловно;
- *  - владелец (создатель) читает свой объект, только пока тот не включён
- *    ни в одну группу (аналог *_owner_read = is_owner AND NOT в group_members);
- *    как только объект передан в группу(ы) — неявный owner-read исчезает,
- *    доступ определяется только групповыми правами (и админом);
- *  - остальные — через права ролей на группы объекта.
+ * can() вызывает БД-функцию object_can(), которая является единственным
+ * источником истины для модели доступа:
+ *  - админ;
+ *  - право по группе/прямому grant на объект, любого предка через parent_id
+ *    или группу, содержащую объект/предка;
+ *  - owner bootstrap для read (создатель видит свой не введённый в группы объект).
+ *
+ * RLS в БД продолжает enforcing те же functions. Инвалидация кешей доступа на
+ * уровне приложения после 20-object-access-inheritance не требуется: решение
+ * всегда получается из текущей таблицы прав.
  */
 export async function can(
   userId: string,
   objectId: string,
   action: ObjectAction,
 ): Promise<boolean> {
-  if (await isAdmin(userId)) return true;
-
-  // Прямые grants ролей юзера на конкретный объект (role_object_grants).
-  const direct = await getUserDirectGrants(userId);
-  const directActions = direct.get(objectId);
-  if (directActions && directActions.has(action)) return true;
-
-  const perms = await getUserGroupPermissions(userId);
-
-  // Владелец-«bootstrap» только для read: пока объект не включён ни в одну
-  // РЕАЛЬНУЮ группу, создатель читает его (совпадает с RLS-политикой *_owner_read,
-  // где is_owner(object_id) AND NOT в group_members). Системные группы не считаются.
-  if (action === 'read') {
-    const groups = await getObjectGroups(objectId);
-    if (groups.length === 0) {
-      const ownerId = await getObjectOwner(objectId);
-      if (ownerId === userId) return true;
-    }
-  }
-
-  if (perms.size === 0) return false;
-
-  // Эффективные группы объекта = реальные членства + системные группы.
-  const groups = await getObjectGroups(objectId);
-  const sysGroupIds = await getSystemGroupIds();
-  const effectiveGroups = groups.length > 0
-    ? [...new Set([...groups, ...sysGroupIds])]
-    : [...sysGroupIds];
-
-  if (effectiveGroups.length === 0) return false;
-
-  for (const groupId of effectiveGroups) {
-    const actions = perms.get(groupId);
-    if (actions && actions.has(action)) return true;
-  }
-  return false;
-}
-
-/**
- * ID системных групп (is_system = true). Хранятся в кеше.
- */
-async function getSystemGroupIds(): Promise<string[]> {
-  const cached = systemGroupIdsCache.get('system');
-  if (cached !== undefined) return [...cached];
-  const { rows } = await pool.query<{ id: string }>(
-    `SELECT id FROM groups WHERE is_system = true`,
+  const { rows } = await pool.query<{ allowed: boolean }>(
+    'SELECT object_can($1::uuid, $2::text, $3::uuid) AS "allowed"',
+    [objectId, action, userId],
   );
-  const ids = new Set(rows.map((r) => r.id));
-  systemGroupIdsCache.set('system', ids);
-  return [...ids];
-}
-
-/**
- * Union прямых grants (role_object_grants) пользователя: Map<objectId, Set<action>>.
- * Хранится в кеше (инвалидируется invalidateUser после изменений RBAC).
- */
-async function getUserDirectGrants(userId: string): Promise<Map<string, Set<ObjectAction>>> {
-  const cached = userDirectGrantsCache.get(userId);
-  if (cached) return cached;
-  const { rows } = await pool.query<{ objectId: string; action: ObjectAction }>(
-    `SELECT DISTINCT g.object_id AS "objectId", g.action
-     FROM role_object_grants g
-     JOIN user_roles ur ON ur.role_id = g.role_id
-     WHERE ur.user_id = $1`,
-    [userId],
-  );
-  const map = new Map<string, Set<ObjectAction>>();
-  for (const r of rows) {
-    const set = map.get(r.objectId);
-    if (set) set.add(r.action);
-    else map.set(r.objectId, new Set([r.action]));
-  }
-  userDirectGrantsCache.set(userId, map);
-  return map;
-}
-
-/**
- * owner_id объекта (из objects.owner_id, NULL если нет/объекта нет).
- * objects без RLS, поэтому читается напрямую.
- */
-async function getObjectOwner(objectId: string): Promise<string | null> {
-  const cached = objectOwnerCache.get(objectId);
-  if (cached !== undefined) return cached === '' ? null : cached;
-  const { rows } = await pool.query<{ ownerId: string | null }>(
-    `SELECT owner_id AS "ownerId" FROM objects WHERE id = $1`,
-    [objectId],
-  );
-  const ownerId = rows[0]?.ownerId ?? null;
-  objectOwnerCache.set(objectId, ownerId ?? '');
-  return ownerId;
+  return rows[0]?.allowed ?? false;
 }
 
 /**
@@ -242,33 +80,27 @@ export async function hasCapability(
   return caps.has(capability);
 }
 
-// --- Инвалидация кеша (вызывать после изменений RBAC) ---
+// --- Инвалидация кешей спец-прав (доступ через object_can всегда свежий) ---
 export function invalidateUser(userId: string): void {
-  userDirectGrantsCache.del(userId);
-  userGroupsCache.del(userId);
   adminCache.del(userId);
   userCapabilitiesCache.del(userId);
+  clearAclCaches();
 }
 
-export function invalidateObject(objectId: string): void {
-  objectGroupsCache.del(objectId);
-  objectOwnerCache.del(objectId);
+export function invalidateObject(_objectId: string): void {
+  clearAclCaches();
 }
 
-export function invalidateGroup(groupId: string): void {
-  // группа меняет membership/групповые права — сбрасываем кеш всех юзеров
-  userGroupsCache.clear();
-  objectGroupsCache.clear();
-  systemGroupIdsCache.clear();
+export function invalidateObjectHierarchy(_objectId: string): void {
+  clearAclCaches();
 }
 
-/** Полностью сбросить ACL-кеши (например, при изменении прямых grants роли). */
+export function invalidateGroup(_groupId: string): void {
+  clearAclCaches();
+}
+
+/** Полностью сбросить ACL-кеши (для изменений RBAC). */
 export function clearAclCaches(): void {
-  userDirectGrantsCache.clear();
-  userGroupsCache.clear();
-  objectGroupsCache.clear();
-  objectOwnerCache.clear();
   adminCache.clear();
   userCapabilitiesCache.clear();
-  systemGroupIdsCache.clear();
 }

@@ -6,8 +6,6 @@ import { objectQueries } from '../database/queries/object.queries';
 export interface ObjectMetaView extends CommonObjectMeta {
   id: string;
   type: string | null;
-  rawName: string | null;
-  inheritedName: string | null;
   createdAt: Date;
 }
 
@@ -19,9 +17,8 @@ export const objectRepository = {
 
   /**
    * Запись общих метаданных объекта (name/description).
-   * - name ''/null = очистить override (для потоков/процессов — наследование),
-   *   для device — очистка запрещена (у зеркала recording_devices.name NOT NULL);
-   * - description ''/null = очистить.
+   * - name ''/null — очистить override (для потоков/процессов — вернуться к родительскому имени);
+   * - description ''/null — очистить;
    * Возвращает обновлённый объект.
    */
   async patchMetadata(id: string, patch: { name?: string | null; description?: string | null }): Promise<ObjectMetaView | null> {
@@ -38,14 +35,8 @@ export const objectRepository = {
         ? (patch.description ?? '').trim() || null
         : undefined;
 
-      if (cur.type === 'device') {
-        if (name === null) {
-          throw new Error('имя устройства обязательно');
-        }
-        if (name !== undefined) {
-          // Зеркало recording_devices.name NOT NULL держим в синхроне.
-          await client.query('UPDATE recording_devices SET name = $1 WHERE object_id = $2', [name, id]);
-        }
+      if (cur.type === 'device' && name === null) {
+        throw new Error('имя устройства обязательно');
       }
 
       if (name !== undefined) {

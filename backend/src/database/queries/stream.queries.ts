@@ -11,8 +11,6 @@ const streamSelect = `
   s.device_id AS "deviceId",
   s.source_fingerprint AS "sourceFingerprint",
   objects_effective_name(o.id) AS "name",
-  NULLIF(o.name, '') AS "rawName",
-  objects_effective_name(parent.id) AS "inheritedName",
   o.description AS "description",
   o.parent_id AS "parentObjectId",
   parent.type AS "parentType",

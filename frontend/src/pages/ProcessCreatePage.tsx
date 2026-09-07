@@ -32,8 +32,6 @@ async function loadStreams(q: string): Promise<SearchSelectItem[]> {
 export function ProcessCreatePage() {
   const navigate = useNavigate();
   const [streamId, setStreamId] = useState<string | null>(null);
-  const [name, setName] = useState('');
-  const [description, setDescription] = useState('');
   const [startMode, setStartMode] = useState<StartMode>('running');
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
@@ -50,8 +48,8 @@ export function ProcessCreatePage() {
         body: JSON.stringify({
           streamId,
           status: startMode,
-          name: name.trim() || null,
-          description: description.trim() || null,
+          name: null,
+          description: null,
         }),
       });
       if (!r.ok) {
@@ -83,26 +81,6 @@ export function ProcessCreatePage() {
             />
           </div>
 
-          <div className={styles.field}>
-            <label className={styles.label}>Название</label>
-            <input
-              className={styles.input}
-              value={name}
-              onChange={e => setName(e.target.value)}
-              placeholder="Наследуется от потока (оставьте пустым)"
-            />
-          </div>
-
-          <div className={styles.field}>
-            <label className={styles.label}>Описание</label>
-            <textarea
-              className={styles.textarea}
-              value={description}
-              onChange={e => setDescription(e.target.value)}
-              placeholder="необязательно"
-              rows={3}
-            />
-          </div>
 
           <div className={styles.field}>
             <label className={styles.label}>Режим запуска</label>
