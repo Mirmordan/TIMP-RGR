@@ -28,11 +28,11 @@ describe('поиск q: SQL-параметры списочных репозит
     await deviceRepository.count('Вход');
     expect(queryAs).toHaveBeenCalledWith(deviceQueries.count, ['Вход']);
 
-    // q ищет по эффективному названию (objects-иерархия) и описанию устройства.
+    // q ищет по собственному названию objects.name и описанию устройства.
     expect(deviceQueries.findAll).toContain('JOIN objects o ON o.id = d.object_id');
-    expect(deviceQueries.findAll).toContain("objects_effective_name(o.id) ILIKE '%' || $3 || '%'");
+    expect(deviceQueries.findAll).toContain("NULLIF(o.name, '') ILIKE '%' || $3 || '%'");
     expect(deviceQueries.findAll).toContain("o.description ILIKE '%' || $3 || '%'");
-    expect(deviceQueries.count).toContain("objects_effective_name(o.id) ILIKE '%' || $1 || '%'");
+    expect(deviceQueries.count).toContain("NULLIF(o.name, '') ILIKE '%' || $1 || '%'");
 
     await deviceRepository.findAll(20, 0);
     expect(queryAs).toHaveBeenCalledWith(deviceQueries.findAll, [20, 0, null]);
@@ -40,7 +40,7 @@ describe('поиск q: SQL-параметры списочных репозит
     expect(queryAs).toHaveBeenCalledWith(deviceQueries.count, [null]);
   });
 
-  it('stream: q ищет по url ИЛИ эффективному названию через objects-иерархию', async () => {
+  it('stream: q ищет по url ИЛИ собственному названию объекта', async () => {
     await streamRepository.findAll(10, 0, 'камера');
     expect(queryAs).toHaveBeenCalledWith(streamQueries.findAll, [10, 0, 'камера']);
     await streamRepository.count('камера');
@@ -48,9 +48,9 @@ describe('поиск q: SQL-параметры списочных репозит
 
     expect(streamQueries.findAll).toContain('JOIN objects o ON o.id = s.object_id');
     expect(streamQueries.findAll).toContain("s.url ILIKE '%' || $3 || '%'");
-    expect(streamQueries.findAll).toContain("objects_effective_name(o.id) ILIKE '%' || $3 || '%'");
+    expect(streamQueries.findAll).toContain("NULLIF(o.name, '') ILIKE '%' || $3 || '%'");
     expect(streamQueries.findAll).toContain("o.description ILIKE '%' || $3 || '%'");
-    expect(streamQueries.findAll).toContain('objects_effective_name(o.id) AS "name"');
+    expect(streamQueries.findAll).toContain("NULLIF(o.name, '') AS \"name\"");
     expect(streamQueries.count).toContain("s.url ILIKE '%' || $1 || '%'");
 
     await streamRepository.findAll(10, 0);
@@ -59,7 +59,7 @@ describe('поиск q: SQL-параметры списочных репозит
     expect(queryAs).toHaveBeenCalledWith(streamQueries.count, [null]);
   });
 
-  it('process: q ищет по id процесса, url потока и эффективному названию через objects-иерархию', async () => {
+  it('process: q ищет по id процесса, url потока и собственному названию объекта', async () => {
     await processRepository.findAll(10, 0, 'ivideon');
     expect(queryAs).toHaveBeenCalledWith(processQueries.findAll, [10, 0, 'ivideon']);
     await processRepository.count('ivideon');
@@ -70,10 +70,10 @@ describe('поиск q: SQL-параметры списочных репозит
     expect(processQueries.findAll).toContain('LEFT JOIN objects parent ON parent.id = po.parent_id');
     expect(processQueries.findAll).toContain("p.object_id::text ILIKE '%' || $3 || '%'");
     expect(processQueries.findAll).toContain("s.url ILIKE '%' || $3 || '%'");
-    expect(processQueries.findAll).toContain("objects_effective_name(po.id) ILIKE '%' || $3 || '%'");
+    expect(processQueries.findAll).toContain("NULLIF(po.name, '') ILIKE '%' || $3 || '%'");
     expect(processQueries.findAll).toContain("po.description ILIKE '%' || $3 || '%'");
-    expect(processQueries.findAll).toContain('objects_effective_name(po.id) AS "name"');
-    expect(processQueries.count).toContain("objects_effective_name(po.id) ILIKE '%' || $1 || '%'");
+    expect(processQueries.findAll).toContain("NULLIF(po.name, '') AS \"name\"");
+    expect(processQueries.count).toContain("NULLIF(po.name, '') ILIKE '%' || $1 || '%'");
 
     await processRepository.findAll(10, 0);
     expect(queryAs).toHaveBeenCalledWith(processQueries.findAll, [10, 0, null]);
@@ -81,14 +81,14 @@ describe('поиск q: SQL-параметры списочных репозит
     expect(queryAs).toHaveBeenCalledWith(processQueries.count, [null]);
   });
 
-  it('SELECT отдаёт единое эффективное name и parentType (собственного raw-поля нет)', () => {
-    // stream/process используют только objects-иерархию; name уже резолвится helper-ем.
-    expect(streamQueries.findById).toContain('objects_effective_name(o.id) AS "name"');
+  it('SELECT отдаёт собственное name из objects и parentType', () => {
+    // name — собственное поле objects; цепочек предков больше нет.
+    expect(streamQueries.findById).toContain("NULLIF(o.name, '') AS \"name\"");
     expect(streamQueries.findById).toContain('parent.type AS "parentType"');
     expect(streamQueries.findById).not.toContain('rawName');
     expect(streamQueries.findById).not.toContain('inheritedName');
 
-    expect(processQueries.findById).toContain('objects_effective_name(po.id) AS "name"');
+    expect(processQueries.findById).toContain("NULLIF(po.name, '') AS \"name\"");
     expect(processQueries.findById).toContain('parent.type AS "parentType"');
     expect(processQueries.findById).not.toContain('rawName');
     expect(processQueries.findById).not.toContain('inheritedName');

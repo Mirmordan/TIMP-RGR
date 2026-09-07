@@ -27,23 +27,21 @@ beforeEach(() => {
   streamRepo.findById.mockResolvedValue({ id: 's1', name: 'Склад', description: null, url: 'rtsp://x' });
 });
 
-describe('streamService: наследование/override name + description', () => {
-  it('create без name/description → meta {name: null, description: null} (наследование)', async () => {
-    await streamService.create('rtsp://x', 'dev-1');
-    expect(create).toHaveBeenCalledWith('rtsp://x', 'dev-1', undefined, { name: null, description: null });
+describe('streamService: собственные name/description (без наследования)', () => {
+  it('create без name → ошибка «название обязательно»', async () => {
+    await expect(streamService.create('rtsp://x', 'dev-1')).rejects.toThrow('название обязательно');
+    await expect(streamService.create('rtsp://x', 'dev-1', undefined, '   ')).rejects.toThrow('название обязательно');
   });
 
-  it('create с name/description → пробелы срезаны, пустое name → null', async () => {
+  it('create с name/description → пробелы срезаны, имя пишется в объект', async () => {
     await streamService.create('rtsp://x', 'dev-1', undefined, '  Камера 2  ', '  описание  ');
     expect(create).toHaveBeenCalledWith('rtsp://x', 'dev-1', undefined, { name: 'Камера 2', description: 'описание' });
-
-    await streamService.create('rtsp://x', 'dev-1', undefined, '   ', '   ');
-    expect(create).toHaveBeenLastCalledWith('rtsp://x', 'dev-1', undefined, { name: null, description: null });
   });
 
-  it('put = полная замена: name опущено → override сбрасывается (null)', async () => {
-    await streamService.put('s1', 'rtsp://y', 'dev-2');
-    expect(put).toHaveBeenCalledWith('s1', 'rtsp://y', 'dev-2', undefined, { name: null, description: null });
+  it('put = полная замена: name обязателен', async () => {
+    await expect(streamService.put('s1', 'rtsp://y', 'dev-2')).rejects.toThrow('название обязательно');
+    await streamService.put('s1', 'rtsp://y', 'dev-2', undefined, '  описанье  ');
+    expect(put).toHaveBeenCalledWith('s1', 'rtsp://y', 'dev-2', undefined, { name: 'описанье', description: null });
   });
 
   it('patch: name/description undefined → не передаются в репозиторий', async () => {
@@ -51,11 +49,9 @@ describe('streamService: наследование/override name + description', 
     expect(patch).toHaveBeenCalledWith('s1', { url: 'rtsp://z' });
   });
 
-  it('patch: name null/пусто → null (сброс override, наследование)', async () => {
-    await streamService.patch('s1', { name: null });
-    expect(patch).toHaveBeenCalledWith('s1', { name: null });
-    await streamService.patch('s1', { name: '  ' });
-    expect(patch).toHaveBeenLastCalledWith('s1', { name: null });
+  it('patch: name null/пусто → ошибка (имя обязательно)', async () => {
+    await expect(streamService.patch('s1', { name: null })).rejects.toThrow('название обязательно');
+    await expect(streamService.patch('s1', { name: '  ' })).rejects.toThrow('название обязательно');
   });
 
   it('patch: явный name/description → trimmed значение', async () => {

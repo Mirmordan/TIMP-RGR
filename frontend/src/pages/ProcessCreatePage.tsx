@@ -32,6 +32,8 @@ async function loadStreams(q: string): Promise<SearchSelectItem[]> {
 export function ProcessCreatePage() {
   const navigate = useNavigate();
   const [streamId, setStreamId] = useState<string | null>(null);
+  const [name, setName] = useState('');
+  const [description, setDescription] = useState('');
   const [startMode, setStartMode] = useState<StartMode>('running');
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
@@ -39,6 +41,7 @@ export function ProcessCreatePage() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!streamId) { setError('Выберите поток'); return; }
+    if (!name.trim()) { setError('Название обязательно'); return; }
     setError('');
     setSaving(true);
     try {
@@ -48,8 +51,8 @@ export function ProcessCreatePage() {
         body: JSON.stringify({
           streamId,
           status: startMode,
-          name: null,
-          description: null,
+          name: name.trim(),
+          description: description.trim() || null,
         }),
       });
       if (!r.ok) {
@@ -80,7 +83,15 @@ export function ProcessCreatePage() {
               ariaLabel="Поток"
             />
           </div>
-
+          <div className={styles.field}>
+            <label className={styles.label}>Название *</label>
+            <input className={styles.input} value={name} onChange={e => setName(e.target.value)} placeholder="Например: Ночная запись периметра" required />
+            <div className={styles.hint}>Собственное имя объекта записи.</div>
+          </div>
+          <div className={styles.field}>
+            <label className={styles.label}>Описание</label>
+            <textarea className={styles.textarea} value={description} onChange={e => setDescription(e.target.value)} rows={3} />
+          </div>
 
           <div className={styles.field}>
             <label className={styles.label}>Режим запуска</label>

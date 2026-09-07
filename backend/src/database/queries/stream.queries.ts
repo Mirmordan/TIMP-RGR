@@ -1,8 +1,6 @@
 /**
- * SELECT потока с общими метаданными супертипа. Резолюция name/description
- * fail-closed через общую иерархию objects.parent_id (device ← stream):
- * objects_effective_name(o.id) — собственный objects.name потока или имя
- * читаемого родителя (невидимый родитель не отдаёт названия).
+ * SELECT потока с общими метаданными супертипа. Название и описание —
+ * собственные поля objects (device/stream), наследование по parent_id убрано.
  * parentObjectId = objects.parent_id; parentType — тип родительского объекта.
  */
 const streamSelect = `
@@ -10,16 +8,15 @@ const streamSelect = `
   s.url,
   s.device_id AS "deviceId",
   s.source_fingerprint AS "sourceFingerprint",
-  objects_effective_name(o.id) AS "name",
+  NULLIF(o.name, '') AS "name",
   o.description AS "description",
   o.parent_id AS "parentObjectId",
   parent.type AS "parentType",
   o.created_at AS "createdAt"
 `;
 
-// Поток наследует название от устройства по objects.parent_id: objects.name
-// потока хранит только ЯВНЫЙ override (NULL/'' = наследование от родителя).
-const streamNameExpr = "objects_effective_name(o.id)";
+// Поиск потоков по собственному имени objects.name.
+const streamNameExpr = "NULLIF(o.name, '')";
 
 export const streamQueries = {
   findById: `SELECT ${streamSelect}
@@ -51,14 +48,16 @@ export const streamQueries = {
                  OR o.id::text ILIKE '%' || $1 || '%')`,
 
   // Супертип потока: parent_id = объект устройства (device_id потока).
-  insert: `INSERT INTO objects (type, parent_id, owner_id) VALUES ('stream', $1, NULLIF(current_setting('app.user_id', true), '')::UUID)
+  // Название/описание — собственные метаданные объекта, пишутся сразу при create.
+  insert: `INSERT INTO objects (type, name, description, parent_id, owner_id)
+           VALUES ('stream', $2, $3, $1, NULLIF(current_setting('app.user_id', true), '')::UUID)
            RETURNING id AS "objectId"`,
 
   insertStream: `INSERT INTO recording_streams (object_id, url, device_id, source_fingerprint) VALUES ($1, $2, $3, $4)
                  RETURNING object_id AS "id", url, device_id AS "deviceId", source_fingerprint AS "sourceFingerprint"`,
 
-  // Общие метаданные потока: name хранит ЯВНЫЙ override (NULL = наследовать
-  // название устройства), description — собственное описание потока.
+  // Общие метаданные потока: собственные objects.name/objects.description.
+  // Название обязательно (проверяется сервисом).
   setMeta: `UPDATE objects SET name = $1, description = $2 WHERE id = $3`,
   setMetaName: `UPDATE objects SET name = $1 WHERE id = $2`,
   setMetaDescription: `UPDATE objects SET description = $1 WHERE id = $2`,

@@ -1,12 +1,13 @@
 /**
  * Объект как сущность: общие метаданные (name/description) из objects + тип,
- * родитель (parentObjectId/parentType) и эффективное наследуемое имя.
+ * родитель (parentObjectId/parentType). Название — собственное поле объекта,
+ * наследование по цепочке предков упразднено.
  * Используется общими эндпоинтами /objects/:id и PATCH /objects/:id/metadata.
  */
 const objectSelect = `
   o.id AS "id",
   o.type AS "type",
-  objects_effective_name(o.id) AS "name",
+  NULLIF(o.name, '') AS "name",
   o.description AS "description",
   o.parent_id AS "parentObjectId",
   parent.type AS "parentType",

@@ -16,7 +16,7 @@ export interface RecordingDevice {
   createdAt: string;
 }
 
-/** Общие объекты доступа: name/description принадлежат objects, родительские значения наследуются. */
+/** Общие объекты доступа: name/description — собственные поля objects каждой сущности. */
 interface CommonMetaFields {
   name: string | null;
   description: string | null;

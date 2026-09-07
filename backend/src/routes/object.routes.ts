@@ -64,7 +64,7 @@ objectRouter.get('/:id', requirePermission('read'), async (req: Request, res: Re
  *     tags: [Objects]
  *     operationId: patchObjectMetadata
  *     summary: Обновление общих метаданных объекта
- *     description: Обновляет name/description объекта любого типа. name null/'' сбрасывает override (для потоков/записей — наследование родителя); для устройства очистка имени запрещена. description null/'' очищает. Требуется право write на объект.
+ *     description: Обновляет name/description объекта любого типа. name null/'' запрещён для device/stream/process (название объекта обязательно); description null/'' очищает. Требуется право write на объект.
  *     parameters:
  *       - name: id
  *         in: path
@@ -87,7 +87,7 @@ objectRouter.get('/:id', requirePermission('read'), async (req: Request, res: Re
  *             schema:
  *               $ref: '#/components/schemas/ObjectMeta'
  *       '400':
- *         description: Некорректные данные (например, пустое имя устройства)
+ *         description: Некорректные данные (например, пустое имя потока/записи/устройства)
  *         content:
  *           application/json:
  *             schema:

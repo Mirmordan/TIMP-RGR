@@ -44,13 +44,15 @@ export const processRepository = {
   async create(streamId: string, startedAt: Date, status: string, meta: EntityMeta = { name: null, description: null }): Promise<RecordingProcess> {
     return inUserContext(async (client) => {
       // Супертип процесса: type='process', parent_id = поток.
-      const { rows: objRows } = await client.query<{ objectId: string }>(processQueries.insert, [streamId]);
+      // Название/описание — собственные метаданные, пишутся в сам INSERT.
+      const { rows: objRows } = await client.query<{ objectId: string }>(processQueries.insert, [
+        streamId, meta.name, meta.description,
+      ]);
       const objectId = objRows[0]?.objectId;
       if (!objectId) throw new Error('объект не создан');
       const { rows } = await client.query<RecordingProcess>(processQueries.insertProcess, [
         objectId, streamId, startedAt.toISOString(), status,
       ]);
-      await client.query(processQueries.setMeta, [meta.name, meta.description, objectId]);
       return rows[0]!;
     });
   },
@@ -63,7 +65,7 @@ export const processRepository = {
       if (!rows[0]) return null;
       // Синхронизируем родителя в супертипе при смене потока.
       await client.query(processQueries.setParent, [streamId, id]);
-      // PUT = полная замена: перезаписываем и общие метаданные (null name = наследование).
+      // PUT = полная замена: перезаписываем и общие метаданные (name обязателен).
       await client.query(processQueries.setMeta, [meta.name, meta.description, id]);
       return rows[0];
     });

@@ -108,7 +108,7 @@ const definition = {
         required: ['id', 'name', 'type', 'createdAt'],
         properties: {
           id: { type: 'string' },
-          name: { type: 'string', description: 'Эффективное название (общее поле objects).' },
+          name: { type: 'string', description: 'Собственное название (общее поле objects).' },
           type: { type: 'string', description: 'Тип устройства (например, camera).' },
           description: { type: 'string', nullable: true, description: 'Описание (общее поле objects).' },
           createdAt: { type: 'string', format: 'date-time' },
@@ -116,7 +116,7 @@ const definition = {
       },
       Stream: {
         type: 'object',
-        required: ['id', 'url', 'createdAt'],
+        required: ['id', 'url', 'name', 'createdAt'],
         properties: {
           id: { type: 'string' },
           url: { type: 'string', description: 'URL источника (ivideon://, HLS...).' },
@@ -125,9 +125,9 @@ const definition = {
           name: {
             type: 'string',
             nullable: true,
-            description: 'Эффективное название: собственное (objects.name) или унаследованное от устройства.',
+            description: 'Собственное название потока (objects.name).',
           },
-          description: { type: 'string', nullable: true, description: 'Эффективное описание объекта (резолвится по parent_id).' },
+          description: { type: 'string', nullable: true, description: 'Собственное описание объекта (objects.description).' },
           parentObjectId: {
             type: 'string',
             nullable: true,
@@ -177,9 +177,9 @@ const definition = {
           name: {
             type: 'string',
             nullable: true,
-            description: 'Эффективное название записи (собственное или унаследованное от потока/устройства).',
+            description: 'Собственное название записи (objects.name).',
           },
-          description: { type: 'string', nullable: true, description: 'Эффективное описание объекта (резолвится по parent_id).' },
+          description: { type: 'string', nullable: true, description: 'Собственное описание объекта (objects.description).' },
           parentObjectId: {
             type: 'string',
             nullable: true,
@@ -202,7 +202,7 @@ const definition = {
           startedAt: { type: 'string', format: 'date-time' },
           endedAt: { type: 'string', format: 'date-time' },
           url: { type: 'string' },
-          name: { type: 'string', nullable: true, description: 'Эффективное имя объекта.' },
+          name: { type: 'string', nullable: true, description: 'Собственное имя объекта (objects.name).' },
           description: { type: 'string', nullable: true },
           parentObjectId: { type: 'string', nullable: true, description: 'ID родительского объекта (процесса).' },
           parentType: {
@@ -236,7 +236,7 @@ const definition = {
           fileCount: { type: 'integer' },
           durationS: { type: 'number', description: 'Длительность, секунды.' },
           sizeBytes: { type: 'integer' },
-          name: { type: 'string', nullable: true, description: 'Эффективное имя объекта.' },
+          name: { type: 'string', nullable: true, description: 'Собственное имя объекта (objects.name).' },
           description: { type: 'string', nullable: true },
           parentObjectId: { type: 'string', nullable: true, description: 'ID родительского объекта (процесса).' },
           parentType: {
@@ -376,8 +376,7 @@ const definition = {
           name: {
             type: 'string',
             description:
-              'Собственное название потока (override). Опущено/пусто — наследуется ' +
-              'эффективное название устройства.',
+              'Собственное название потока — пишется в objects.name, обязательно.',
           },
           description: {
             type: 'string',
@@ -390,7 +389,7 @@ const definition = {
         type: 'object',
         description:
           'Частичное обновление потока; хотя бы одно поле обязательно. ' +
-          'name: undefined — не трогать, null/пусто — сбросить override (наследование).',
+          'name: undefined — не трогать; null/пусто — ошибка (название обязательно).',
         properties: {
           url: { type: 'string', description: 'URL источника (ivideon://, HLS...).' },
           deviceId: {
@@ -403,8 +402,7 @@ const definition = {
             type: 'string',
             nullable: true,
             description:
-              'Собственное название потока (override). null/пустая строка — наследование ' +
-              'названия (нового) устройства.',
+              'Собственное название потока; null/пустая строка — ошибка (название обязательно).',
           },
           description: {
             type: 'string',
@@ -415,7 +413,7 @@ const definition = {
       },
       ProcessCreate: {
         type: 'object',
-        required: ['streamId'],
+        required: ['streamId', 'name'],
         properties: {
           streamId: {
             type: 'string',
@@ -435,8 +433,7 @@ const definition = {
           name: {
             type: 'string',
             description:
-              'Собственное название записи (override). Опущено/пусто — наследуется ' +
-              'эффективное название потока/устройства.',
+              'Собственное название записи — пишется в objects.name, обязательно.',
           },
           description: {
             type: 'string',
@@ -447,7 +444,7 @@ const definition = {
       },
       ProcessPut: {
         type: 'object',
-        required: ['streamId', 'startedAt', 'endedAt', 'status'],
+        required: ['streamId', 'startedAt', 'endedAt', 'status', 'name'],
         properties: {
           streamId: { type: 'string', format: 'uuid', description: 'ID потока-источника записи.' },
           startedAt: { type: 'string', format: 'date-time', description: 'Момент старта записи.' },
@@ -465,8 +462,7 @@ const definition = {
           name: {
             type: 'string',
             description:
-              'Собственное название записи (override). Опущено/пусто — сброс override ' +
-              '(наследование названия потока/устройства).',
+              'Собственное название записи — пишется в objects.name, обязательно.',
           },
           description: {
             type: 'string',
@@ -479,7 +475,7 @@ const definition = {
         type: 'object',
         description:
           'Частичное обновление процесса; хотя бы одно поле обязательно. Смена status запускает/останавливает поток mediaMTX. ' +
-          'name: undefined — не трогать, null/пусто — сбросить override (наследование).',
+          'name: undefined — не трогать; null/пусто — ошибка (название обязательно).',
         properties: {
           streamId: { type: 'string', format: 'uuid', description: 'ID потока-источника записи.' },
           startedAt: { type: 'string', format: 'date-time', description: 'Момент старта записи.' },
@@ -498,8 +494,7 @@ const definition = {
             type: 'string',
             nullable: true,
             description:
-              'Собственное название записи (override). null/пустая строка — наследование ' +
-              'названия (нового) потока/устройства.',
+              'Собственное название записи; null/пустая строка — ошибка (название обязательно).',
           },
           description: {
             type: 'string',
@@ -634,8 +629,8 @@ const definition = {
         properties: {
           id: { type: 'string', description: 'UUID объекта (objects.id).' },
           type: { type: 'string', nullable: true, description: 'Тип объекта (device/stream/process/segment/chunk/incident).' },
-          name: { type: 'string', nullable: true, description: 'Эффективное название объекта (собственное или унаследованное от parent).' },
-          description: { type: 'string', nullable: true, description: 'Эффективное описание объекта.' },
+          name: { type: 'string', nullable: true, description: 'Собственное название объекта (objects.name).' },
+          description: { type: 'string', nullable: true, description: 'Собственное описание объекта (objects.description).' },
           parentObjectId: {
             type: 'string',
             nullable: true,
@@ -657,7 +652,7 @@ const definition = {
             type: 'string',
             nullable: true,
             description:
-              'Собственное название (override). null/пусто — сброс (для потоков/записей — наследование родителя); для устройства очистка запрещена.',
+              'Собственное название; null/пусто запрещено для device/stream/process (очистка имени невозможна).',
           },
           description: {
             type: 'string',
@@ -875,7 +870,7 @@ const definition = {
           name: {
             type: 'string',
             nullable: true,
-            description: 'Эффективное название объекта (собственное или унаследованное от устройства).',
+            description: 'Собственное название объекта (objects.name).',
           },
           type: {
             type: 'string',
@@ -898,7 +893,7 @@ const definition = {
           roleId: { type: 'string', description: 'UUID роли.' },
           objectId: { type: 'string', description: 'UUID объекта.' },
           objectType: { type: 'string', nullable: true, description: 'Тип объекта.' },
-          objectName: { type: 'string', nullable: true, description: 'Эффективное название объекта.' },
+          objectName: { type: 'string', nullable: true, description: 'Собственное название объекта (objects.name).' },
           objectDescription: { type: 'string', nullable: true, description: 'Описание объекта.' },
           action: {
             type: 'string',
@@ -941,7 +936,7 @@ const definition = {
         properties: {
           id: { type: 'string', description: 'UUID объекта.' },
           type: { type: 'string', nullable: true, description: 'Тип объекта.' },
-          name: { type: 'string', nullable: true, description: 'Эффективное название объекта.' },
+          name: { type: 'string', nullable: true, description: 'Собственное название объекта (objects.name).' },
           description: { type: 'string', nullable: true, description: 'Описание объекта.' },
           parentObjectId: {
             type: 'string',

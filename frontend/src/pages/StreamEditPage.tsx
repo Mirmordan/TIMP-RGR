@@ -36,6 +36,8 @@ export function StreamEditPage() {
   const { item: stream, loading } = useEntity<Stream>('/streams', isCreate ? undefined : id);
   const navigate = useNavigate();
 
+  const [name, setName] = useState('');
+  const [description, setDescription] = useState('');
   const [url, setUrl] = useState('');
   const [deviceId, setDeviceId] = useState<string | null>(null);
   const [sourceFingerprint, setSourceFingerprint] = useState('');
@@ -45,6 +47,8 @@ export function StreamEditPage() {
 
   useEffect(() => {
     if (isCreate) {
+      setName('');
+      setDescription('');
       setUrl('');
       setDeviceId(null);
       setSourceFingerprint('');
@@ -52,6 +56,8 @@ export function StreamEditPage() {
       return;
     }
     if (stream) {
+      setName(stream.name ?? '');
+      setDescription(stream.description ?? '');
       setUrl(stream.url);
       setDeviceId(stream.deviceId ?? null);
       setSourceFingerprint(stream.sourceFingerprint ?? '');
@@ -61,16 +67,16 @@ export function StreamEditPage() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError('');
+    if (!name.trim()) { setError('Название обязательно'); return; }
     setSaving(true);
     try {
       const body = {
         url,
         deviceId: deviceId || null,
         sourceFingerprint: sourceFingerprint || null,
-        // Название объекта принадлежит родительскому устройству — поток не
-        // хранит собственное имя/описание.
-        name: null,
-        description: null,
+        // Название/описание — собственные метаданные объекта потока.
+        name: name.trim(),
+        description: description.trim() || null,
       };
       const urlPath = isCreate ? '/streams' : `/streams/${id}`;
       const r = await apiFetch(urlPath, {
@@ -118,20 +124,22 @@ export function StreamEditPage() {
       <Card>
         <form className={styles.form} onSubmit={handleSubmit}>
           <div className={styles.field}>
-            <label className={styles.label}>Название объекта</label>
+            <label className={styles.label}>Название *</label>
             <input
               className={styles.input}
-              value={stream?.name ?? ''}
-              readOnly
+              value={name}
+              onChange={e => setName(e.target.value)}
+              placeholder="Например: Поток лобби"
+              required
             />
-            <div className={styles.hint}>Наследуется от выбранного устройства; менять нужно объект-устройство.</div>
+            <div className={styles.hint}>Собственное имя объекта потоков; не меняется при переименовании устройства.</div>
           </div>
           <div className={styles.field}>
-            <label className={styles.label}>Описание объекта</label>
+            <label className={styles.label}>Описание</label>
             <textarea
               className={styles.textarea}
-              value={stream?.description ?? ''}
-              readOnly
+              value={description}
+              onChange={e => setDescription(e.target.value)}
               rows={3}
             />
           </div>

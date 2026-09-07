@@ -1,11 +1,10 @@
 /**
- * SELECT процесса с общими метаданными супертипа. Резолюция name/description
- * fail-closed через общую иерархию objects.parent_id
- * (device ← stream ← process): objects_effective_name(po.id) — собственный
- * objects.name процесса или имя читаемого родителя (поток → устройство).
+ * SELECT процесса с общими метаданными супертипа. Название и описание —
+ * собственные поля objects. Наследование от потока/устройства по parent_id
+ * убрано (device ← stream ← process: каждый объект сам себе имя).
  * parentObjectId = objects.parent_id; parentType — тип родительского объекта.
  */
-const processNameExpr = "objects_effective_name(po.id)";
+const processNameExpr = "NULLIF(po.name, '')";
 
 const processSelect = `
   p.object_id AS "id",
@@ -70,7 +69,9 @@ export const processQueries = {
                           LIMIT 1`,
 
   // Супертип процесса: type='process', parent_id = поток (объект).
-  insert: `INSERT INTO objects (type, parent_id, owner_id) VALUES ('process', $1, NULLIF(current_setting('app.user_id', true), '')::UUID)
+  // Название/описание — собственные метаданные, пишутся сразу при create.
+  insert: `INSERT INTO objects (type, name, description, parent_id, owner_id)
+           VALUES ('process', $2, $3, $1, NULLIF(current_setting('app.user_id', true), '')::UUID)
            RETURNING id AS "objectId"`,
 
   insertProcess: `INSERT INTO recording_processes (object_id, stream_id, started_at, status)
@@ -80,8 +81,8 @@ export const processQueries = {
 
   setParent: `UPDATE objects SET parent_id = $1 WHERE id = $2`,
 
-  // Общие метаданные процесса: name хранит ЯВНЫЙ override (NULL = наследовать
-  // название потока/устройства), description — собственное описание записи.
+  // Общие метаданные процесса: собственные objects.name/objects.description.
+  // Название обязательно (проверяется сервисом).
   setMeta: `UPDATE objects SET name = $1, description = $2 WHERE id = $3`,
   setMetaName: `UPDATE objects SET name = $1 WHERE id = $2`,
   setMetaDescription: `UPDATE objects SET description = $1 WHERE id = $2`,

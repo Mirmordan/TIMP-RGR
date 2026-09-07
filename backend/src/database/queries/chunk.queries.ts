@@ -1,14 +1,11 @@
 /**
- * SELECT чанка с общими метаданными супертипа. Резолюция name/description
- * fail-closed через общую иерархию objects.parent_id
- * (device ← stream ← process ← chunk): objects_effective_name(o.id) —
- * собственный objects.name чанка или имя читаемого родителя.
+ * SELECT чанка с общими метаданными супертипа. Название и описание —
+ * собственные поля objects (для чанков — необязательные технические метки).
  * parentObjectId = objects.parent_id; parentType — тип родителя.
  */
-const chunkNameExpr = "objects_effective_name(o.id)";
-// Описание чанка: собственное или унаследованное через objects-иерархию
-// (fail-closed: нечитаемый родитель не отдаёт описание).
-const chunkDescExpr = "objects_effective_description(o.id)";
+const chunkNameExpr = "NULLIF(o.name, '')";
+// Описание чанка: собственное objects.description.
+const chunkDescExpr = "o.description";
 const chunkJoins = `
   JOIN objects o ON o.id = c.object_id
   LEFT JOIN objects parent ON parent.id = o.parent_id

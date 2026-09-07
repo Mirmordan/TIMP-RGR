@@ -140,13 +140,14 @@ async function getDevicesVisible(): Promise<number> {
 
 async function getTopDevices(): Promise<TopDevice[]> {
   const { rows } = await queryAs<TopDevice>(`
-    SELECT d.object_id::text AS "id", objects_effective_name(d.object_id) AS "name",
+    SELECT d.object_id::text AS "id", NULLIF(do_.name, '') AS "name",
            COALESCE(SUM(s.duration_s), 0)::float8 AS "durationS"
     FROM recording_segments s
     JOIN recording_processes p ON p.object_id = s.process_id
     JOIN recording_streams st ON st.object_id = p.stream_id
     JOIN recording_devices d ON d.object_id = st.device_id
-    GROUP BY d.object_id, objects_effective_name(d.object_id)
+    LEFT JOIN objects do_ ON do_.id = d.object_id
+    GROUP BY d.object_id, NULLIF(do_.name, '')
     ORDER BY "durationS" DESC
     LIMIT 5
   `);
@@ -177,14 +178,15 @@ export const statsService = {
   async getTimeline(days: number): Promise<TimelineRow[]> {
     const { rows } = await queryAs<TimelineRow>(`
       SELECT to_char(s.started_at, 'YYYY-MM-DD') AS "day",
-             COALESCE(objects_effective_name(d.object_id), 'Без камеры') AS "device",
+             COALESCE(NULLIF(o.name, ''), 'Без камеры') AS "device",
              COALESCE(SUM(s.duration_s), 0)::float8 AS "seconds"
       FROM recording_segments s
       JOIN recording_processes p ON p.object_id = s.process_id
       JOIN recording_streams st ON st.object_id = p.stream_id
       LEFT JOIN recording_devices d ON d.object_id = st.device_id
+      LEFT JOIN objects o ON o.id = d.object_id
       WHERE s.started_at >= now() - make_interval(days => $1)
-      GROUP BY to_char(s.started_at, 'YYYY-MM-DD'), COALESCE(objects_effective_name(d.object_id), 'Без камеры')
+      GROUP BY to_char(s.started_at, 'YYYY-MM-DD'), COALESCE(NULLIF(o.name, ''), 'Без камеры')
       ORDER BY 1, 2
     `, [days]);
     return rows;

@@ -17,7 +17,8 @@ export const objectRepository = {
 
   /**
    * Запись общих метаданных объекта (name/description).
-   * - name ''/null — очистить override (для потоков/процессов — вернуться к родительскому имени);
+   * - name: device/stream/process — обязателен (''/null → ошибка);
+   *   сегменты/чанки могут оставаться безымянными;
    * - description ''/null — очистить;
    * Возвращает обновлённый объект.
    */
@@ -35,8 +36,8 @@ export const objectRepository = {
         ? (patch.description ?? '').trim() || null
         : undefined;
 
-      if (cur.type === 'device' && name === null) {
-        throw new Error('имя устройства обязательно');
+      if (['device', 'stream', 'process'].includes(cur.type ?? '') && name === null) {
+        throw new Error('название объекта обязательно');
       }
 
       if (name !== undefined) {

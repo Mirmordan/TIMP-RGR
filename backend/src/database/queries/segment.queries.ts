@@ -1,14 +1,11 @@
 /**
- * SELECT сегмента с общими метаданными супертипа. Резолюция name/description
- * fail-closed через общую иерархию objects.parent_id
- * (device ← stream ← process ← segment): objects_effective_name(o.id) —
- * собственный objects.name сегмента или имя читаемого родителя.
+ * SELECT сегмента с общими метаданными супертипа. Название и описание —
+ * собственные поля objects (для сегментов — необязательные технические метки).
  * parentObjectId = objects.parent_id; parentType — тип родителя.
  */
-const segmentNameExpr = "objects_effective_name(o.id)";
-// Описание сегмента: собственное или унаследованное через objects-иерархию
-// (fail-closed: нечитаемый родитель не отдаёт описание).
-const segmentDescExpr = "objects_effective_description(o.id)";
+const segmentNameExpr = "NULLIF(o.name, '')";
+// Описание сегмента: собственное objects.description.
+const segmentDescExpr = "o.description";
 const segmentJoins = `
   JOIN objects o ON o.id = s.object_id
   LEFT JOIN objects parent ON parent.id = o.parent_id

@@ -211,9 +211,9 @@ incidentRouter.patch('/:id', requirePermission('write'), async (req: Request, re
   const id = req.params.id as string;
   const { name, title, description, severity, timeOffsetS } = req.body;
   // Если передан только устаревший title — используем его как name.
-  const effectiveName = name !== undefined ? name : title;
+  const resolvedName = name !== undefined ? name : title;
   const updated = await incidentRepository.updateById(id, {
-    ...(effectiveName !== undefined ? { name: effectiveName } : {}),
+    ...(resolvedName !== undefined ? { name: resolvedName } : {}),
     ...(description !== undefined ? { description } : {}),
     ...(severity !== undefined ? { severity } : {}),
     ...(timeOffsetS !== undefined ? { timeOffsetS } : {}),

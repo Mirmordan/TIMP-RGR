@@ -34,7 +34,7 @@ processRouter.use(authenticate);
  *           default: 0
  *       - name: q
  *         in: query
- *         description: Поиск по url потока, названию связанного устройства или id процесса (подстрока, регистронезависимо).
+ *         description: Поиск по url потока, собственному названию объекта и id процесса (подстрока, регистронезависимо).
  *         required: false
  *         schema:
  *           type: string
@@ -125,7 +125,7 @@ processRouter.get('/:id', requirePermission('read'), async (req: Request, res: R
  *     tags: [Processes]
  *     operationId: createProcess
  *     summary: Создание процесса записи
- *     description: Создаёт процесс записи (streamId, необязательные name/description; name опущено — наследуется название потока/устройства). Если status=running (по умолчанию) — поднимает поток-источник в mediaMTX и открывает сегмент записи без endedAt. Требуется capability process:create.
+ *     description: Создаёт процесс записи (streamId, обязательное name и необязательное description; name/description пишутся в собственный объект записи). Если status=running (по умолчанию) — поднимает поток-источник в mediaMTX и открывает сегмент записи без endedAt. Требуется capability process:create.
  *     requestBody:
  *       required: true
  *       content:
@@ -177,7 +177,7 @@ processRouter.post('/', requireCapability('process:create'), async (req: Request
  *     tags: [Processes]
  *     operationId: updateProcess
  *     summary: Полная замена процесса записи
- *     description: Перезаписывает процесс полным телом (streamId, startedAt, endedAt, status, name/description; name опущено/пусто — сброс override) и приводит mediaMTX в соответствие со статусом (running — поднимает поток и открывает новый сегмент, stopped/failed — останавливает поток; stopped дополнительно финализирует открытый сегмент). Требуется право write на объект.
+ *     description: Перезаписывает процесс полным телом (streamId, startedAt, endedAt, status, name/description; name обязателен, пусто — ошибка) и приводит mediaMTX в соответствие со статусом (running — поднимает поток и открывает новый сегмент, stopped/failed — останавливает поток; stopped дополнительно финализирует открытый сегмент). Требуется право write на объект.
  *     parameters:
  *       - name: id
  *         in: path
@@ -251,7 +251,7 @@ processRouter.put('/:id', requirePermission('write'), async (req: Request, res: 
  *     tags: [Processes]
  *     operationId: patchProcess
  *     summary: Частичное обновление процесса записи
- *     description: Обновляет только переданные поля (включая name/description; name null — сброс override). При смене status на running возобновляет запись (сбрасывает endedAt, поднимает поток в mediaMTX, открывает новый сегмент); при остановке (stopped/failed) фиксирует endedAt и останавливает поток, а stopped финализирует сегменты с endedAt из последних .ts. Требуется право write на объект.
+ *     description: Обновляет только переданные поля (включая name/description; name null/пусто — ошибка, название обязательно). При смене status на running возобновляет запись (сбрасывает endedAt, поднимает поток в mediaMTX, открывает новый сегмент); при остановке (stopped/failed) фиксирует endedAt и останавливает поток, а stopped финализирует сегменты с endedAt из последних .ts. Требуется право write на объект.
  *     parameters:
  *       - name: id
  *         in: path

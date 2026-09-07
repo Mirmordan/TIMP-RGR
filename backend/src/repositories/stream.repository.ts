@@ -23,11 +23,13 @@ export const streamRepository = {
   async create(url: string, deviceId?: string, sourceFingerprint?: string, meta: EntityMeta = { name: null, description: null }): Promise<RecordingStream> {
     return inUserContext(async (client) => {
       // Супертип потока: type='stream', parent_id = устройство (если привязано).
-      const { rows: objRows } = await client.query<{ objectId: string }>(streamQueries.insert, [deviceId ?? null]);
+      // Название/описание — собственные метаданные, пишутся в сам INSERT.
+      const { rows: objRows } = await client.query<{ objectId: string }>(streamQueries.insert, [
+        deviceId ?? null, meta.name, meta.description,
+      ]);
       const objectId = objRows[0]?.objectId;
       if (!objectId) throw new Error('объект не создан');
       const { rows } = await client.query<RecordingStream>(streamQueries.insertStream, [objectId, url, deviceId ?? null, sourceFingerprint ?? null]);
-      await client.query(streamQueries.setMeta, [meta.name, meta.description, objectId]);
       return rows[0]!;
     });
   },

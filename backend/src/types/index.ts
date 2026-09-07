@@ -22,8 +22,8 @@ export interface UserInput {
 
 /**
  * Общие поля супертипа objects, наследуемые доменными сущностями.
- * name/description — резолвятся objects_effective_name/description по parent_id;
- * отдельного «своего» имени в доменных сущностях нет.
+ * name/description — собственные поля objects (устройство/поток/запись/инцидент
+ * каждое со своим названием); наследование по parent_id упразднено.
  */
 export interface CommonObjectMeta {
   name?: string | null;

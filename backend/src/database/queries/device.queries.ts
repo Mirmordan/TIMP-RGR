@@ -4,7 +4,7 @@
  */
 const deviceSelect = `
   d.object_id AS "id",
-  objects_effective_name(o.id) AS "name",
+  NULLIF(o.name, '') AS "name",
   d.type,
   o.description AS "description",
   o.created_at AS "createdAt"
@@ -20,7 +20,7 @@ export const deviceQueries = {
             FROM recording_devices d
             JOIN objects o ON o.id = d.object_id
             WHERE ($3::text IS NULL
-                    OR objects_effective_name(o.id) ILIKE '%' || $3 || '%'
+                    OR NULLIF(o.name, '') ILIKE '%' || $3 || '%'
                    OR o.description ILIKE '%' || $3 || '%'
                    OR o.id::text ILIKE '%' || $3 || '%')
             ORDER BY o.created_at DESC
@@ -30,7 +30,7 @@ export const deviceQueries = {
           FROM recording_devices d
           JOIN objects o ON o.id = d.object_id
           WHERE ($1::text IS NULL
-                  OR objects_effective_name(o.id) ILIKE '%' || $1 || '%'
+                  OR NULLIF(o.name, '') ILIKE '%' || $1 || '%'
                  OR o.description ILIKE '%' || $1 || '%'
                  OR o.id::text ILIKE '%' || $1 || '%')`,
 

@@ -35,7 +35,7 @@ streamRouter.use(authenticate);
  *           default: 0
  *       - name: q
  *         in: query
- *         description: Поиск по url потока или названию связанного устройства (подстрока, регистронезависимо).
+ *         description: Поиск по url потока и собственному названию объекта (подстрока, регистронезависимо).
  *         required: false
  *         schema:
  *           type: string
@@ -213,7 +213,7 @@ streamRouter.delete('/:id/view', requirePermission('read'), async (req: Request,
  *     tags: [Streams]
  *     operationId: createStream
  *     summary: Создание потока
- *     description: Создаёт новый поток-источник записи (url, deviceId, необязательные name/description; name опущено — наследуется название устройства). Требуется capability stream:create.
+ *     description: Создаёт новый поток-источник записи (url, deviceId, обязательное name и необязательное description; name/description пишутся в собственный объект потока). Требуется capability stream:create.
  *     requestBody:
  *       required: true
  *       content:
@@ -263,7 +263,7 @@ streamRouter.post('/', requireCapability('stream:create'), async (req: Request, 
  *     tags: [Streams]
  *     operationId: updateStream
  *     summary: Полная замена потока
- *     description: Перезаписывает поток полным телом (url, deviceId, sourceFingerprint, name/description; name опущено/пусто — сброс override, наследование названия устройства). Требуется право write на объект.
+ *     description: Перезаписывает поток полным телом (url, deviceId, sourceFingerprint, name/description; name обязателен, пусто — ошибка). Требуется право write на объект.
  *     parameters:
  *       - name: id
  *         in: path
@@ -329,7 +329,7 @@ streamRouter.put('/:id', requirePermission('write'), async (req: Request, res: R
  *     tags: [Streams]
  *     operationId: patchStream
  *     summary: Частичное обновление потока
- *     description: Обновляет только переданные поля (url/deviceId/sourceFingerprint/name/description; name null — сброс override). Требуется право write на объект.
+ *     description: Обновляет только переданные поля (url/deviceId/sourceFingerprint/name/description; name null/пусто — ошибка). Требуется право write на объект.
  *     parameters:
  *       - name: id
  *         in: path

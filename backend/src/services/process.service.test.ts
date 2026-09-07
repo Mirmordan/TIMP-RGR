@@ -33,7 +33,7 @@ const put = procRepo.put as unknown as Mock;
 const patch = procRepo.patch as unknown as Mock;
 const findById = procRepo.findById as unknown as Mock;
 
-const FULL = { id: 'p1', streamId: 'st-2', status: 'stopped', name: null, description: null };
+const FULL = { id: 'p1', streamId: 'st-2', status: 'stopped', name: 'Именовая запись', description: null };
 
 beforeEach(() => {
   create.mockReset();
@@ -48,23 +48,24 @@ beforeEach(() => {
   segRepo.findByProcess.mockResolvedValue([]);
 });
 
-describe('processService: наследование/override name + description', () => {
-  it('create без name/description → meta {name: null, description: null} (наследование)', async () => {
+describe('processService: собственные name/description (без наследования)', () => {
+  it('create без name → ошибка «название обязательно»', async () => {
     const d = new Date('2026-01-01T00:00:00Z');
-    await processService.create('st-1', d, 'stopped');
-    expect(create).toHaveBeenCalledWith('st-1', d, 'stopped', { name: null, description: null });
+    await expect(processService.create('st-1', d, 'stopped')).rejects.toThrow('название обязательно');
+    await expect(processService.create('st-1', d, 'stopped', '   ')).rejects.toThrow('название обязательно');
   });
 
-  it('create с name/description → trimmed, пустое name → null', async () => {
+  it('create с name/description → trimmed', async () => {
     const d = new Date('2026-01-01T00:00:00Z');
     await processService.create('st-1', d, 'stopped', ' Реконструкция ', '  ');
     expect(create).toHaveBeenCalledWith('st-1', d, 'stopped', { name: 'Реконструкция', description: null });
   });
 
-  it('put: name опущено → override сбрасывается (null)', async () => {
+  it('put: name обязателен', async () => {
     const d = new Date('2026-01-01T00:00:00Z');
-    await processService.put('p1', 'st-2', d, null, 'stopped');
-    expect(put).toHaveBeenCalledWith('p1', 'st-2', d, null, 'stopped', { name: null, description: null });
+    await expect(processService.put('p1', 'st-2', d, null, 'stopped')).rejects.toThrow('название обязательно');
+    await processService.put('p1', 'st-2', d, null, 'stopped', ' Ночная ');
+    expect(put).toHaveBeenCalledWith('p1', 'st-2', d, null, 'stopped', { name: 'Ночная', description: null });
   });
 
   it('patch: name/description undefined → в репозиторий уходят только переданные поля', async () => {
@@ -72,9 +73,9 @@ describe('processService: наследование/override name + description',
     expect(patch).toHaveBeenCalledWith('p1', { streamId: 'st-2' });
   });
 
-  it('patch: name null → сброс override (null), явный name → trimmed', async () => {
-    await processService.patch('p1', { name: null });
-    expect(patch).toHaveBeenCalledWith('p1', { name: null });
+  it('patch: name null/пусто → ошибка, явный name → trimmed', async () => {
+    await expect(processService.patch('p1', { name: null })).rejects.toThrow('название обязательно');
+    await expect(processService.patch('p1', { name: '   ' })).rejects.toThrow('название обязательно');
     await processService.patch('p1', { name: ' Ночная запись ', description: '' });
     expect(patch).toHaveBeenLastCalledWith('p1', { name: 'Ночная запись', description: null });
   });

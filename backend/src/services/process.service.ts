@@ -4,7 +4,7 @@ import { streamRepository } from '../repositories/stream.repository';
 import { segmentRepository } from '../repositories/segment.repository';
 import { segmentService } from './segment.service';
 import { mediaManager } from '../media/mediaManager';
-import { normalizeMetaName, normalizeMetaDescription } from './entityMeta';
+import { normalizeMetaDescription, requireMetaName } from './entityMeta';
 import * as fs from 'fs';
 import * as pathMod from 'path';
 
@@ -45,15 +45,12 @@ export const processService = {
     return { processes, total };
   },
 
-  /**
-   * Создание процесса записи. name не задан/пуст → наследуется от потока/устройства;
-   * непустой name — явный override.
-   */
+  /** Создание процесса записи. Название — собственное имя объекта, обязательно. */
   async create(streamId: string, startedAt: Date, status: string, name?: string | null, description?: string | null): Promise<RecordingProcess> {
     if (!streamId) throw new Error('streamId обязателен');
     if (!VALID_STATUSES.includes(status)) throw new Error(`status должен быть одним из: ${VALID_STATUSES.join(', ')}`);
     const process = await processRepository.create(streamId, startedAt, status, {
-      name: normalizeMetaName(name),
+      name: requireMetaName(name),
       description: normalizeMetaDescription(description),
     });
     // Поднимаем поток в mediaMTX, если запись стартует сразу.
@@ -78,12 +75,12 @@ export const processService = {
     return processRepository.findById(process.id) as Promise<RecordingProcess>;
   },
 
-  /** PUT = полная замена. name не задан/пуст → сброс override (наследование). */
+  /** PUT = полная замена; название обязательно (пустое — ошибка). */
   async put(id: string, streamId: string, startedAt: Date, endedAt: Date | null, status: string, name?: string | null, description?: string | null): Promise<RecordingProcess | null> {
     if (!streamId) throw new Error('streamId обязателен');
     if (!VALID_STATUSES.includes(status)) throw new Error(`status должен быть одним из: ${VALID_STATUSES.join(', ')}`);
     const updated = await processRepository.put(id, streamId, startedAt, endedAt, status, {
-      name: normalizeMetaName(name),
+      name: requireMetaName(name),
       description: normalizeMetaDescription(description),
     });
     if (updated) await this.syncMediaStatus(id, streamId, status);
@@ -91,8 +88,8 @@ export const processService = {
   },
 
   /**
-   * PATCH: undefined — поле не трогаем; null/'' — очистить (name → наследование);
-   * непустой name/description — записать.
+   * PATCH: undefined — поле не трогаем; name null/'' — ошибка (имя обязательно);
+   * description null/'' — очистить.
    */
   async patch(id: string, patch: { streamId?: string; startedAt?: Date; endedAt?: Date; status?: string; name?: string | null; description?: string | null }): Promise<RecordingProcess | null> {
     if (patch.status !== undefined && !VALID_STATUSES.includes(patch.status)) {
@@ -102,7 +99,7 @@ export const processService = {
     if (!current) return null;
 
     const dbPatch: { streamId?: string; startedAt?: Date; endedAt?: Date; endedAtClear?: boolean; status?: string; name?: string | null; description?: string | null } = { ...patch };
-    if (patch.name !== undefined) dbPatch.name = normalizeMetaName(patch.name);
+    if (patch.name !== undefined) dbPatch.name = requireMetaName(patch.name);
     if (patch.description !== undefined) dbPatch.description = normalizeMetaDescription(patch.description);
 
     // Автоматическое управление endedAt при смене статуса.

@@ -40,17 +40,24 @@ export function ProcessEditPage() {
   const navigate = useNavigate();
 
   const [streamId, setStreamId] = useState<string | null>(null);
+  const [name, setName] = useState('');
+  const [description, setDescription] = useState('');
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
-    if (process) setStreamId(process.streamId);
+    if (process) {
+      setStreamId(process.streamId);
+      setName(process.name ?? '');
+      setDescription(process.description ?? '');
+    }
   }, [process]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!streamId) { setError('Выберите поток'); return; }
+    if (!name.trim()) { setError('Название обязательно'); return; }
     setError('');
     setSaving(true);
     try {
@@ -59,9 +66,9 @@ export function ProcessEditPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           streamId,
-          // Запись не хранит собственное имя/описание; их источник — родительские объекты.
-          name: null,
-          description: null,
+          // Название/описание — собственные метаданные объекта записи.
+          name: name.trim(),
+          description: description.trim() || null,
         }),
       });
       if (!r.ok) {
@@ -114,13 +121,13 @@ export function ProcessEditPage() {
             />
           </div>
           <div className={styles.field}>
-            <label className={styles.label}>Название объекта</label>
-            <input className={styles.input} value={process?.name ?? ''} readOnly />
-            <div className={styles.hint}>Наследуется от выбранного потока.</div>
+            <label className={styles.label}>Название *</label>
+            <input className={styles.input} value={name} onChange={e => setName(e.target.value)} placeholder="Например: Вечерний мониторинг" required />
+            <div className={styles.hint}>Собственное имя объекта записи; меняется только здесь.</div>
           </div>
           <div className={styles.field}>
-            <label className={styles.label}>Описание объекта</label>
-            <textarea className={styles.textarea} value={process?.description ?? ''} readOnly rows={3} />
+            <label className={styles.label}>Описание</label>
+            <textarea className={styles.textarea} value={description} onChange={e => setDescription(e.target.value)} rows={3} />
           </div>
           {error && <div className={styles.error}>{error}</div>}
           <div className={styles.formActions}>
