@@ -23,12 +23,14 @@ export interface UserInput {
 /**
  * Общие поля супертипа objects, наследуемые доменными сущностями.
  * name/description — эффективные (резолвятся по цепочке parent_id);
- * parentObjectId — id родительского объекта (objects.parent_id).
+ * parentObjectId — id родительского объекта (objects.parent_id);
+ * parentType — тип родительского объекта (device/stream/process), NULL для корня.
  */
 export interface CommonObjectMeta {
   name?: string | null;
   description?: string | null;
   parentObjectId?: string | null;
+  parentType?: string | null;
 }
 
 /**
@@ -94,6 +96,8 @@ export interface RecordingIncident {
   description?: string;
   timeOffsetS: number;
   severity: 'info' | 'warning' | 'critical';
+  parentObjectId?: string | null;
+  parentType?: string | null;
   createdAt: Date;
   createdBy?: string;
 }

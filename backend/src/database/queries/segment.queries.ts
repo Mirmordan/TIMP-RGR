@@ -1,23 +1,19 @@
 /**
  * SELECT сегмента с общими метаданными супертипа. Резолюция name/description
- * fail-closed: собственное — objects сегмента; унаследованное — только через
- * RLS-доменные таблицы (recording_processes → recording_streams →
- * recording_devices). Невидимый пользователю родитель не отдаёт метаданных.
- * parentObjectId = s.process_id (уже видимое поле сегмента).
+ * fail-closed через общую иерархию objects.parent_id
+ * (device ← stream ← process ← segment): objects_effective_name(o.id) —
+ * собственный objects.name сегмента или имя читаемого родителя.
+ * parentObjectId = objects.parent_id; parentType — тип родителя.
  */
-const segmentNameExpr = "COALESCE(NULLIF(o.name, ''), NULLIF(po.name, ''), NULLIF(so.name, ''), d.name)";
-const segmentDescExpr = "COALESCE(NULLIF(o.description, ''), po.description)";
-// Собственный override сегмента и имя ближайшего родителя (процесса).
+const segmentNameExpr = "objects_effective_name(o.id)";
+// Описание сегмента: собственное или унаследованное через objects-иерархию
+// (fail-closed: нечитаемый родитель не отдаёт описание).
+const segmentDescExpr = "objects_effective_description(o.id)";
 const segmentRawNameExpr = "NULLIF(o.name, '')";
-const segmentInheritedExpr = "COALESCE(NULLIF(po.name, ''), NULLIF(so.name, ''), d.name)";
 
 const segmentJoins = `
   JOIN objects o ON o.id = s.object_id
-  LEFT JOIN recording_processes p ON p.object_id = s.process_id
-  LEFT JOIN objects po ON po.id = p.object_id
-  LEFT JOIN recording_streams st ON st.object_id = p.stream_id
-  LEFT JOIN objects so ON so.id = st.object_id
-  LEFT JOIN recording_devices d ON d.object_id = st.device_id
+  LEFT JOIN objects parent ON parent.id = o.parent_id
 `;
 
 const segmentSelect = `
@@ -28,9 +24,10 @@ const segmentSelect = `
   s.size_bytes AS "sizeBytes",
   ${segmentNameExpr} AS "name",
   ${segmentRawNameExpr} AS "rawName",
-  ${segmentInheritedExpr} AS "inheritedName",
+  objects_effective_name(parent.id) AS "inheritedName",
   ${segmentDescExpr} AS "description",
-  s.process_id AS "parentObjectId",
+  o.parent_id AS "parentObjectId",
+  parent.type AS "parentType",
   o.created_at AS "createdAt"
 `;
 

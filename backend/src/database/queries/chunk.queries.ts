@@ -1,46 +1,40 @@
 /**
  * SELECT чанка с общими метаданными супертипа. Резолюция name/description
- * fail-closed: собственное — objects чанка; унаследованное — только через
- * RLS-доменные таблицы (recording_processes → recording_streams →
- * recording_devices). Невидимый пользователю родитель не отдаёт метаданных.
- * parentObjectId = c.process_id (уже видимое поле чанка).
+ * fail-closed через общую иерархию objects.parent_id
+ * (device ← stream ← process ← chunk): objects_effective_name(o.id) —
+ * собственный objects.name чанка или имя читаемого родителя.
+ * parentObjectId = objects.parent_id; parentType — тип родителя.
  */
-const chunkNameExpr = "COALESCE(NULLIF(o.name, ''), NULLIF(po.name, ''), NULLIF(so.name, ''), d.name)";
-const chunkDescExpr = "COALESCE(NULLIF(o.description, ''), po.description)";
-// Собственный override чанка и имя ближайшего родителя (процесса).
+const chunkNameExpr = "objects_effective_name(o.id)";
+// Описание чанка: собственное или унаследованное через objects-иерархию
+// (fail-closed: нечитаемый родитель не отдаёт описание).
+const chunkDescExpr = "objects_effective_description(o.id)";
 const chunkRawNameExpr = "NULLIF(o.name, '')";
-const chunkInheritedExpr = "COALESCE(NULLIF(po.name, ''), NULLIF(so.name, ''), d.name)";
 
 const chunkJoins = `
   JOIN objects o ON o.id = c.object_id
-  LEFT JOIN recording_processes p ON p.object_id = c.process_id
-  LEFT JOIN objects po ON po.id = p.object_id
-  LEFT JOIN recording_streams st ON st.object_id = p.stream_id
-  LEFT JOIN objects so ON so.id = st.object_id
-  LEFT JOIN recording_devices d ON d.object_id = st.device_id
+  LEFT JOIN objects parent ON parent.id = o.parent_id
+`;
+
+const chunkSelect = `
+  c.object_id AS "id", c.process_id AS "processId",
+  c.started_at AS "startedAt", c.ended_at AS "endedAt", c.url,
+  ${chunkNameExpr} AS "name",
+  ${chunkRawNameExpr} AS "rawName",
+  objects_effective_name(parent.id) AS "inheritedName",
+  ${chunkDescExpr} AS "description",
+  o.parent_id AS "parentObjectId",
+  parent.type AS "parentType",
+  o.created_at AS "createdAt"
 `;
 
 export const chunkQueries = {
-  findById: `SELECT c.object_id AS "id", c.process_id AS "processId",
-                    c.started_at AS "startedAt", c.ended_at AS "endedAt", c.url,
-                    ${chunkNameExpr} AS "name",
-                    ${chunkRawNameExpr} AS "rawName",
-                    ${chunkInheritedExpr} AS "inheritedName",
-                    ${chunkDescExpr} AS "description",
-                    c.process_id AS "parentObjectId",
-                    o.created_at AS "createdAt"
+  findById: `SELECT ${chunkSelect}
              FROM recording_chunks c
              ${chunkJoins}
              WHERE c.object_id = $1`,
 
-  findAll: `SELECT c.object_id AS "id", c.process_id AS "processId",
-                   c.started_at AS "startedAt", c.ended_at AS "endedAt", c.url,
-                   ${chunkNameExpr} AS "name",
-                   ${chunkRawNameExpr} AS "rawName",
-                   ${chunkInheritedExpr} AS "inheritedName",
-                   ${chunkDescExpr} AS "description",
-                   c.process_id AS "parentObjectId",
-                   o.created_at AS "createdAt"
+  findAll: `SELECT ${chunkSelect}
             FROM recording_chunks c
             ${chunkJoins}
             ORDER BY o.created_at DESC

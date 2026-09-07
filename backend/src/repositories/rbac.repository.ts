@@ -81,6 +81,8 @@ export interface RbacObject {
   type: string | null;
   name: string | null;
   description: string | null;
+  parentObjectId: string | null;
+  parentType: string | null;
   createdAt: string;
 }
 
@@ -271,6 +273,8 @@ export const rbacRepository = {
                            o.type AS "type",
                            objects_display_name(o.id) AS "name",
                            o.description AS "description",
+                           o.parent_id AS "parentObjectId",
+                           objects_admin_parent_type(o.id) AS "parentType",
                            o.created_at AS "createdAt"
                     FROM objects o`;
 

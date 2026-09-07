@@ -1,7 +1,11 @@
-/** Общие метаданные устройства: name/description из супертипа objects. */
+/**
+ * Устройство — корень иерархии объектов (parent_id = NULL): name/description
+ * из супертипа objects (objects.name — полный владелец; recording_devices.name —
+ * синхронное зеркало для legacy/RBAC). parentType не используется.
+ */
 const deviceSelect = `
   d.object_id AS "id",
-  COALESCE(NULLIF(o.name, ''), d.name) AS "name",
+  objects_effective_name(o.id) AS "name",
   d.type,
   o.description AS "description",
   o.created_at AS "createdAt"
@@ -17,8 +21,9 @@ export const deviceQueries = {
             FROM recording_devices d
             JOIN objects o ON o.id = d.object_id
             WHERE ($3::text IS NULL
-                   OR COALESCE(NULLIF(o.name, ''), d.name) ILIKE '%' || $3 || '%'
-                   OR o.description ILIKE '%' || $3 || '%')
+                   OR objects_effective_name(o.id) ILIKE '%' || $3 || '%'
+                   OR o.description ILIKE '%' || $3 || '%'
+                   OR o.id::text ILIKE '%' || $3 || '%')
             ORDER BY o.created_at DESC
             LIMIT $1 OFFSET $2`,
 
@@ -26,8 +31,9 @@ export const deviceQueries = {
           FROM recording_devices d
           JOIN objects o ON o.id = d.object_id
           WHERE ($1::text IS NULL
-                 OR COALESCE(NULLIF(o.name, ''), d.name) ILIKE '%' || $1 || '%'
-                 OR o.description ILIKE '%' || $1 || '%')`,
+                 OR objects_effective_name(o.id) ILIKE '%' || $1 || '%'
+                 OR o.description ILIKE '%' || $1 || '%'
+                 OR o.id::text ILIKE '%' || $1 || '%')`,
 
   // Общие метаданные (name/description) — полный владелец objects; recording_devices.name
   // остаётся синхронным зеркалом (для RLS-наследования и столбца NOT NULL):

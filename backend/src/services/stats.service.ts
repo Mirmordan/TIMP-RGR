@@ -88,7 +88,6 @@ async function getSegmentsAggregate(): Promise<{ segments: OverviewSegments; rec
     FROM recording_segments s
     JOIN recording_processes p ON p.object_id = s.process_id
     JOIN recording_streams st ON st.object_id = p.stream_id
-    LEFT JOIN recording_devices d ON d.object_id = st.device_id
   `);
   const row = rows[0] ?? null;
   return {
@@ -141,13 +140,13 @@ async function getDevicesVisible(): Promise<number> {
 
 async function getTopDevices(): Promise<TopDevice[]> {
   const { rows } = await queryAs<TopDevice>(`
-    SELECT d.object_id::text AS "id", d.name,
+    SELECT d.object_id::text AS "id", objects_effective_name(d.object_id) AS "name",
            COALESCE(SUM(s.duration_s), 0)::float8 AS "durationS"
     FROM recording_segments s
     JOIN recording_processes p ON p.object_id = s.process_id
     JOIN recording_streams st ON st.object_id = p.stream_id
     JOIN recording_devices d ON d.object_id = st.device_id
-    GROUP BY d.object_id, d.name
+    GROUP BY d.object_id, objects_effective_name(d.object_id)
     ORDER BY "durationS" DESC
     LIMIT 5
   `);
@@ -178,14 +177,14 @@ export const statsService = {
   async getTimeline(days: number): Promise<TimelineRow[]> {
     const { rows } = await queryAs<TimelineRow>(`
       SELECT to_char(s.started_at, 'YYYY-MM-DD') AS "day",
-             COALESCE(d.name, 'Без камеры') AS "device",
+             COALESCE(objects_effective_name(d.object_id), 'Без камеры') AS "device",
              COALESCE(SUM(s.duration_s), 0)::float8 AS "seconds"
       FROM recording_segments s
       JOIN recording_processes p ON p.object_id = s.process_id
       JOIN recording_streams st ON st.object_id = p.stream_id
       LEFT JOIN recording_devices d ON d.object_id = st.device_id
       WHERE s.started_at >= now() - make_interval(days => $1)
-      GROUP BY to_char(s.started_at, 'YYYY-MM-DD'), COALESCE(d.name, 'Без камеры')
+      GROUP BY to_char(s.started_at, 'YYYY-MM-DD'), COALESCE(objects_effective_name(d.object_id), 'Без камеры')
       ORDER BY 1, 2
     `, [days]);
     return rows;

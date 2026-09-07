@@ -1,15 +1,11 @@
 /**
  * SELECT процесса с общими метаданными супертипа. Резолюция name/description
- * fail-closed: собственное название — из objects процесса (объект виден, раз
- * виден процесс); унаследованное — только через RLS-доменные таблицы
- * (recording_streams → recording_devices). Невидимый пользователю родитель не
- * отдаёт метаданных. parentObjectId = p.stream_id (уже видимое поле процесса).
- * Цепочка имени: objects процесса → objects потока (если поток виден) → device.
- * name — эффективное; rawName — objects.name процесса (override);
- * inheritedName — название родителя (потока: его override → device), видимое без override.
+ * fail-closed через общую иерархию objects.parent_id
+ * (device ← stream ← process): objects_effective_name(po.id) — собственный
+ * objects.name процесса или имя читаемого родителя (поток → устройство).
+ * parentObjectId = objects.parent_id; parentType — тип родительского объекта.
  */
-const processNameExpr = "COALESCE(NULLIF(po.name, ''), NULLIF(so.name, ''), d.name)";
-const processInheritedExpr = "COALESCE(NULLIF(so.name, ''), d.name)";
+const processNameExpr = "objects_effective_name(po.id)";
 
 const processSelect = `
   p.object_id AS "id",
@@ -19,9 +15,10 @@ const processSelect = `
   p.status,
   ${processNameExpr} AS "name",
   NULLIF(po.name, '') AS "rawName",
-  ${processInheritedExpr} AS "inheritedName",
+  objects_effective_name(parent.id) AS "inheritedName",
   po.description AS "description",
-  p.stream_id AS "parentObjectId",
+  po.parent_id AS "parentObjectId",
+  parent.type AS "parentType",
   po.created_at AS "createdAt"
 `;
 
@@ -29,8 +26,7 @@ const processFrom = `
   FROM recording_processes p
   JOIN objects po ON po.id = p.object_id
   LEFT JOIN recording_streams s ON s.object_id = p.stream_id
-  LEFT JOIN objects so ON so.id = s.object_id
-  LEFT JOIN recording_devices d ON d.object_id = s.device_id
+  LEFT JOIN objects parent ON parent.id = po.parent_id
 `;
 
 export const processQueries = {

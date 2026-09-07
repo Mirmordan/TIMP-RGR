@@ -1,55 +1,56 @@
 /**
  * SELECT потока с общими метаданными супертипа. Резолюция name/description
- * fail-closed: собственное — objects потока; унаследованное — только из
- * RLS-таблицы recording_devices (невидимое устройство не отдаёт название).
- * parentObjectId = s.device_id (уже видимое поле потока).
- * name — эффективное (для UI): явный override потока или название устройства.
- * rawName — собственный objects.name потока (NULL = нет override).
- * inheritedName — название родителя (устройства), которое видно при отсутствии override.
+ * fail-closed через общую иерархию objects.parent_id (device ← stream):
+ * objects_effective_name(o.id) — собственный objects.name потока или имя
+ * читаемого родителя (невидимый родитель не отдаёт названия).
+ * parentObjectId = objects.parent_id; parentType — тип родительского объекта.
  */
 const streamSelect = `
   s.object_id AS "id",
   s.url,
   s.device_id AS "deviceId",
   s.source_fingerprint AS "sourceFingerprint",
-  COALESCE(NULLIF(o.name, ''), d.name) AS "name",
+  objects_effective_name(o.id) AS "name",
   NULLIF(o.name, '') AS "rawName",
-  d.name AS "inheritedName",
+  objects_effective_name(parent.id) AS "inheritedName",
   o.description AS "description",
-  s.device_id AS "parentObjectId",
+  o.parent_id AS "parentObjectId",
+  parent.type AS "parentType",
   o.created_at AS "createdAt"
 `;
 
-// Поток наследует название от устройства: objects.name потока хранит только
-// ЯВНЫЙ override (NULL/'' = наследование от родителя).
-const streamNameExpr = "COALESCE(NULLIF(o.name, ''), d.name)";
+// Поток наследует название от устройства по objects.parent_id: objects.name
+// потока хранит только ЯВНЫЙ override (NULL/'' = наследование от родителя).
+const streamNameExpr = "objects_effective_name(o.id)";
 
 export const streamQueries = {
   findById: `SELECT ${streamSelect}
              FROM recording_streams s
              JOIN objects o ON o.id = s.object_id
-             LEFT JOIN recording_devices d ON d.object_id = s.device_id
+             LEFT JOIN objects parent ON parent.id = o.parent_id
              WHERE s.object_id = $1`,
 
   findAll: `SELECT ${streamSelect}
             FROM recording_streams s
             JOIN objects o ON o.id = s.object_id
-            LEFT JOIN recording_devices d ON d.object_id = s.device_id
+            LEFT JOIN objects parent ON parent.id = o.parent_id
             WHERE ($3::text IS NULL
                    OR s.url ILIKE '%' || $3 || '%'
                    OR ${streamNameExpr} ILIKE '%' || $3 || '%'
-                   OR o.description ILIKE '%' || $3 || '%')
+                   OR o.description ILIKE '%' || $3 || '%'
+                   OR o.id::text ILIKE '%' || $3 || '%')
             ORDER BY o.created_at DESC
             LIMIT $1 OFFSET $2`,
 
   count: `SELECT COUNT(*)::int AS "total"
           FROM recording_streams s
           JOIN objects o ON o.id = s.object_id
-          LEFT JOIN recording_devices d ON d.object_id = s.device_id
+          LEFT JOIN objects parent ON parent.id = o.parent_id
           WHERE ($1::text IS NULL
                  OR s.url ILIKE '%' || $1 || '%'
                  OR ${streamNameExpr} ILIKE '%' || $1 || '%'
-                 OR o.description ILIKE '%' || $1 || '%')`,
+                 OR o.description ILIKE '%' || $1 || '%'
+                 OR o.id::text ILIKE '%' || $1 || '%')`,
 
   // Супертип потока: parent_id = объект устройства (device_id потока).
   insert: `INSERT INTO objects (type, parent_id, owner_id) VALUES ('stream', $1, NULLIF(current_setting('app.user_id', true), '')::UUID)

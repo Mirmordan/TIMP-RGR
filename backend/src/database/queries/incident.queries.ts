@@ -1,34 +1,34 @@
 /**
- * Инциденты: title/description внутренне опираются на общие поля супертипа
- * (objects.name/description), столбцы recording_incidents остаются зеркалом
- * для обратной совместимости API. Наследуемый родитель — процесс.
- * parentObjectId = i.process_id (уже видимое поле инцидента).
+ * Инциденты: title/description — собственные (objects.name/description либо
+ * зеркало recording_incidents). Родитель — процесс через objects.parent_id.
+ * parentObjectId = COALESCE(objects.parent_id, process_id).
  */
+const incidentSelect = `
+  i.object_id AS "id", i.process_id AS "processId",
+  i.segment_id AS "segmentId",
+  COALESCE(NULLIF(o.name, ''), i.title) AS "title",
+  COALESCE(NULLIF(o.description, ''), i.description) AS "description",
+  i.time_offset_s AS "timeOffsetS", i.severity,
+  COALESCE(o.parent_id, i.process_id) AS "parentObjectId",
+  parent.type AS "parentType",
+  i.created_at AS "createdAt",
+  u.username AS "createdBy"
+`;
+
+const incidentFrom = `
+  FROM recording_incidents i
+  LEFT JOIN objects o ON o.id = i.object_id
+  LEFT JOIN objects parent ON parent.id = o.parent_id
+  LEFT JOIN users u ON u.id = i.created_by
+`;
+
 export const incidentQueries = {
-  findById: `SELECT i.object_id AS "id", i.process_id AS "processId",
-                    i.segment_id AS "segmentId",
-                    COALESCE(NULLIF(o.name, ''), i.title) AS "title",
-                    COALESCE(NULLIF(o.description, ''), i.description) AS "description",
-                    i.time_offset_s AS "timeOffsetS", i.severity,
-                    i.process_id AS "parentObjectId",
-                    i.created_at AS "createdAt",
-                    u.username AS "createdBy"
-             FROM recording_incidents i
-             LEFT JOIN objects o ON o.id = i.object_id
-             LEFT JOIN users u ON u.id = i.created_by
+  findById: `SELECT ${incidentSelect}
+             ${incidentFrom}
              WHERE i.object_id = $1`,
 
-  findByProcess: `SELECT i.object_id AS "id", i.process_id AS "processId",
-                         i.segment_id AS "segmentId",
-                         COALESCE(NULLIF(o.name, ''), i.title) AS "title",
-                         COALESCE(NULLIF(o.description, ''), i.description) AS "description",
-                         i.time_offset_s AS "timeOffsetS", i.severity,
-                         i.process_id AS "parentObjectId",
-                         i.created_at AS "createdAt",
-                         u.username AS "createdBy"
-                  FROM recording_incidents i
-                  LEFT JOIN objects o ON o.id = i.object_id
-                  LEFT JOIN users u ON u.id = i.created_by
+  findByProcess: `SELECT ${incidentSelect}
+                  ${incidentFrom}
                   WHERE i.process_id = $1
                   ORDER BY i.time_offset_s`,
 
