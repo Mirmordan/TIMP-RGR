@@ -17,6 +17,7 @@ export function DeviceEditPage() {
 
   const [name, setName] = useState('');
   const [type, setType] = useState('');
+  const [description, setDescription] = useState('');
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -25,12 +26,14 @@ export function DeviceEditPage() {
     if (isCreate) {
       setName('');
       setType('');
+      setDescription('');
       setError('');
       return;
     }
     if (device) {
       setName(device.name);
       setType(device.type);
+      setDescription(device.description ?? '');
     }
   }, [isCreate, device]);
 
@@ -56,7 +59,7 @@ export function DeviceEditPage() {
       const r = await apiFetch(url, {
         method: isCreate ? 'POST' : 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, type }),
+        body: JSON.stringify({ name: name.trim(), type, description: description.trim() || null }),
       });
       if (!r.ok) {
         const d = await r.json().catch(() => ({}));
@@ -77,7 +80,7 @@ export function DeviceEditPage() {
     <Layout>
       <DetailHeader
         title={isCreate ? 'Новое устройство' : 'Редактирование устройства'}
-        onBack={isCreate ? '/devices' : `../${id}`}
+        onBack={isCreate ? '/devices' : `/devices/${id}`}
         actions={!isCreate && (
           <Button variant="danger" onClick={handleDelete} disabled={deleting}>Удалить</Button>
         )}
@@ -94,6 +97,16 @@ export function DeviceEditPage() {
               {!type && <option value="" disabled>— выберите тип —</option>}
               {DEVICE_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
             </select>
+          </div>
+          <div className={styles.field}>
+            <label className={styles.label}>Описание</label>
+            <textarea
+              className={styles.textarea}
+              value={description}
+              onChange={e => setDescription(e.target.value)}
+              placeholder="необязательно"
+              rows={3}
+            />
           </div>
           {error && <div className={styles.error}>{error}</div>}
           <div className={styles.formActions}>

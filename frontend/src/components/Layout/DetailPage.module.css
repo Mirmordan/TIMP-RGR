@@ -96,6 +96,26 @@
   border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-glow);
 }
+.textarea {
+  width: 100%;
+  padding: var(--space-3);
+  font-family: var(--font-body);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  outline: none;
+  resize: vertical;
+  min-height: 76px;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.textarea::placeholder { color: var(--text-dim); }
+.textarea:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-glow);
+}
 .inputError {
   border-color: var(--danger);
   box-shadow: 0 0 0 3px var(--danger-bg);
@@ -127,6 +147,11 @@
   font-size: 12px;
   color: var(--danger);
   min-height: 18px;
+}
+.hint {
+  font-size: 11px;
+  color: var(--text-dim);
+  line-height: 1.4;
 }
 
 /* Danger zone */

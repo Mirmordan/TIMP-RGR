@@ -172,7 +172,7 @@ export function ProcessDetailPage() {
                 {actionLoading ? '...' : 'Возобновить'}
               </Button>
             )}
-            <Button variant="outline" onClick={() => navigate('edit')}>Редактировать</Button>
+            <Button variant="outline" onClick={() => navigate(`/processes/${process.id}/edit`)}>Редактировать</Button>
           </>
         }
       />
@@ -182,6 +182,11 @@ export function ProcessDetailPage() {
             <StatusBadge status={process.status} />
             {isRunning && <span className={styles.liveIndicator}>● LIVE</span>}
           </InfoRow>
+          <InfoRow label="Название">{process.name ?? '—'}</InfoRow>
+          <InfoRow label="Своё название">
+            {process.rawName ?? (process.inheritedName ? `— (наследуется: ${process.inheritedName})` : '— (наследуется)')}
+          </InfoRow>
+          <InfoRow label="Описание">{process.description ?? '—'}</InfoRow>
           <InfoRow label="Поток" mono>{process.streamId}</InfoRow>
           <InfoRow label="Старт">{new Date(process.startedAt).toLocaleString('ru-RU')}</InfoRow>
           <InfoRow label="Окончание">{process.endedAt ? new Date(process.endedAt).toLocaleString('ru-RU') : '—'}</InfoRow>

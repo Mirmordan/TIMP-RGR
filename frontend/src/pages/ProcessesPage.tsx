@@ -9,9 +9,32 @@ import { usePaginatedData } from '../hooks/usePaginatedData';
 import type { RecordingProcess as Process } from '../types';
 import listStyles from './ListPage.module.css';
 
+function truncate(s: string, max = 60) {
+  return s.length > max ? s.slice(0, max) + '...' : s;
+}
+
+function NameCell({ name, sub, title }: { name: string; sub?: string; title?: string }) {
+  return (
+    <div className={listStyles.nameCell} title={title}>
+      <span className={listStyles.namePrimary}>{name}</span>
+      {sub ? <span className={listStyles.nameSub}>{truncate(sub)}</span> : null}
+    </div>
+  );
+}
+
 const columns: Column<Process>[] = [
+  {
+    key: 'name',
+    header: 'Название',
+    render: (v, row) => (
+      <NameCell
+        name={(v as string) ?? `#${row.id.slice(0, 8)}`}
+        sub={row.description ?? undefined}
+        title={row.description ?? undefined}
+      />
+    ),
+  },
   { key: 'status', header: 'Статус', render: (_, row) => <StatusBadge status={row.status} /> },
-  { key: 'streamId', header: 'Поток', mono: true, render: v => (v as string).slice(0, 8) + '...' },
   { key: 'startedAt', header: 'Старт', render: v => new Date(v as string).toLocaleString('ru-RU') },
   { key: 'endedAt', header: 'Окончание', render: v => v ? new Date(v as string).toLocaleString('ru-RU') : '—' },
   { key: 'id', header: 'ID', mono: true },
@@ -41,8 +64,8 @@ export function ProcessesPage() {
             className={listStyles.searchInput}
             value={q}
             onChange={e => setQ(e.target.value)}
-            placeholder="Поиск по названию…"
-            aria-label="Поиск по названию"
+            placeholder="Поиск по названию, описанию…"
+            aria-label="Поиск по названию, описанию"
           />
           {q !== '' && (
             <button type="button" className={listStyles.searchClear} onClick={() => setQ('')} aria-label="Очистить поиск">✕</button>

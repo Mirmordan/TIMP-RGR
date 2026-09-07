@@ -1,18 +1,37 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router';
 import { Layout, Card } from '../components/Layout/Layout';
 import { DetailHeader, styles } from '../components/Layout/DetailPage';
 import { Button } from '../components/Button/Button';
-import { SearchSelect, type SearchSelectItem } from '../components/SearchSelect/SearchSelect';
+import { RemoteSearchSelect, type SearchSelectItem } from '../components/SearchSelect/RemoteSearchSelect';
 import { useEntity } from '../hooks/useEntity';
 import { apiFetch } from '../api';
-import type { RecordingProcess as Process, RecordingStream as Stream, RecordingDevice as Device } from '../types';
+import type { RecordingProcess as Process, RecordingStream as Stream } from '../types';
 
-function urlTail(url: string): string {
-  return url.length > 28 ? '…' + url.slice(-28) : url;
-}
 function urlShort(url: string): string {
   return url.length > 40 ? url.slice(0, 40) + '…' : url;
+}
+
+function streamToItem(s: Stream): SearchSelectItem {
+  return { value: s.id, label: s.name ?? `#${s.id.slice(0, 8)}`, sublabel: urlShort(s.url) };
+}
+
+async function loadStreams(q: string): Promise<SearchSelectItem[]> {
+  const params = new URLSearchParams({ limit: '50' });
+  if (q.trim()) params.set('q', q.trim());
+  const r = await apiFetch(`/streams?${params.toString()}`);
+  if (!r.ok) {
+    const d = await r.json().catch(() => ({}));
+    throw new Error(d.error || `Ошибка загрузки (${r.status})`);
+  }
+  const data = await r.json();
+  return (data.streams ?? []).map(streamToItem);
+}
+
+async function loadStreamById(id: string): Promise<SearchSelectItem | null> {
+  const r = await apiFetch(`/streams/${id}`);
+  if (!r.ok) return null;
+  return streamToItem(await r.json());
 }
 
 export function ProcessEditPage() {
@@ -20,46 +39,20 @@ export function ProcessEditPage() {
   const { item: process, loading } = useEntity<Process>('/processes', id);
   const navigate = useNavigate();
 
-  const [streams, setStreams] = useState<Stream[]>([]);
-  const [devices, setDevices] = useState<Device[]>([]);
   const [streamId, setStreamId] = useState<string | null>(null);
+  const [name, setName] = useState('');
+  const [description, setDescription] = useState('');
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
-    if (process) setStreamId(process.streamId);
-  }, [process]);
-
-  useEffect(() => {
-    apiFetch('/streams?limit=200').then(async r => {
-      if (!r.ok) return;
-      const d = await r.json();
-      setStreams(d.streams ?? d);
-    });
-    apiFetch('/devices?limit=200').then(async r => {
-      if (!r.ok) return;
-      const d = await r.json();
-      setDevices(d.devices ?? d);
-    });
-  }, []);
-
-  const streamItems = useMemo<SearchSelectItem[]>(() => {
-    const byId = new Map(devices.map(dev => [dev.id, dev]));
-    const list: SearchSelectItem[] = streams.map(s => {
-      const dev = s.deviceId ? byId.get(s.deviceId) : undefined;
-      return {
-        value: s.id,
-        label: dev?.name ?? urlShort(s.url),
-        sublabel: urlTail(s.url),
-        search: `${dev?.name ?? ''} ${s.url} ${s.id}`,
-      };
-    });
-    if (process?.streamId && !list.some(it => it.value === process.streamId)) {
-      list.push({ value: process.streamId, label: '#' + process.streamId.slice(0, 8), search: process.streamId });
+    if (process) {
+      setStreamId(process.streamId);
+      setName(process.rawName ?? '');
+      setDescription(process.description ?? '');
     }
-    return list;
-  }, [streams, devices, process]);
+  }, [process]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -70,7 +63,7 @@ export function ProcessEditPage() {
       const r = await apiFetch(`/processes/${id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ streamId }),
+        body: JSON.stringify({ streamId, name: name.trim() || null, description: description.trim() || null }),
       });
       if (!r.ok) {
         const d = await r.json().catch(() => ({}));
@@ -99,11 +92,15 @@ export function ProcessEditPage() {
 
   if (loading) return <Layout><div className={styles.loading}>Загрузка...</div></Layout>;
 
+  const namePlaceholder = process?.inheritedName
+    ? `Наследуется от потока: ${process.inheritedName}`
+    : 'Наследуется';
+
   return (
     <Layout>
       <DetailHeader
         title="Редактирование записи"
-        onBack={`../${id}`}
+        onBack={`/processes/${id}`}
         actions={
           <Button variant="danger" onClick={handleDelete} disabled={deleting}>Удалить</Button>
         }
@@ -112,12 +109,35 @@ export function ProcessEditPage() {
         <form className={styles.form} onSubmit={handleSubmit}>
           <div className={styles.field}>
             <label className={styles.label}>Поток</label>
-            <SearchSelect
-              items={streamItems}
+            <RemoteSearchSelect
               value={streamId}
               onChange={v => setStreamId(v)}
+              load={loadStreams}
+              loadSelected={loadStreamById}
               placeholder="Выберите поток"
               ariaLabel="Поток"
+            />
+          </div>
+          <div className={styles.field}>
+            <label className={styles.label}>Название</label>
+            <input
+              className={styles.input}
+              value={name}
+              onChange={e => setName(e.target.value)}
+              placeholder={namePlaceholder}
+            />
+            {!process?.rawName && (
+              <div className={styles.hint}>Своё название не задано — отображается название потока.</div>
+            )}
+          </div>
+          <div className={styles.field}>
+            <label className={styles.label}>Описание</label>
+            <textarea
+              className={styles.textarea}
+              value={description}
+              onChange={e => setDescription(e.target.value)}
+              placeholder="необязательно"
+              rows={3}
             />
           </div>
           {error && <div className={styles.error}>{error}</div>}

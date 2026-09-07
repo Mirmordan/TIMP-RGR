@@ -12,10 +12,26 @@ export interface RecordingDevice {
   id: string;
   name: string;
   type: string;
+  description: string | null;
   createdAt: string;
 }
 
-export interface RecordingStream {
+/**
+ * Общие поля супертипа objects, которые возвращают GET-списки/детали:
+ * name — эффективное название (собственное или унаследованное от родителя);
+ * rawName — собственный objects.name (override; null = наследуется);
+ * inheritedName — имя ближайшего родителя, видимое при отсутствии override;
+ * parentObjectId — id родителя в иерархии objects.
+ */
+interface CommonMetaFields {
+  name: string | null;
+  rawName: string | null;
+  inheritedName: string | null;
+  description: string | null;
+  parentObjectId: string | null;
+}
+
+export interface RecordingStream extends CommonMetaFields {
   id: string;
   url: string;
   deviceId?: string | null;
@@ -23,7 +39,7 @@ export interface RecordingStream {
   createdAt: string;
 }
 
-export interface RecordingProcess {
+export interface RecordingProcess extends CommonMetaFields {
   id: string;
   streamId: string;
   startedAt: string;
@@ -42,6 +58,11 @@ export interface RecordingSegment {
   fileCount: number;
   durationS: number;
   sizeBytes: string;
+  name?: string | null;
+  rawName?: string | null;
+  inheritedName?: string | null;
+  description?: string | null;
+  parentObjectId?: string | null;
   createdAt: string;
 }
 

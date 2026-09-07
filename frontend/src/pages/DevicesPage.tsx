@@ -9,8 +9,27 @@ import { usePaginatedData } from '../hooks/usePaginatedData';
 import type { RecordingDevice as Device } from '../types';
 import listStyles from './ListPage.module.css';
 
+function truncate(s: string, max = 60) {
+  return s.length > max ? s.slice(0, max) + '...' : s;
+}
+
+function NameCell({ name, sub, title }: { name: string; sub?: string; title?: string }) {
+  return (
+    <div className={listStyles.nameCell} title={title}>
+      <span className={listStyles.namePrimary}>{name}</span>
+      {sub ? <span className={listStyles.nameSub}>{truncate(sub)}</span> : null}
+    </div>
+  );
+}
+
 const columns: Column<Device>[] = [
-  { key: 'name', header: 'Название' },
+  {
+    key: 'name',
+    header: 'Название',
+    render: (v, row) => (
+      <NameCell name={v as string} sub={row.description ?? undefined} title={row.description ?? undefined} />
+    ),
+  },
   { key: 'type', header: 'Тип' },
   { key: 'id', header: 'ID', mono: true },
   { key: 'createdAt', header: 'Создан', render: v => new Date(v as string).toLocaleDateString('ru-RU') },
@@ -40,8 +59,8 @@ export function DevicesPage() {
             className={listStyles.searchInput}
             value={q}
             onChange={e => setQ(e.target.value)}
-            placeholder="Поиск по названию…"
-            aria-label="Поиск по названию"
+            placeholder="Поиск по названию, описанию…"
+            aria-label="Поиск по названию, описанию"
           />
           {q !== '' && (
             <button type="button" className={listStyles.searchClear} onClick={() => setQ('')} aria-label="Очистить поиск">✕</button>

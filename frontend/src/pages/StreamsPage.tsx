@@ -13,10 +13,33 @@ function truncate(s: string, max = 50) {
   return s.length > max ? s.slice(0, max) + '...' : s;
 }
 
+function NameCell({ name, sub, title }: { name: string; sub?: string; title?: string }) {
+  return (
+    <div className={listStyles.nameCell} title={title}>
+      <span className={listStyles.namePrimary}>{name}</span>
+      {sub ? <span className={listStyles.nameSub}>{truncate(sub)}</span> : null}
+    </div>
+  );
+}
+
 const columns: Column<Stream>[] = [
+  {
+    key: 'name',
+    header: 'Название',
+    render: (v, row) => (
+      <NameCell
+        name={(v as string) ?? `#${row.id.slice(0, 8)}`}
+        sub={row.description ?? undefined}
+        title={row.description ?? undefined}
+      />
+    ),
+  },
   { key: 'url', header: 'Источник', render: v => truncate(v as string) },
-  { key: 'deviceId', header: 'Устройство', render: v => v ? String(v) : '—' },
-  { key: 'sourceFingerprint', header: 'Fingerprint', mono: true, render: v => v ? truncate(String(v), 20) : '—' },
+  {
+    key: 'inheritedName',
+    header: 'Устройство',
+    render: (v, row) => (v as string) ?? (row.deviceId ? `#${row.deviceId.slice(0, 8)}` : '—'),
+  },
   { key: 'id', header: 'ID', mono: true },
 ];
 
@@ -44,8 +67,8 @@ export function StreamsPage() {
             className={listStyles.searchInput}
             value={q}
             onChange={e => setQ(e.target.value)}
-            placeholder="Поиск по названию…"
-            aria-label="Поиск по названию"
+            placeholder="Поиск по названию, описанию…"
+            aria-label="Поиск по названию, описанию"
           />
           {q !== '' && (
             <button type="button" className={listStyles.searchClear} onClick={() => setQ('')} aria-label="Очистить поиск">✕</button>

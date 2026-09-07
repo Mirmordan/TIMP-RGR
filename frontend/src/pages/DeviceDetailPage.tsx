@@ -19,12 +19,13 @@ export function DeviceDetailPage() {
         title={device.name}
         subtitle={device.type}
         actions={
-          <Button variant="primary" onClick={() => navigate('edit')}>Редактировать</Button>
+          <Button variant="primary" onClick={() => navigate(`/devices/${device.id}/edit`)}>Редактировать</Button>
         }
       />
       <Card>
         <DetailGrid>
           <InfoRow label="Название">{device.name}</InfoRow>
+          <InfoRow label="Описание">{device.description ?? '—'}</InfoRow>
           <InfoRow label="Тип">{device.type}</InfoRow>
           <InfoRow label="ID" mono>{device.id}</InfoRow>
           <InfoRow label="Создан">{new Date(device.createdAt).toLocaleString('ru-RU')}</InfoRow>
