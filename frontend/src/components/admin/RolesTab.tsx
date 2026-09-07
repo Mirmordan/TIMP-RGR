@@ -2,9 +2,11 @@ import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Table, type Column } from '../Table/Table';
 import { Button } from '../Button/Button';
 import { apiFetch } from '../../api';
+import { useAuth } from '../../auth';
 import { useNotify } from '../../notifications';
 import { Skeleton, SkeletonRows } from '../Skeleton/Skeleton';
 import type {
+  AdminCapabilityInfo,
   AdminGroup,
   AdminObject,
   AdminObjectGrant,
@@ -36,6 +38,48 @@ const OBJECT_TYPE_FILTERS = [
 
 /** Остальные типы objects-каталога — серверный фильтр одиночный, для «иных» сливаем запросы. */
 const OTHER_OBJECT_TYPES = ['segment', 'chunk', 'incident'];
+
+/** Порядок и заголовки рубрик каталога спец-прав (код группируется по префиксу). */
+const CAP_GROUP_ORDER = [
+  'Администрирование',
+  'Пользователи',
+  'Роли',
+  'Группы',
+  'Права доступа',
+  'Аудит',
+  'Создание объектов',
+  'Экспорт',
+];
+
+function capabilityGroupTitle(code: string): string {
+  const prefix = code.split(':')[0];
+  if (['camera', 'stream', 'process', 'chunk'].includes(prefix)) return 'Создание объектов';
+  const byPrefix: Record<string, string> = {
+    admin: 'Администрирование',
+    user: 'Пользователи',
+    role: 'Роли',
+    group: 'Группы',
+    permission: 'Права доступа',
+    audit: 'Аудит',
+    media: 'Экспорт',
+  };
+  return byPrefix[prefix] ?? 'Прочее';
+}
+
+/** Каталог спец-прав, разложенный по рубрикам в фиксированном порядке. */
+function groupCapsCatalog(catalog: AdminCapabilityInfo[]): Array<{ title: string; items: AdminCapabilityInfo[] }> {
+  const byGroup = new Map<string, AdminCapabilityInfo[]>();
+  for (const item of catalog) {
+    const title = capabilityGroupTitle(item.code);
+    const list = byGroup.get(title);
+    if (list) list.push(item);
+    else byGroup.set(title, [item]);
+  }
+  const ordered: string[] = [];
+  for (const title of CAP_GROUP_ORDER) if (byGroup.has(title)) ordered.push(title);
+  for (const title of byGroup.keys()) if (!ordered.includes(title)) ordered.push(title);
+  return ordered.map(title => ({ title, items: byGroup.get(title) ?? [] }));
+}
 
 const OBJECT_TYPE_LABELS: Record<string, string> = {
   device: 'камера',
@@ -87,6 +131,7 @@ function grantKey(g: Pick<LocalGrant, 'objectId' | 'action'>) {
 }
 
 export function RolesTab() {
+  const { capabilities } = useAuth();
   const { toast } = useNotify();
   const [roles, setRoles] = useState<AdminRole[]>([]);
   const [groups, setGroups] = useState<AdminGroup[]>([]);
@@ -94,6 +139,12 @@ export function RolesTab() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [tick, setTick] = useState(0);
+
+  // Спец-права видит только admin:read, каталог читается под role:read,
+  // изменение требует admin:write (gates зеркалят права backend-эндпоинтов).
+  const canViewSpecialCaps = capabilities.includes('admin:read');
+  const canReadSpecialCaps = canViewSpecialCaps && capabilities.includes('role:read');
+  const canManageSpecialCaps = capabilities.includes('admin:write');
 
   const [name, setName] = useState('');
   const [creating, setCreating] = useState(false);
@@ -122,6 +173,14 @@ export function RolesTab() {
   const [grantsError, setGrantsError] = useState('');
   /** true после успешной GET-загрузки прямых выдач — иначе PUT по пустому списку сотрёт их. */
   const [grantsLoaded, setGrantsLoaded] = useState(false);
+
+  // --- Спец-права (system capabilities) роли: каталог + черновик выданных кодов ---
+  const [capsCatalog, setCapsCatalog] = useState<AdminCapabilityInfo[]>([]);
+  const [capsDraft, setCapsDraft] = useState<Set<string>>(new Set());
+  const [capsLoading, setCapsLoading] = useState(false);
+  const [capsError, setCapsError] = useState('');
+  /** true после успешной GET-загрузки спец-прав роли — иначе PUT по пустому Set сотрёт их. */
+  const [capsLoaded, setCapsLoaded] = useState(false);
 
   const [detailSaving, setDetailSaving] = useState(false);
   const detailSeq = useRef(0);
@@ -166,6 +225,28 @@ export function RolesTab() {
       });
     return () => { cancelled = true; };
   }, [tick]);
+
+  // Каталог спец-прав — статичный; грузится вместе со списками, повторно на перезагрузках.
+  useEffect(() => {
+    if (!canReadSpecialCaps) return;
+    let cancelled = false;
+    apiFetch('/admin/capabilities')
+      .then(async r => {
+        if (!r.ok) {
+          const d = await r.json().catch(() => ({}));
+          throw new Error(d.error || `Ошибка загрузки (${r.status})`);
+        }
+        return (await r.json()) as AdminCapabilityInfo[];
+      })
+      .then(data => {
+        if (!cancelled) setCapsCatalog(data);
+      })
+      .catch(() => {
+        // Без каталога секция спец-прав просто не отобразится (без шумных тостов).
+        if (!cancelled) setCapsCatalog([]);
+      });
+    return () => { cancelled = true; };
+  }, [tick, canReadSpecialCaps]);
 
   useEffect(() => () => {
     detailSeq.current++;
@@ -282,6 +363,49 @@ export function RolesTab() {
     fetchRoleGrants(activeRole.id, seq);
   }
 
+  function fetchRoleCaps(roleId: string, seq: number) {
+    setCapsLoading(true);
+    setCapsError('');
+    apiFetch(`/admin/roles/${roleId}/capabilities`)
+      .then(async r => {
+        if (!r.ok) {
+          const d = await r.json().catch(() => ({}));
+          throw new Error(d.error || `Ошибка загрузки (${r.status})`);
+        }
+        return (await r.json()) as string[];
+      })
+      .then(codes => {
+        if (detailSeq.current !== seq) return;
+        setCapsDraft(new Set(codes));
+        setCapsLoaded(true);
+      })
+      .catch((e: unknown) => {
+        if (detailSeq.current !== seq) return;
+        const msg = e instanceof Error ? e.message : 'Не удалось загрузить спец-права';
+        setCapsLoaded(false);
+        setCapsError(msg);
+        toast.error(msg);
+      })
+      .finally(() => {
+        if (detailSeq.current === seq) setCapsLoading(false);
+      });
+  }
+
+  function retryCapsLoad() {
+    if (!activeRole) return;
+    const seq = ++detailSeq.current;
+    fetchRoleCaps(activeRole.id, seq);
+  }
+
+  function toggleCap(code: string) {
+    setCapsDraft(prev => {
+      const next = new Set(prev);
+      if (next.has(code)) next.delete(code);
+      else next.add(code);
+      return next;
+    });
+  }
+
   function openRole(row: AdminRole) {
     setRenamingId(null);
     setConfirmDeleteId(null);
@@ -298,6 +422,9 @@ export function RolesTab() {
     setGrants([]);
     setGrantsLoaded(false);
     setGrantsError('');
+    setCapsDraft(new Set());
+    setCapsLoaded(false);
+    setCapsError('');
     setQuery('');
     setTypeFilter('');
     setRowActions({});
@@ -327,6 +454,7 @@ export function RolesTab() {
         if (detailSeq.current === seq) setUsersLoading(false);
       });
 
+    if (canReadSpecialCaps) fetchRoleCaps(row.id, seq);
     if (isAdminRole(row)) {
       // admin — полный доступ, прямые выдачи не редактируются.
       setGrantsLoading(false);
@@ -462,9 +590,11 @@ export function RolesTab() {
     setDetailSaving(true);
     setMatrixError('');
     setGrantsError('');
+    setCapsError('');
     const failures: string[] = [];
     let matrixSaved = false;
     let grantsSaved = false;
+    let capsSaved = false;
 
     // 1) Матрица группового доступа.
     try {
@@ -522,12 +652,44 @@ export function RolesTab() {
       }
     }
 
+    // 3) Спец-права роли (system capabilities). PUT — полная замена: без успешной
+    // GET-загрузки не отправляем (пустой Set сотрёт коды); системные роли
+    // (admin/operator/viewer) зафиксированы сидом, изменение требует admin:write.
+    if (canManageSpecialCaps && !isSystemRole(activeRole)) {
+      if (!capsLoaded) {
+        const msg = 'спец-права: список не загружен, изменения не отправлены — повторите загрузку';
+        setCapsError(msg);
+        failures.push(msg);
+      } else {
+        try {
+          const r = await apiFetch(`/admin/roles/${activeRole.id}/capabilities`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ capabilities: [...capsDraft] }),
+          });
+          if (!r.ok) {
+            const d = await r.json().catch(() => ({}));
+            throw new Error(d.error || 'Не удалось сохранить спец-права');
+          }
+          const updated = (await r.json()) as string[];
+          setCapsDraft(new Set(updated));
+          capsSaved = true;
+        } catch (err: unknown) {
+          const msg = `спец-права: ${err instanceof Error ? err.message : 'ошибка'}`;
+          // PUT — атомарная замена: сервер не изменился, локальный черновик безопасен
+          // для повторного «Сохранить» (inline-ошибка остаётся видимой).
+          setCapsError(msg);
+          failures.push(msg);
+        }
+      }
+    }
+
     setDetailSaving(false);
     if (failures.length === 0) {
       toast.success(`Роль «${activeRole.name}» обновлена`);
       return;
     }
-    const applied = matrixSaved || grantsSaved ? ' Сохранённое уже применено — проверьте ошибки секций и сохраните повторно.' : '';
+    const applied = matrixSaved || grantsSaved || capsSaved ? ' Сохранённое уже применено — проверьте ошибки секций и сохраните повторно.' : '';
     toast.error(`${failures.join('; ')}.${applied}`);
   }
 
@@ -835,6 +997,68 @@ export function RolesTab() {
     );
   }
 
+  function renderSpecialCaps() {
+    const role = activeRole;
+    if (!role) return null;
+    const system = isSystemRole(role);
+    const editable = canManageSpecialCaps && !system;
+    return (
+      <div className={styles.detailSection}>
+        <div className={styles.matrixHead}>
+          <div className={styles.matrixTitle}>Системные специальные права</div>
+          <div className={styles.matrixHint}>
+            {system
+              ? 'набор системных ролей задан сидом и не редактируется'
+              : editable
+                ? 'глобальные операции роли — отметьте нужные и сохраните'
+                : 'просмотр доступен, изменение требует capability admin:write'}
+          </div>
+        </div>
+        {capsCatalog.length === 0 ? (
+          <div className={styles.noGroups}>Каталог спец-прав недоступен</div>
+        ) : capsLoading ? (
+          <SkeletonRows rows={3} cols={3} cellWidths={['40%', '52%', '52%']} />
+        ) : capsError && !capsLoaded ? (
+          // Список не загружен: PUT по пустому Set сотрёт коды — показываем retry-блок.
+          <div className={styles.grantsFail}>
+            <div className={styles.grantsFailText}>{capsError}</div>
+            <div className={styles.grantsFailActions}>
+              <Button size="sm" variant="outline" onClick={retryCapsLoad}>
+                Повторить загрузку
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <>
+            {capsError && <div className={styles.saveError}>{capsError}</div>}
+            {groupCapsCatalog(capsCatalog).map(group => (
+              <div key={group.title} className={styles.capsGroup}>
+                <div className={styles.capsGroupTitle}>{group.title}</div>
+                <div className={styles.capsGrid}>
+                  {group.items.map(item => {
+                    const checked = capsDraft.has(item.code);
+                    return (
+                      <label key={item.code} className={styles.capsItem} title={item.description}>
+                        <input
+                          type="checkbox"
+                          className={styles.capsCheck}
+                          checked={checked}
+                          disabled={!editable}
+                          onChange={() => toggleCap(item.code)}
+                        />
+                        <span className={styles.capsLabel}>{item.label}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          </>
+        )}
+      </div>
+    );
+  }
+
   function renderRoleDetail() {
     if (!activeRole) return null;
     const isAdmin = isAdminRole(activeRole);
@@ -856,11 +1080,12 @@ export function RolesTab() {
         {isAdmin && (
           <div className={styles.fullAccessBanner}>
             <span className={styles.fullAccessBadge}>полный доступ</span>
-            роль admin имеет полный доступ ко всем объектам и действиям; прямое редактирование прав и выдач отключено
+            роль admin имеет полный доступ ко всем объектам и действиям; прямое редактирование прав, выдач и спец-прав отключено
           </div>
         )}
         {renderRoleUsers()}
         {renderMatrix()}
+        {canViewSpecialCaps && renderSpecialCaps()}
         {renderGrants()}
         <div className={styles.matrixActions}>
           {!isAdmin && (

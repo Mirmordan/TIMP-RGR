@@ -129,6 +129,13 @@ export interface AdminPermission {
   action: string;
 }
 
+/** Запись каталога system capabilities (GET /admin/capabilities). */
+export interface AdminCapabilityInfo {
+  code: string;
+  label: string;
+  description: string;
+}
+
 /** Действия аудит-лога (U1) — зеркалит backend AUDIT_ACTIONS. */
 export const AUDIT_ACTIONS = [
   'user.create',
