@@ -32,8 +32,8 @@ async function isAdmin(userId: string): Promise<boolean> {
  *  - owner bootstrap для read (создатель видит свой не введённый в группы объект).
  *
  * RLS в БД продолжает enforcing те же functions. Инвалидация кешей доступа на
- * уровне приложения после 20-object-access-inheritance не требуется: решение
- * всегда получается из текущей таблицы прав.
+ * уровне приложения после switch на собственные имена объектов не требуется:
+ * решение всегда получается из текущей таблицы прав.
  */
 export async function can(
   userId: string,
