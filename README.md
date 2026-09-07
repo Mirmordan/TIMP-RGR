@@ -41,26 +41,84 @@
 
 # Эксплуатация
 
-## Запущенные экземпляры сервисов
+## Запуск в dev (на хосте разработчика, Linux)
 
-В dev-среде (на этом хосте) сервисы живут так:
+Требуется: Node.js 22, Docker c плагином compose, git, tmux (по желанию).
 
-- **`db`, `mtx`, `ffmpegmanager`, `webserver`** — docker compose (`docker compose ps`);
-- **backend** (`tsx src/server.ts`) и **frontend** (`vite`) — обычно в сессии tmux (сейчас: `tmux ls` → session `vite`).
-  Перед `restore-backup.sh --promote`/`--restore-media` эти процессы нужно остановить,
-  иначе они держат соединения в БД/файлы чанков:
+1. Клонировать репозиторий и зайти в него:
+   ```bash
+   git clone https://github.com/Mirmordan/TIMP-RGR.git
+   cd TIMP-RGR
+   ```
+   Все настройки — в файле `.env` (он в репозитории) и в `backend/.env` (дефолты для локального запуска).
+
+2. Поднять инфраструктуру (БД + mediaMTX):
+   ```bash
+   docker compose up -d db mtx
+   ```
+   Контейнер БД `timp-rgr-db-1` поднимется с портом `5432:5432`, `mtx` с портами `8554/8888/9996-9998`.
+   При первом запуске БД инициализируется сидами из `database/setup/` (тестовые пользователи `alice`/`bob`, пароль `password`).
+   Если на хосте уже поднят legacy-контейнер `timp-rgr-mediamtx-1` — остановить, иначе конфликты по портам.
+
+3. Запустить ffmpeg-manager на хосте (запись Ivideon-потоков в `data/chunks`):
+   ```bash
+   cd ffmpeg-manager && npm install
+   RECORD_ROOT=$PWD/../data/chunks node server.js &   # порт 9999
+   ```
+
+4. Запустить бэкенд и фронтенд (каждый в своей tmux-сессии — так они переживают закрытие терминала):
+   ```bash
+   tmux new-session -d -s backend 'cd backend && npm install && npx tsx src/server.ts'
+   tmux new-session -d -s vite    'cd frontend && npm install && npx vite --host'
+   ```
+   Проверка: `curl -s http://localhost:5000/api/v1/auth/login -X POST -H 'Content-Type: application/json' -d '{"username":"alice","password":"***"}'` должен вернуть JSON с `user`,
+   фронтенд доступен на `http://localhost:5173`.
+   Логи tmux: `tmux attach -t backend` (отключение — `Ctrl-b d`). Остановка: `tmux kill-session -t backend`.
+
+## Запуск в prod (docker compose, локально или на сервере)
+
+Prod-стек — весь проект в контейнерах, хостовые процессы не нужны:
+
+1. Убедиться, что свободны порты `80` (nginx), `5432` (БД), `5000` (app), `8554/1935/8888/9996-9998` (mtx):
+   `ss -tlnp | grep -E ':(80|5432|5000) '`
+2. Пересобрать и запустить:
+   ```bash
+   docker compose up -d --build
+   ```
+3. Настроить `.env` для прода:
+   - задать свои секреты (иначе используются dev-дефолты из compose):
+     ```bash
+     printf 'JWT_SECRET=%s\nJWT_REFRESH_SECRET=%s\n' "$(openssl rand -hex 32)" "$(openssl rand -hex 32)" >> .env
+     ```
+   - на сервер NSTU Cloud наружи отдаётся только 80-й порт через `217.71.129.139:6310`, TLS нет —
+     создать `docker-compose.override.yml` (gitignore'd, подхватывается автоматически):
+     ```yaml
+     services:
+       app:
+         environment:
+           COOKIE_SECURE: "0"
+     ```
+     Без этого браузер сбрасывает Secure-cookie по HTTP и сессия мгновенно слетает в logout.
+4. Перезапустить app после правки `.env`/override: `docker compose up -d app`.
+5. Остановить стек: `docker compose down` (БД сохранится в volume `pgdata`).
+
+## Обновление с сервера разработки
+
+На сервере (каталог `/home/deploy/TIMP-RGR`, пользователь `deploy`):
 
 ```bash
-tmux kill-session -t vite          # фронтенд (имя можно посмотреть: tmux ls)
-tmux kill-session -t backend       # если бэкенд тоже в tmux
-docker compose stop mtx ffmpegmanager   # писатели в data/chunks во время --restore-media
-# ... восстановить ...
-docker compose up -d && tmux new-session -d -s backend \
-  'cd backend && npx tsx src/server.ts' \
- && tmux new-session -d -s vite 'cd frontend && npx vite'
+cd ~/TIMP-RGR
+git pull --ff-only
+docker compose up -d --build   # пересоберёт изменённые образы и перезапустит только их
+docker image prune -f          # (опционально) счистить висячие слои старых сборок
 ```
 
-## Резервные копии (`scripts/backups.sh`)
+БД и чанки при обновлении не трогаются. После pull — прогнать backup (см. ниже) и открыть
+`http://217.71.129.139:6310`. Сервисы `restart: unless-stopped` переживают ребут сервера:
+tmux на проде не нужен, всём управляет docker.
+
+
+## Резервные копии (`scripts/backups.sh`, `verify-backup.sh`, `restore-backup.sh`)
 
 Раздельно хранит три слоя:
 
@@ -70,6 +128,15 @@ docker compose up -d && tmux new-session -d -s backend \
 - плюс **схема**, **роли кластера** и запасной цельный `full.dump`;
 - медиа-файлы (`.ts` в `data/chunks`) — отдельные инкрементальные **hardlink-снапшоты**
   в `data/backups/files/` (не пишутся в бандл, только ссылка в манифесте).
+
+Предварительно на хосте нужны: `docker` (доступ из группы), `rsync`. Переменные настройки —
+дефолты в `scripts/backup-lib.sh`, все переопределяются окружением:
+`DB_CONTAINER timp-rgr-db-1`, `DB_SUPER_USER`/`DB_NAME` (из `.env`), `KEEP=7`/`MEDIA_KEEP=7`
+(ротация «сколько хранить»), `BACKUP_ROOT` (`data/backups`),
+`MEDIA_SOURCES` (дефолт `data/chunks ffmpeg-manager/recordings`; на сервере, где записи лежат
+только в `data/chunks`, запускать с `MEDIA_SOURCES=data/chunks`), `SKIP_DB`/`SKIP_MEDIA=1`.
+
+Использование:
 
 ```bash
 scripts/backups.sh             # всё: split-дампы БД + rsync медиа в data/backups/
@@ -82,39 +149,73 @@ scripts/restore-backup.sh <bundle> --restore-media --yes   # раскатать 
 ```
 
 Медиа-часть (`--restore-media`) перезаписывает рабочие каталоги — перед этим
-останавливать `mtx`/`ffmpegmanager` и backend (см. выше), иначе в чанки пишут параллельно.
+останавливать писателей чанков. В prod-стеке: `docker compose stop app mtx ffmpegmanager`;
+в dev на хосте: `tmux kill-session -t backend` и `tmux kill-session -t vite`.
+После восстановления — `docker compose up -d` (dev — заново поднять tmux-сессии, см. выше).
 
-Конфиг — переменными окружения (defaults в `scripts/backup-lib.sh`):
-`DB_CONTAINER timp-rgr-db-1` (compose) / `timp-rgr-mediamtx-1` legacy не трогаем,
-`DB_SUPER_USER timprgr` (суперUser дампа из `.env`), `DB_NAME` (из `.env`),
-`KEEP=7`/`MEDIA_KEEP=7` (ротация «сколько хранить»), `BACKUP_ROOT`,
-`MEDIA_SOURCES="data/chunks ffmpeg-manager/recordings"`, `SKIP_DB/SKIP_MEDIA=1`.
+Restore в чистый кластер (новый сервер): сначала применить `database/setup/00-app-role.sql`
+к новому кластеру (роль приложения `timprgr_app`), затем
+`restore-backup.sh --promote --yes --roles-full` (роли и пароли применится из бандла).
 
-## Планировщик
+## Постановка бэкапа на планировщик
 
-Скрипты расписания не знают — оно целиком на планировщике хоста.
-В dev на этом хосте задача ставится так, чтобы `data/backups` НЕ раздувался: ротацию делает сам `backups.sh` (`keep`), поэтому можно кронить хоть каждый час. Пример `crontab` (от пользователя с доступом к docker):
+Скрипты расписания не знают — оно целиком на планировщике хоста. Ротацию (`KEEP`) выполняет сам
+`backups.sh`, поэтому кронить можно хоть каждый час, каталог не раздувается.
+Первый `files`-снапшот копирует весь `data/chunks` — делать руками, дальше — инкрементально.
+
+### Вариант 1: cron (сервер, пользователь `deploy` из группы docker)
+
+```bash
+crontab -e   # от пользователя deploy (не root)
+```
 
 ```cron
-30 3 * * *   /home/mirmordan/Projects/TIMP-RGR/scripts/backups.sh all   >> /home/mirmordan/Projects/TIMP-RGR/data/backups/run.log 2>&1
-0 4 1 * *    /home/mirmordan/Projects/TIMP-RGR/scripts/backups.sh files >> /home/mirmordan/Projects/TIMP-RGR/data/backups/run.log 2>&1
-15 5 * * *   /home/mirmordan/Projects/TIMP-RGR/scripts/verify-backup.sh >> /home/mirmordan/Projects/TIMP-RGR/data/backups/verify.log 2>&1
+30 3 * * * cd /home/deploy/TIMP-RGR && MEDIA_SOURCES=data/chunks scripts/backups.sh all    >> data/backups/run.log 2>&1
+0 4 1 * *  cd /home/deploy/TIMP-RGR && MEDIA_SOURCES=data/chunks scripts/backups.sh files  >> data/backups/run.log 2>&1
+15 5 * * * cd /home/deploy/TIMP-RGR && scripts/verify-backup.sh                            >> data/backups/verify.log 2>&1
 ```
 
-Пример systemd-таймера (если предпочтительнее крона): положить юниты в `/etc/systemd/system/`:
+### Вариант 2: systemd-таймеры (хост разработчика, пользователь `mirmordan`)
+
+`~/.config/systemd/user/rgr-backup.service`:
 
 ```ini
-# rgr-backup.service: Type=oneshot;  ExecStart=/home/mirmordan/Projects/TIMP-RGR/scripts/backups.sh all
-# rgr-backup.timer:   OnCalendar=*-*-* 03:30:00; Persistent=true
+[Unit]
+Description=TIMP-RGR backup all
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/mirmordan/Projects/TIMP-RGR
+ExecStart=/home/mirmordan/Projects/TIMP-RGR/scripts/backups.sh all
 ```
 
-Замечания по расписанию:
+`~/.config/systemd/user/rgr-backup.timer`:
 
-- `db`-бандл маленький (~10 МБ), но `files`-снапшот первый раз копирует всё (сотни ГБ, `data/chunks` ≈ 32 ГБ) —
-  первый прогон `files` делайте руками в tmux;
-- после ротации в 03:30 медиа-снапшоты могут ссылаться на удалённые `--link-dest`-предков —
-  `verify-backup.sh` это ловит и предупреждает (`media-snapshot` FAIL); `MEDIA_KEEP` держите ≥ `KEEP` либо крутите
-  `prune` только БД (`KEEP`), а медиа чистите реже;
-- restore в чистый кластер (новый сервер): сначала развернуть схему с ролью
-  `database/setup/00-app-role.sql`, затем `restore-backup.sh --promote --yes --roles-full`
-  (пароли из бандла перезапишутся).
+```ini
+[Unit]
+Description=TIMP-RGR nightly backup
+
+[Timer]
+OnCalendar=*-*-* 03:30:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+```
+
+Включить (пользовательские юниты, без root):
+
+```bash
+systemctl --user daemon-reload
+systemctl --user enable --now rgr-backup.timer
+systemctl --user list-timers rgr-backup.timer   # следующая срабатывание
+journalctl --user -u rgr-backup.service -n 50   # журнал последнего прогона
+```
+
+Замечания:
+
+- для `Persistent=true` пользовательские сервисы должны жить после выхода из сессии:
+  `loginctl enable-linger $USER` (иначе таймер сработает только пока вы залогинены);
+- при `--link-dest` ротации verify предупреждает (`media-snapshot FAIL`), если самый новый медиа-снапшот
+  ссылается на удалённого предка — либо держать `MEDIA_KEEP` не меньше `KEEP`, либо чистить медиа-снапшоты реже БД.
+
