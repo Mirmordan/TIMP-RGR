@@ -213,7 +213,7 @@ streamRouter.delete('/:id/view', requirePermission('read'), async (req: Request,
  *     tags: [Streams]
  *     operationId: createStream
  *     summary: Создание потока
- *     description: Создаёт новый поток-источник записи. Требуется capability stream:create.
+ *     description: Создаёт новый поток-источник записи (url, deviceId, необязательные name/description; name опущено — наследуется название устройства). Требуется capability stream:create.
  *     requestBody:
  *       required: true
  *       content:
@@ -248,8 +248,8 @@ streamRouter.delete('/:id/view', requirePermission('read'), async (req: Request,
  */
 streamRouter.post('/', requireCapability('stream:create'), async (req: Request, res: Response) => {
   try {
-    const { url, deviceId, sourceFingerprint } = req.body;
-    const stream = await streamService.create(url, deviceId, sourceFingerprint);
+    const { url, deviceId, sourceFingerprint, name, description } = req.body;
+    const stream = await streamService.create(url, deviceId, sourceFingerprint, name, description);
     res.status(201).json(stream);
   } catch (e: any) {
     res.status(400).json({ error: e.message });
@@ -263,7 +263,7 @@ streamRouter.post('/', requireCapability('stream:create'), async (req: Request, 
  *     tags: [Streams]
  *     operationId: updateStream
  *     summary: Полная замена потока
- *     description: Перезаписывает поток полным телом (url, deviceId, sourceFingerprint). Требуется право write на объект.
+ *     description: Перезаписывает поток полным телом (url, deviceId, sourceFingerprint, name/description; name опущено/пусто — сброс override, наследование названия устройства). Требуется право write на объект.
  *     parameters:
  *       - name: id
  *         in: path
@@ -313,8 +313,8 @@ streamRouter.post('/', requireCapability('stream:create'), async (req: Request, 
 streamRouter.put('/:id', requirePermission('write'), async (req: Request, res: Response) => {
   try {
     const id = req.params.id as string;
-    const { url, deviceId, sourceFingerprint } = req.body;
-    const stream = await streamService.put(id, url, deviceId, sourceFingerprint);
+    const { url, deviceId, sourceFingerprint, name, description } = req.body;
+    const stream = await streamService.put(id, url, deviceId, sourceFingerprint, name, description);
     if (!stream) return res.status(404).json({ error: 'поток не найден' });
     res.json(stream);
   } catch (e: any) {
@@ -329,7 +329,7 @@ streamRouter.put('/:id', requirePermission('write'), async (req: Request, res: R
  *     tags: [Streams]
  *     operationId: patchStream
  *     summary: Частичное обновление потока
- *     description: Обновляет только переданные поля (url/deviceId/sourceFingerprint). Требуется право write на объект.
+ *     description: Обновляет только переданные поля (url/deviceId/sourceFingerprint/name/description; name null — сброс override). Требуется право write на объект.
  *     parameters:
  *       - name: id
  *         in: path

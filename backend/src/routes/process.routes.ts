@@ -125,7 +125,7 @@ processRouter.get('/:id', requirePermission('read'), async (req: Request, res: R
  *     tags: [Processes]
  *     operationId: createProcess
  *     summary: Создание процесса записи
- *     description: Создаёт процесс записи. Если status=running (по умолчанию) — поднимает поток-источник в mediaMTX и открывает сегмент записи без endedAt. Требуется capability process:create.
+ *     description: Создаёт процесс записи (streamId, необязательные name/description; name опущено — наследуется название потока/устройства). Если status=running (по умолчанию) — поднимает поток-источник в mediaMTX и открывает сегмент записи без endedAt. Требуется capability process:create.
  *     requestBody:
  *       required: true
  *       content:
@@ -160,10 +160,10 @@ processRouter.get('/:id', requirePermission('read'), async (req: Request, res: R
  */
 processRouter.post('/', requireCapability('process:create'), async (req: Request, res: Response) => {
   try {
-    const { streamId, status, startedAt } = req.body;
+    const { streamId, status, startedAt, name, description } = req.body;
     const finalStatus = status || 'running';
     const finalStartedAt = startedAt ? new Date(startedAt) : new Date();
-    const process = await processService.create(streamId, finalStartedAt, finalStatus);
+    const process = await processService.create(streamId, finalStartedAt, finalStatus, name, description);
     res.status(201).json(process);
   } catch (e: any) {
     res.status(400).json({ error: e.message });
@@ -177,7 +177,7 @@ processRouter.post('/', requireCapability('process:create'), async (req: Request
  *     tags: [Processes]
  *     operationId: updateProcess
  *     summary: Полная замена процесса записи
- *     description: Перезаписывает процесс полным телом (streamId, startedAt, endedAt, status) и приводит mediaMTX в соответствие со статусом (running — поднимает поток и открывает новый сегмент, stopped/failed — останавливает поток; stopped дополнительно финализирует открытый сегмент). Требуется право write на объект.
+ *     description: Перезаписывает процесс полным телом (streamId, startedAt, endedAt, status, name/description; name опущено/пусто — сброс override) и приводит mediaMTX в соответствие со статусом (running — поднимает поток и открывает новый сегмент, stopped/failed — останавливает поток; stopped дополнительно финализирует открытый сегмент). Требуется право write на объект.
  *     parameters:
  *       - name: id
  *         in: path
@@ -227,13 +227,15 @@ processRouter.post('/', requireCapability('process:create'), async (req: Request
 processRouter.put('/:id', requirePermission('write'), async (req: Request, res: Response) => {
   try {
     const id = req.params.id as string;
-    const { streamId, startedAt, endedAt, status } = req.body;
+    const { streamId, startedAt, endedAt, status, name, description } = req.body;
     const process = await processService.put(
       id,
       streamId,
       new Date(startedAt),
       endedAt != null ? new Date(endedAt) : null,
       status,
+      name,
+      description,
     );
     if (!process) return res.status(404).json({ error: 'процесс не найден' });
     res.json(process);
@@ -249,7 +251,7 @@ processRouter.put('/:id', requirePermission('write'), async (req: Request, res: 
  *     tags: [Processes]
  *     operationId: patchProcess
  *     summary: Частичное обновление процесса записи
- *     description: Обновляет только переданные поля. При смене status на running возобновляет запись (сбрасывает endedAt, поднимает поток в mediaMTX, открывает новый сегмент); при остановке (stopped/failed) фиксирует endedAt и останавливает поток, а stopped финализирует сегменты с endedAt из последних .ts. Требуется право write на объект.
+ *     description: Обновляет только переданные поля (включая name/description; name null — сброс override). При смене status на running возобновляет запись (сбрасывает endedAt, поднимает поток в mediaMTX, открывает новый сегмент); при остановке (stopped/failed) фиксирует endedAt и останавливает поток, а stopped финализирует сегменты с endedAt из последних .ts. Требуется право write на объект.
  *     parameters:
  *       - name: id
  *         in: path
@@ -305,6 +307,8 @@ processRouter.patch('/:id', requirePermission('write'), async (req: Request, res
     if (body.startedAt !== undefined) patch.startedAt = new Date(body.startedAt);
     if (body.endedAt !== undefined) patch.endedAt = body.endedAt != null ? new Date(body.endedAt) : undefined;
     if (body.status !== undefined) patch.status = body.status;
+    if (body.name !== undefined) patch.name = body.name;
+    if (body.description !== undefined) patch.description = body.description;
     const process = await processService.patch(id, patch);
     if (!process) return res.status(404).json({ error: 'процесс не найден' });
     res.json(process);

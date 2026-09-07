@@ -18,28 +18,30 @@ export const deviceRepository = {
     return rows[0]?.total ?? 0;
   },
 
-  async create(name: string, type: string): Promise<RecordingDevice> {
+  async create(name: string, type: string, description: string | null = null): Promise<RecordingDevice> {
     return inUserContext(async (client) => {
-      // Common metadata (name) пишем в objects.type/name — супертип устройства.
-      const { rows: objRows } = await client.query<{ objectId: string }>(deviceQueries.insert, [name]);
+      // Common metadata (name/description) пишем в objects — супертип устройства.
+      const { rows: objRows } = await client.query<{ objectId: string }>(deviceQueries.insert, [name, description]);
       const objectId = objRows[0]?.objectId;
       if (!objectId) throw new Error('объект не создан');
+      // recording_devices.name — синхронное зеркало (RLS-домен, legacy API).
       const { rows } = await client.query<RecordingDevice>(deviceQueries.insertDevice, [objectId, name, type]);
       return rows[0]!;
     });
   },
 
-  async put(id: string, name: string, type: string): Promise<RecordingDevice | null> {
+  async put(id: string, name: string, type: string, description: string | null = null): Promise<RecordingDevice | null> {
     return inUserContext(async (client) => {
       const { rows } = await client.query<RecordingDevice>(deviceQueries.putDevice, [name, type, id]);
       const device = rows[0];
       if (!device) return null;
-      await client.query(deviceQueries.setMeta, [name, null, id]);
+      // PUT = полная замена: перезаписываем и name, и description (null — очистить).
+      await client.query(deviceQueries.setMeta, [name, description, id]);
       return device;
     });
   },
 
-  async patch(id: string, patch: { name?: string; type?: string }): Promise<RecordingDevice | null> {
+  async patch(id: string, patch: { name?: string; type?: string; description?: string | null }): Promise<RecordingDevice | null> {
     return inUserContext(async (client) => {
       const { rows } = await client.query<RecordingDevice>(
         deviceQueries.patchDevice,
@@ -47,7 +49,13 @@ export const deviceRepository = {
       );
       const device = rows[0];
       if (!device) return null;
-      await client.query(deviceQueries.setMeta, [patch.name ?? null, null, id]);
+      // name зеркалим в objects (супертип), description — точечно в objects.
+      if (patch.name !== undefined) {
+        await client.query(deviceQueries.setMetaName, [patch.name, id]);
+      }
+      if (patch.description !== undefined) {
+        await client.query(deviceQueries.setMetaDescription, [patch.description, id]);
+      }
       return device;
     });
   },

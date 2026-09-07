@@ -29,11 +29,12 @@ export const deviceQueries = {
                  OR COALESCE(NULLIF(o.name, ''), d.name) ILIKE '%' || $1 || '%'
                  OR o.description ILIKE '%' || $1 || '%')`,
 
-  // Общие метаданные (name) пишутся в objects; recording_devices.name остаётся
-  // зеркалом для обратной совместимости API/столбца NOT NULL.
+  // Общие метаданные (name/description) — полный владелец objects; recording_devices.name
+  // остаётся синхронным зеркалом (для RLS-наследования и столбца NOT NULL):
+  // пишется одновременно с objects.name в одном репозитории/транзакции.
   // owner_id проставляется из контекста запроса (кто создал — тот видит).
-  insert: `INSERT INTO objects (type, name, owner_id)
-           VALUES ('device', $1, NULLIF(current_setting('app.user_id', true), '')::UUID)
+  insert: `INSERT INTO objects (type, name, description, owner_id)
+           VALUES ('device', $1, $2, NULLIF(current_setting('app.user_id', true), '')::UUID)
            RETURNING id AS "objectId"`,
 
   insertDevice: `INSERT INTO recording_devices (object_id, name, type) VALUES ($1, $2, $3)
@@ -49,8 +50,12 @@ export const deviceQueries = {
                 WHERE object_id = $3
                 RETURNING object_id AS "id", name, type`,
 
-  setMeta: `UPDATE objects SET name = COALESCE($1, name), description = COALESCE($2, description)
-            WHERE id = $3`,
+  // Точная перезапись общих метаданных устройства (PUT и осознанный PATCH).
+  setMeta: `UPDATE objects SET name = $1, description = $2 WHERE id = $3`,
+
+  // Точечные апдейты общих метаданных (PATCH по отдельному полю).
+  setMetaName: `UPDATE objects SET name = $1 WHERE id = $2`,
+  setMetaDescription: `UPDATE objects SET description = $1 WHERE id = $2`,
 
   deleteById: `DELETE FROM objects WHERE id = $1`,
 };

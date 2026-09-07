@@ -125,7 +125,7 @@ deviceRouter.get('/:id', requirePermission('read'), async (req: Request, res: Re
  *     tags: [Devices]
  *     operationId: createDevice
  *     summary: Создание устройства
- *     description: Создаёт новое устройство записи. Требуется capability camera:create.
+ *     description: Создаёт новое устройство записи (name, type, необязательное description). Требуется capability camera:create.
  *     requestBody:
  *       required: true
  *       content:
@@ -160,8 +160,8 @@ deviceRouter.get('/:id', requirePermission('read'), async (req: Request, res: Re
  */
 deviceRouter.post('/', requireCapability('camera:create'), async (req: Request, res: Response) => {
   try {
-    const { name, type } = req.body;
-    const device = await deviceService.create(name, type);
+    const { name, type, description } = req.body;
+    const device = await deviceService.create(name, type, description);
     res.status(201).json(device);
   } catch (e: any) {
     res.status(400).json({ error: e.message });
@@ -175,7 +175,7 @@ deviceRouter.post('/', requireCapability('camera:create'), async (req: Request, 
  *     tags: [Devices]
  *     operationId: updateDevice
  *     summary: Полная замена устройства
- *     description: Перезаписывает устройство полным телом (name, type). Требуется право write на объект.
+ *     description: Перезаписывает устройство полным телом (name, type, необязательное description; description опущено — очищается). Требуется право write на объект.
  *     parameters:
  *       - name: id
  *         in: path
@@ -225,8 +225,8 @@ deviceRouter.post('/', requireCapability('camera:create'), async (req: Request, 
 deviceRouter.put('/:id', requirePermission('write'), async (req: Request, res: Response) => {
   try {
     const id = req.params.id as string;
-    const { name, type } = req.body;
-    const device = await deviceService.put(id, name, type);
+    const { name, type, description } = req.body;
+    const device = await deviceService.put(id, name, type, description);
     if (!device) return res.status(404).json({ error: 'устройство не найдено' });
     res.json(device);
   } catch (e: any) {
@@ -241,7 +241,7 @@ deviceRouter.put('/:id', requirePermission('write'), async (req: Request, res: R
  *     tags: [Devices]
  *     operationId: patchDevice
  *     summary: Частичное обновление устройства
- *     description: Обновляет только переданные поля (name/type). Требуется право write на объект.
+ *     description: Обновляет только переданные поля (name/type/description; description null — очистить). Требуется право write на объект.
  *     parameters:
  *       - name: id
  *         in: path

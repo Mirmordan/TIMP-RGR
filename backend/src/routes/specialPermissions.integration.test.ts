@@ -188,7 +188,7 @@ describe('specialPermissions.integration (route-level, роли и спец-пр
       grant(uid, ['camera:create']);
       const created = await api('POST', '/devices', uid, { name: 'cam-1', type: 'camera' });
       expect(created.status).toBe(201);
-      expect(mocks.deviceCreate).toHaveBeenCalledWith('cam-1', 'camera');
+      expect(mocks.deviceCreate).toHaveBeenCalledWith('cam-1', 'camera', undefined);
 
       expect((await api('GET', '/users', uid)).status).toBe(403);
       expect((await api('GET', '/admin/roles', uid)).status).toBe(403);

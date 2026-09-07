@@ -15,6 +15,10 @@ const streamSelect = `
   o.created_at AS "createdAt"
 `;
 
+// Поток наследует название от устройства: objects.name потока хранит только
+// ЯВНЫЙ override (NULL/'' = наследование от родителя).
+const streamNameExpr = "COALESCE(NULLIF(o.name, ''), d.name)";
+
 export const streamQueries = {
   findById: `SELECT ${streamSelect}
              FROM recording_streams s
@@ -28,7 +32,7 @@ export const streamQueries = {
             LEFT JOIN recording_devices d ON d.object_id = s.device_id
             WHERE ($3::text IS NULL
                    OR s.url ILIKE '%' || $3 || '%'
-                   OR COALESCE(NULLIF(o.name, ''), d.name) ILIKE '%' || $3 || '%'
+                   OR ${streamNameExpr} ILIKE '%' || $3 || '%'
                    OR o.description ILIKE '%' || $3 || '%')
             ORDER BY o.created_at DESC
             LIMIT $1 OFFSET $2`,
@@ -39,7 +43,7 @@ export const streamQueries = {
           LEFT JOIN recording_devices d ON d.object_id = s.device_id
           WHERE ($1::text IS NULL
                  OR s.url ILIKE '%' || $1 || '%'
-                 OR COALESCE(NULLIF(o.name, ''), d.name) ILIKE '%' || $1 || '%'
+                 OR ${streamNameExpr} ILIKE '%' || $1 || '%'
                  OR o.description ILIKE '%' || $1 || '%')`,
 
   // Супертип потока: parent_id = объект устройства (device_id потока).
@@ -48,6 +52,12 @@ export const streamQueries = {
 
   insertStream: `INSERT INTO recording_streams (object_id, url, device_id, source_fingerprint) VALUES ($1, $2, $3, $4)
                  RETURNING object_id AS "id", url, device_id AS "deviceId", source_fingerprint AS "sourceFingerprint"`,
+
+  // Общие метаданные потока: name хранит ЯВНЫЙ override (NULL = наследовать
+  // название устройства), description — собственное описание потока.
+  setMeta: `UPDATE objects SET name = $1, description = $2 WHERE id = $3`,
+  setMetaName: `UPDATE objects SET name = $1 WHERE id = $2`,
+  setMetaDescription: `UPDATE objects SET description = $1 WHERE id = $2`,
 
   setParent: `UPDATE objects SET parent_id = $1 WHERE id = $2`,
 

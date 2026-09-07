@@ -65,12 +65,13 @@ describe('поиск q: SQL-параметры списочных репозит
     expect(queryAs).toHaveBeenCalledWith(processQueries.count, ['ivideon']);
 
     expect(processQueries.findAll).toContain('LEFT JOIN recording_streams s ON s.object_id = p.stream_id');
+    expect(processQueries.findAll).toContain('LEFT JOIN objects so ON so.id = s.object_id');
     expect(processQueries.findAll).toContain('LEFT JOIN recording_devices d ON d.object_id = s.device_id');
     expect(processQueries.findAll).toContain("p.object_id::text ILIKE '%' || $3 || '%'");
     expect(processQueries.findAll).toContain("s.url ILIKE '%' || $3 || '%'");
-    expect(processQueries.findAll).toContain("COALESCE(NULLIF(po.name, ''), d.name) ILIKE '%' || $3 || '%'");
+    expect(processQueries.findAll).toContain("COALESCE(NULLIF(po.name, ''), NULLIF(so.name, ''), d.name) ILIKE '%' || $3 || '%'");
     expect(processQueries.findAll).toContain("po.description ILIKE '%' || $3 || '%'");
-    expect(processQueries.count).toContain("COALESCE(NULLIF(po.name, ''), d.name) ILIKE '%' || $1 || '%'");
+    expect(processQueries.count).toContain("COALESCE(NULLIF(po.name, ''), NULLIF(so.name, ''), d.name) ILIKE '%' || $1 || '%'");
 
     await processRepository.findAll(10, 0);
     expect(queryAs).toHaveBeenCalledWith(processQueries.findAll, [10, 0, null]);

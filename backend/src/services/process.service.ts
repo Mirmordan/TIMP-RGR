@@ -4,6 +4,7 @@ import { streamRepository } from '../repositories/stream.repository';
 import { segmentRepository } from '../repositories/segment.repository';
 import { segmentService } from './segment.service';
 import { mediaManager } from '../media/mediaManager';
+import { normalizeMetaName, normalizeMetaDescription } from './entityMeta';
 import * as fs from 'fs';
 import * as pathMod from 'path';
 
@@ -44,10 +45,17 @@ export const processService = {
     return { processes, total };
   },
 
-  async create(streamId: string, startedAt: Date, status: string): Promise<RecordingProcess> {
+  /**
+   * Создание процесса записи. name не задан/пуст → наследуется от потока/устройства;
+   * непустой name — явный override.
+   */
+  async create(streamId: string, startedAt: Date, status: string, name?: string | null, description?: string | null): Promise<RecordingProcess> {
     if (!streamId) throw new Error('streamId обязателен');
     if (!VALID_STATUSES.includes(status)) throw new Error(`status должен быть одним из: ${VALID_STATUSES.join(', ')}`);
-    const process = await processRepository.create(streamId, startedAt, status);
+    const process = await processRepository.create(streamId, startedAt, status, {
+      name: normalizeMetaName(name),
+      description: normalizeMetaDescription(description),
+    });
     // Поднимаем поток в mediaMTX, если запись стартует сразу.
     if (status === 'running') {
       try {
@@ -70,22 +78,32 @@ export const processService = {
     return processRepository.findById(process.id) as Promise<RecordingProcess>;
   },
 
-  async put(id: string, streamId: string, startedAt: Date, endedAt: Date | null, status: string): Promise<RecordingProcess | null> {
+  /** PUT = полная замена. name не задан/пуст → сброс override (наследование). */
+  async put(id: string, streamId: string, startedAt: Date, endedAt: Date | null, status: string, name?: string | null, description?: string | null): Promise<RecordingProcess | null> {
     if (!streamId) throw new Error('streamId обязателен');
     if (!VALID_STATUSES.includes(status)) throw new Error(`status должен быть одним из: ${VALID_STATUSES.join(', ')}`);
-    const updated = await processRepository.put(id, streamId, startedAt, endedAt, status);
+    const updated = await processRepository.put(id, streamId, startedAt, endedAt, status, {
+      name: normalizeMetaName(name),
+      description: normalizeMetaDescription(description),
+    });
     if (updated) await this.syncMediaStatus(id, streamId, status);
-    return updated;
+    return updated ? processRepository.findById(id) : null;
   },
 
-  async patch(id: string, patch: { streamId?: string; startedAt?: Date; endedAt?: Date; status?: string }): Promise<RecordingProcess | null> {
+  /**
+   * PATCH: undefined — поле не трогаем; null/'' — очистить (name → наследование);
+   * непустой name/description — записать.
+   */
+  async patch(id: string, patch: { streamId?: string; startedAt?: Date; endedAt?: Date; status?: string; name?: string | null; description?: string | null }): Promise<RecordingProcess | null> {
     if (patch.status !== undefined && !VALID_STATUSES.includes(patch.status)) {
       throw new Error(`status должен быть одним из: ${VALID_STATUSES.join(', ')}`);
     }
     const current = await processRepository.findById(id);
     if (!current) return null;
 
-    const dbPatch: { streamId?: string; startedAt?: Date; endedAt?: Date; endedAtClear?: boolean; status?: string } = { ...patch };
+    const dbPatch: { streamId?: string; startedAt?: Date; endedAt?: Date; endedAtClear?: boolean; status?: string; name?: string | null; description?: string | null } = { ...patch };
+    if (patch.name !== undefined) dbPatch.name = normalizeMetaName(patch.name);
+    if (patch.description !== undefined) dbPatch.description = normalizeMetaDescription(patch.description);
 
     // Автоматическое управление endedAt при смене статуса.
     if (patch.status && patch.status !== current.status) {
@@ -102,7 +120,7 @@ export const processService = {
     if (updated && patch.status) {
       await this.syncMediaStatus(id, patch.streamId ?? updated.streamId, patch.status);
     }
-    return updated;
+    return updated ? processRepository.findById(id) : null;
   },
 
   async deleteById(id: string): Promise<boolean> {

@@ -5,7 +5,7 @@
  * recording_devices). Невидимый пользователю родитель не отдаёт метаданных.
  * parentObjectId = c.process_id (уже видимое поле чанка).
  */
-const chunkNameExpr = "COALESCE(NULLIF(o.name, ''), NULLIF(po.name, ''), d.name)";
+const chunkNameExpr = "COALESCE(NULLIF(o.name, ''), NULLIF(po.name, ''), NULLIF(so.name, ''), d.name)";
 const chunkDescExpr = "COALESCE(NULLIF(o.description, ''), po.description)";
 
 const chunkJoins = `
@@ -13,6 +13,7 @@ const chunkJoins = `
   LEFT JOIN recording_processes p ON p.object_id = c.process_id
   LEFT JOIN objects po ON po.id = p.object_id
   LEFT JOIN recording_streams st ON st.object_id = p.stream_id
+  LEFT JOIN objects so ON so.id = st.object_id
   LEFT JOIN recording_devices d ON d.object_id = st.device_id
 `;
 

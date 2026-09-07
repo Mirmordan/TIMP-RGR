@@ -1,52 +1,54 @@
 /**
  * SELECT процесса с общими метаданными супертипа. Резолюция name/description
  * fail-closed: собственное название — из objects процесса (объект виден, раз
- * виден процесс); унаследованное — ТОЛЬКО из RLS-доменных таблиц
+ * виден процесс); унаследованное — только через RLS-доменные таблицы
  * (recording_streams → recording_devices). Невидимый пользователю родитель не
  * отдаёт метаданных. parentObjectId = p.stream_id (уже видимое поле процесса).
+ * Цепочка имени: objects процесса → objects потока (если поток виден) → device.
  */
+const processNameExpr = "COALESCE(NULLIF(po.name, ''), NULLIF(so.name, ''), d.name)";
+
 const processSelect = `
   p.object_id AS "id",
   p.stream_id AS "streamId",
   p.started_at AS "startedAt",
   p.ended_at AS "endedAt",
   p.status,
-  COALESCE(NULLIF(po.name, ''), d.name) AS "name",
+  ${processNameExpr} AS "name",
   po.description AS "description",
   p.stream_id AS "parentObjectId",
   po.created_at AS "createdAt"
 `;
 
+const processFrom = `
+  FROM recording_processes p
+  JOIN objects po ON po.id = p.object_id
+  LEFT JOIN recording_streams s ON s.object_id = p.stream_id
+  LEFT JOIN objects so ON so.id = s.object_id
+  LEFT JOIN recording_devices d ON d.object_id = s.device_id
+`;
+
 export const processQueries = {
   findById: `SELECT ${processSelect}
-             FROM recording_processes p
-             JOIN objects po ON po.id = p.object_id
-             LEFT JOIN recording_streams s ON s.object_id = p.stream_id
-             LEFT JOIN recording_devices d ON d.object_id = s.device_id
+             ${processFrom}
              WHERE p.object_id = $1`,
 
   findAll: `SELECT ${processSelect}
-            FROM recording_processes p
-            JOIN objects po ON po.id = p.object_id
-            LEFT JOIN recording_streams s ON s.object_id = p.stream_id
-            LEFT JOIN recording_devices d ON d.object_id = s.device_id
+            ${processFrom}
             WHERE ($3::text IS NULL
                    OR p.object_id::text ILIKE '%' || $3 || '%'
                    OR s.url ILIKE '%' || $3 || '%'
-                   OR COALESCE(NULLIF(po.name, ''), d.name) ILIKE '%' || $3 || '%'
+                   OR ${processNameExpr} ILIKE '%' || $3 || '%'
                    OR po.description ILIKE '%' || $3 || '%')
             ORDER BY po.created_at DESC
             LIMIT $1 OFFSET $2`,
 
   count: `SELECT COUNT(*)::int AS "total"
-          FROM recording_processes p
-          JOIN objects po ON po.id = p.object_id
-          LEFT JOIN recording_streams s ON s.object_id = p.stream_id
-          LEFT JOIN recording_devices d ON d.object_id = s.device_id
+          ${processFrom}
           WHERE ($1::text IS NULL
                  OR p.object_id::text ILIKE '%' || $1 || '%'
                  OR s.url ILIKE '%' || $1 || '%'
-                 OR COALESCE(NULLIF(po.name, ''), d.name) ILIKE '%' || $1 || '%'
+                 OR ${processNameExpr} ILIKE '%' || $1 || '%'
                  OR po.description ILIKE '%' || $1 || '%')`,
 
   /** Все процессы со статусом running + URL источника (recording_streams.url). */
@@ -78,6 +80,12 @@ export const processQueries = {
                            started_at AS "startedAt", ended_at AS "endedAt", status`,
 
   setParent: `UPDATE objects SET parent_id = $1 WHERE id = $2`,
+
+  // Общие метаданные процесса: name хранит ЯВНЫЙ override (NULL = наследовать
+  // название потока/устройства), description — собственное описание записи.
+  setMeta: `UPDATE objects SET name = $1, description = $2 WHERE id = $3`,
+  setMetaName: `UPDATE objects SET name = $1 WHERE id = $2`,
+  setMetaDescription: `UPDATE objects SET description = $1 WHERE id = $2`,
 
   putProcess: `UPDATE recording_processes
                SET stream_id  = $1, started_at = $2, ended_at = $3, status = $4

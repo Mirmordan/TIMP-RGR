@@ -1,6 +1,7 @@
 import type { RecordingProcess } from '../types';
 import { queryAs, inUserContext } from '../security/dbBridge';
 import { processQueries } from '../database/queries/process.queries';
+import type { EntityMeta, EntityMetaPatch } from '../services/entityMeta';
 
 /** Процесс записи со статусом running + URL источника (для стартовой реконсиляции). */
 export interface RunningProcessWithStream {
@@ -39,7 +40,7 @@ export const processRepository = {
     return rows[0] ?? null;
   },
 
-  async create(streamId: string, startedAt: Date, status: string): Promise<RecordingProcess> {
+  async create(streamId: string, startedAt: Date, status: string, meta: EntityMeta = { name: null, description: null }): Promise<RecordingProcess> {
     return inUserContext(async (client) => {
       // Супертип процесса: type='process', parent_id = поток.
       const { rows: objRows } = await client.query<{ objectId: string }>(processQueries.insert, [streamId]);
@@ -48,11 +49,12 @@ export const processRepository = {
       const { rows } = await client.query<RecordingProcess>(processQueries.insertProcess, [
         objectId, streamId, startedAt.toISOString(), status,
       ]);
+      await client.query(processQueries.setMeta, [meta.name, meta.description, objectId]);
       return rows[0]!;
     });
   },
 
-  async put(id: string, streamId: string, startedAt: Date, endedAt: Date | null, status: string): Promise<RecordingProcess | null> {
+  async put(id: string, streamId: string, startedAt: Date, endedAt: Date | null, status: string, meta: EntityMeta = { name: null, description: null }): Promise<RecordingProcess | null> {
     return inUserContext(async (client) => {
       const { rows } = await client.query<RecordingProcess>(processQueries.putProcess, [
         streamId, startedAt.toISOString(), endedAt?.toISOString() ?? null, status, id,
@@ -61,11 +63,13 @@ export const processRepository = {
       if (!process) return null;
       // Синхронизируем родителя в супертипе при смене потока.
       await client.query(processQueries.setParent, [streamId, id]);
+      // PUT = полная замена: перезаписываем и общие метаданные (null name = наследование).
+      await client.query(processQueries.setMeta, [meta.name, meta.description, id]);
       return process;
     });
   },
 
-  async patch(id: string, patch: { streamId?: string; startedAt?: Date; endedAt?: Date; endedAtClear?: boolean; status?: string }): Promise<RecordingProcess | null> {
+  async patch(id: string, patch: { streamId?: string; startedAt?: Date; endedAt?: Date; endedAtClear?: boolean; status?: string } & EntityMetaPatch): Promise<RecordingProcess | null> {
     return inUserContext(async (client) => {
       const { rows } = await client.query<RecordingProcess>(
         processQueries.patchProcess,
@@ -82,6 +86,13 @@ export const processRepository = {
       if (!process) return null;
       if (patch.streamId !== undefined) {
         await client.query(processQueries.setParent, [patch.streamId ?? null, id]);
+      }
+      // Метаданные трогаем точечно: undefined — не менять, null — очистить.
+      if (patch.name !== undefined) {
+        await client.query(processQueries.setMetaName, [patch.name ?? null, id]);
+      }
+      if (patch.description !== undefined) {
+        await client.query(processQueries.setMetaDescription, [patch.description ?? null, id]);
       }
       return process;
     });

@@ -297,8 +297,13 @@ const definition = {
         type: 'object',
         required: ['name'],
         properties: {
-          name: { type: 'string', description: 'Название устройства.' },
+          name: { type: 'string', description: 'Название устройства (общее поле objects).' },
           type: { type: 'string', description: 'Тип устройства (необязателен).' },
+          description: {
+            type: 'string',
+            nullable: true,
+            description: 'Описание устройства (общее поле objects).',
+          },
         },
       },
       DevicePatch: {
@@ -307,6 +312,11 @@ const definition = {
         properties: {
           name: { type: 'string', description: 'Название устройства.' },
           type: { type: 'string', description: 'Тип устройства.' },
+          description: {
+            type: 'string',
+            nullable: true,
+            description: 'Описание устройства; null/пустая строка — очистить.',
+          },
         },
       },
       StreamCreate: {
@@ -320,11 +330,24 @@ const definition = {
             description: 'ID устройства, к которому привязан поток.',
           },
           sourceFingerprint: { type: 'string' },
+          name: {
+            type: 'string',
+            description:
+              'Собственное название потока (override). Опущено/пусто — наследуется ' +
+              'эффективное название устройства.',
+          },
+          description: {
+            type: 'string',
+            nullable: true,
+            description: 'Описание потока (общее поле objects).',
+          },
         },
       },
       StreamPatch: {
         type: 'object',
-        description: 'Частичное обновление потока; хотя бы одно поле обязательно.',
+        description:
+          'Частичное обновление потока; хотя бы одно поле обязательно. ' +
+          'name: undefined — не трогать, null/пусто — сбросить override (наследование).',
         properties: {
           url: { type: 'string', description: 'URL источника (ivideon://, HLS...).' },
           deviceId: {
@@ -333,6 +356,18 @@ const definition = {
             description: 'ID устройства, к которому привязан поток.',
           },
           sourceFingerprint: { type: 'string' },
+          name: {
+            type: 'string',
+            nullable: true,
+            description:
+              'Собственное название потока (override). null/пустая строка — наследование ' +
+              'названия (нового) устройства.',
+          },
+          description: {
+            type: 'string',
+            nullable: true,
+            description: 'Описание потока; null/пустая строка — очистить.',
+          },
         },
       },
       ProcessCreate: {
@@ -354,6 +389,17 @@ const definition = {
             enum: ['running', 'stopped', 'failed'],
             description: 'Статус процесса; по умолчанию running (запись стартует сразу).',
           },
+          name: {
+            type: 'string',
+            description:
+              'Собственное название записи (override). Опущено/пусто — наследуется ' +
+              'эффективное название потока/устройства.',
+          },
+          description: {
+            type: 'string',
+            nullable: true,
+            description: 'Описание записи (общее поле objects).',
+          },
         },
       },
       ProcessPut: {
@@ -373,11 +419,24 @@ const definition = {
             enum: ['running', 'stopped', 'failed'],
             description: 'Статус процесса записи.',
           },
+          name: {
+            type: 'string',
+            description:
+              'Собственное название записи (override). Опущено/пусто — сброс override ' +
+              '(наследование названия потока/устройства).',
+          },
+          description: {
+            type: 'string',
+            nullable: true,
+            description: 'Описание записи; null/пустая строка — очистить.',
+          },
         },
       },
       ProcessPatch: {
         type: 'object',
-        description: 'Частичное обновление процесса; хотя бы одно поле обязательно. Смена status запускает/останавливает поток mediaMTX.',
+        description:
+          'Частичное обновление процесса; хотя бы одно поле обязательно. Смена status запускает/останавливает поток mediaMTX. ' +
+          'name: undefined — не трогать, null/пусто — сбросить override (наследование).',
         properties: {
           streamId: { type: 'string', format: 'uuid', description: 'ID потока-источника записи.' },
           startedAt: { type: 'string', format: 'date-time', description: 'Момент старта записи.' },
@@ -391,6 +450,18 @@ const definition = {
             type: 'string',
             enum: ['running', 'stopped', 'failed'],
             description: 'Статус процесса записи.',
+          },
+          name: {
+            type: 'string',
+            nullable: true,
+            description:
+              'Собственное название записи (override). null/пустая строка — наследование ' +
+              'названия (нового) потока/устройства.',
+          },
+          description: {
+            type: 'string',
+            nullable: true,
+            description: 'Описание записи; null/пустая строка — очистить.',
           },
         },
       },
