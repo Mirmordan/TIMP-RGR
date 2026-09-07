@@ -112,12 +112,14 @@ export interface AdminGroup {
   id: string;
   name: string;
   objectCount: number;
+  isSystem?: boolean;
 }
 
 export interface AdminGroupObject {
   objectId: string;
   name: string | null;
   type: string | null;
+  description: string | null;
 }
 
 export interface AdminPermission {
