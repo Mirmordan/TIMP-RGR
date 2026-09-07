@@ -3,7 +3,7 @@ import { config } from './config';
 /** Активный запрос обновления сессии — общий для параллельных 401 (single-flight). */
 let refreshPromise: Promise<boolean> | null = null;
 
-/** В этой вкладке сессия existed (login/refresh давали 200) — значит 401 = «протухла», а не «её не было». */
+/** В этой вкладке сессия существовала (login/refresh давали 200) — значит 401 = «протухла», а не «её не было». */
 let sessionSeen = false;
 
 /**
