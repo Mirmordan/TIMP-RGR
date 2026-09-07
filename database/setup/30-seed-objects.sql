@@ -257,14 +257,9 @@ ALTER TABLE public.permissions DISABLE TRIGGER ALL;
 INSERT INTO public.permissions VALUES ('9963ba3b-0861-40aa-9cc6-1ef16d70c666', 'f4fdd515-c8f1-4965-8a67-b883fbee6022', 'aaaaaaaa-0000-0000-0000-000000000001', 'read');
 INSERT INTO public.permissions VALUES ('4e162f77-0986-488f-bb51-5c67f6148bd8', 'f4fdd515-c8f1-4965-8a67-b883fbee6022', 'aaaaaaaa-0000-0000-0000-000000000001', 'write');
 INSERT INTO public.permissions VALUES ('9e815a63-8b3d-40dc-ab58-0297ec500f13', 'f4fdd515-c8f1-4965-8a67-b883fbee6022', 'aaaaaaaa-0000-0000-0000-000000000001', 'delete');
-INSERT INTO public.permissions VALUES ('00cb25f7-27ed-4881-82f0-a715de9faf07', 'f4fdd515-c8f1-4965-8a67-b883fbee6022', 'aaaaaaaa-0000-0000-0000-000000000001', 'stream');
-INSERT INTO public.permissions VALUES ('15cd7f5c-5c79-49e4-b53d-8686dbe90f2a', 'f4fdd515-c8f1-4965-8a67-b883fbee6022', 'aaaaaaaa-0000-0000-0000-000000000001', 'list');
 INSERT INTO public.permissions VALUES ('448eb876-48d6-47ba-a8f7-320c0267c3dd', '014641df-a049-4948-9c40-6179a9837b36', 'aaaaaaaa-0000-0000-0000-000000000002', 'read');
-INSERT INTO public.permissions VALUES ('25d15fb7-4a63-47f6-b3d8-6e3fbcc5cb9d', '014641df-a049-4948-9c40-6179a9837b36', 'aaaaaaaa-0000-0000-0000-000000000002', 'stream');
 INSERT INTO public.permissions VALUES ('d2684033-6731-43af-a40c-76e26e59688b', '82b54abf-3bdb-40bd-88b7-570935f9d5a5', 'aaaaaaaa-0000-0000-0000-000000000001', 'delete');
-INSERT INTO public.permissions VALUES ('d2cf1b51-c42f-4f6c-ad25-9cc72ad8a066', '82b54abf-3bdb-40bd-88b7-570935f9d5a5', 'aaaaaaaa-0000-0000-0000-000000000001', 'list');
 INSERT INTO public.permissions VALUES ('aff186a8-ea6e-4446-b6d3-285fc6cc99d4', '82b54abf-3bdb-40bd-88b7-570935f9d5a5', 'aaaaaaaa-0000-0000-0000-000000000001', 'read');
-INSERT INTO public.permissions VALUES ('a956f1c5-8fc5-4b51-9c3a-dc81fc150c17', '82b54abf-3bdb-40bd-88b7-570935f9d5a5', 'aaaaaaaa-0000-0000-0000-000000000001', 'stream');
 INSERT INTO public.permissions VALUES ('8d4016ca-624c-4f56-af85-fdd7b1fb1ecd', '82b54abf-3bdb-40bd-88b7-570935f9d5a5', 'aaaaaaaa-0000-0000-0000-000000000001', 'write');
 
 

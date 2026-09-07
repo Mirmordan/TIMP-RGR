@@ -630,7 +630,7 @@ adminRouter.delete('/roles/:id', requireCapability('role:delete'), async (req: R
  *     tags: [Admin]
  *     operationId: setAdminRolePermissions
  *     summary: Замена прав роли
- *     description: Полностью заменяет набор прав роли на группы объектов. Действия валидируются по чек-листу (read/write/delete/stream/list), все группы должны существовать. Требуется capability permission:manage.
+ *     description: Полностью заменяет набор прав роли на группы объектов. Действия валидируются по чек-листу (read/write/delete), все группы должны существовать. Требуется capability permission:manage.
  *     parameters:
  *       - name: id
  *         in: path
@@ -1644,7 +1644,7 @@ adminRouter.get('/roles/:id/grants', requireCapability('permission:read'), async
  *     tags: [Admin]
  *     operationId: setRoleObjectGrants
  *     summary: Замена прямых grants роли
- *     description: Полностью заменяет набор прямых выдач роли на объекты (валидация как у прав на группы — действия read/write/delete/stream/list, все objectId должны существовать). Требуется capability permission:manage.
+ *     description: Полностью заменяет набор прямых выдач роли на объекты (валидация как у прав на группы — действия read/write/delete, все objectId должны существовать). Требуется capability permission:manage.
  *     parameters:
  *       - name: id
  *         in: path

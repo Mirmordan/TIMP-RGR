@@ -112,7 +112,7 @@ CREATE TABLE public.permissions (
     role_id uuid NOT NULL,
     group_id uuid NOT NULL,
     action text NOT NULL,
-    CONSTRAINT permissions_action_check CHECK ((action = ANY (ARRAY['read'::text, 'write'::text, 'delete'::text, 'stream'::text, 'list'::text])))
+    CONSTRAINT permissions_action_check CHECK ((action = ANY (ARRAY['read'::text, 'write'::text, 'delete'::text])))
 );
 
 
@@ -223,7 +223,7 @@ CREATE TABLE public.role_object_grants (
     object_id uuid NOT NULL,
     action text NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT role_object_grants_action_check CHECK ((action = ANY (ARRAY['read'::text, 'write'::text, 'delete'::text, 'stream'::text, 'list'::text])))
+    CONSTRAINT role_object_grants_action_check CHECK ((action = ANY (ARRAY['read'::text, 'write'::text, 'delete'::text])))
 );
 
 

@@ -4,7 +4,7 @@ export const ROLES: Role[] = ['admin', 'operator', 'viewer'];
 
 /**
  * Глобальные capability (системные операции управления).
- * В отличие от object-ACL (read/write/delete/stream/list на группах объектов),
+ * В отличие от object-ACL (read/write/delete на группах объектов),
  * эти capability связаны с управлением самой системой. Набор совпадает с
  * CHECK (capability IN (...)) в таблице role_capabilities и содержит только
  * коды, реально проверяемые requireCapability в коде.
@@ -43,9 +43,9 @@ export type Capability =
  * Объектные действия для ACL на группах объектов.
  * Совпадает с CHECK (action IN (...)) в таблице permissions.
  */
-export type ObjectAction = 'read' | 'write' | 'delete' | 'stream' | 'list';
+export type ObjectAction = 'read' | 'write' | 'delete';
 
-export const OBJECT_ACTIONS: ObjectAction[] = ['read', 'write', 'delete', 'stream', 'list'];
+export const OBJECT_ACTIONS: ObjectAction[] = ['read', 'write', 'delete'];
 
 /** Payload access-токена (короткоживущий). */
 export interface AccessTokenPayload {

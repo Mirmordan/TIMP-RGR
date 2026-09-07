@@ -897,7 +897,7 @@ const definition = {
           objectDescription: { type: 'string', nullable: true, description: 'Описание объекта.' },
           action: {
             type: 'string',
-            enum: ['read', 'write', 'delete', 'stream', 'list'],
+            enum: ['read', 'write', 'delete'],
             description: 'Действие, разрешаемое на объекте.',
           },
           createdAt: { type: 'string', format: 'date-time' },
@@ -921,7 +921,7 @@ const definition = {
                 },
                 action: {
                   type: 'string',
-                  enum: ['read', 'write', 'delete', 'stream', 'list'],
+                  enum: ['read', 'write', 'delete'],
                   description: 'Действие, разрешаемое на объекте.',
                 },
               },
@@ -962,7 +962,7 @@ const definition = {
           groupName: { type: 'string', description: 'Имя группы.' },
           action: {
             type: 'string',
-            enum: ['read', 'write', 'delete', 'stream', 'list'],
+            enum: ['read', 'write', 'delete'],
             description: 'Действие над объектами группы.',
           },
         },
@@ -1049,7 +1049,7 @@ const definition = {
                 },
                 action: {
                   type: 'string',
-                  enum: ['read', 'write', 'delete', 'stream', 'list'],
+                  enum: ['read', 'write', 'delete'],
                   description: 'Действие, разрешаемое на объектах группы.',
                 },
               },

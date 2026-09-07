@@ -354,6 +354,24 @@ describe('rbacService.replaceRoleObjectGrants', () => {
     );
   });
 
+  it('устаревшие stream и list больше не являются объектными действиями', async () => {
+    (rbacRepository.findRoleById as unknown as Mock).mockResolvedValue(role('r1', 'custom-role'));
+    await expectHttpError(
+      rbacService.replaceRoleObjectGrants('r1', ACTOR, [{ objectId: 'o1', action: 'stream' }]),
+      400,
+    );
+    await expectHttpError(
+      rbacService.replaceRoleObjectGrants('r1', ACTOR, [{ objectId: 'o1', action: 'list' }]),
+      400,
+    );
+    await expectHttpError(
+      rbacService.replaceRolePermissions('r1', ACTOR, [{ groupId: 'g1', action: 'stream' }]),
+      400,
+    );
+    expect(rbacRepository.replaceRoleObjectGrants).not.toHaveBeenCalled();
+    expect(rbacRepository.replaceRolePermissions).not.toHaveBeenCalled();
+  });
+
   it('несуществующий объект → 400', async () => {
     (rbacRepository.findRoleById as unknown as Mock).mockResolvedValue(role('r1', 'custom-role'));
     (rbacRepository.findExistingObjectIds as unknown as Mock).mockResolvedValue(['o1']);

@@ -23,8 +23,6 @@ const ACTIONS = [
   { value: 'read', label: 'просмотр' },
   { value: 'write', label: 'запись' },
   { value: 'delete', label: 'удалить' },
-  { value: 'stream', label: 'стрим' },
-  { value: 'list', label: 'список' },
 ] as const;
 
 /** Типы объектов-кандидатов в поиске прямых выдач. 'other' — всё кроме камер/потоков/записей. */
