@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { Table, type Column } from '../Table/Table';
+import { Pagination } from '../Pagination/Pagination';
 import { Button } from '../Button/Button';
 import { apiFetch } from '../../api';
 import { useAuth } from '../../auth';
@@ -8,7 +9,7 @@ import { SkeletonRows } from '../Skeleton/Skeleton';
 import { AUDIT_ACTIONS, type AuditClearResponse, type AuditEntry } from '../../types';
 import styles from './AuditTab.module.css';
 
-const LIMIT = 20;
+const LIMIT = 10;
 
 function isEmptyDetails(d: Record<string, unknown> | null | undefined): boolean {
   return !d || Object.keys(d).length === 0;
@@ -27,9 +28,9 @@ export function AuditTab() {
 
   const [rows, setRows] = useState<AuditEntry[]>([]);
   const [loading, setLoading] = useState(true);
-  const [loadingMore, setLoadingMore] = useState(false);
   const [loadError, setLoadError] = useState('');
-  const [hasMore, setHasMore] = useState(false);
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
 
   // Черновики фильтров (поле ввода) и применённый набор запросов.
   const [actorDraft, setActorDraft] = useState('');
@@ -55,7 +56,7 @@ export function AuditTab() {
     return p;
   }
 
-  async function fetchPage(offset: number): Promise<AuditEntry[]> {
+  async function fetchPage(offset: number): Promise<{ events: AuditEntry[]; total: number }> {
     const res = await apiFetch(`/admin/audit?${buildParams(offset).toString()}`);
     if (!res.ok) {
       const d = await res.json().catch(() => ({}));
@@ -68,11 +69,16 @@ export function AuditTab() {
     let cancelled = false;
     setLoading(true);
     setLoadError('');
-    fetchPage(0)
-      .then(page => {
+    fetchPage((page - 1) * LIMIT)
+      .then(pageData => {
         if (cancelled) return;
-        setRows(page);
-        setHasMore(page.length === LIMIT);
+        const lastPage = Math.max(1, Math.ceil(pageData.total / LIMIT));
+        if (page > lastPage) {
+          setPage(lastPage);
+          return;
+        }
+        setRows(pageData.events);
+        setTotal(pageData.total);
       })
       .catch((e: unknown) => {
         if (!cancelled) setLoadError(e instanceof Error ? e.message : 'Не удалось загрузить');
@@ -83,25 +89,12 @@ export function AuditTab() {
     return () => {
       cancelled = true;
     };
-  }, [query, tick]);
+  }, [query, page, tick]);
 
   function applyFilters(e?: FormEvent) {
     e?.preventDefault();
+    setPage(1);
     setQuery({ actor: actorDraft, action: actionDraft, from: fromDraft, to: toDraft });
-  }
-
-  async function loadMore() {
-    if (loadingMore) return;
-    setLoadingMore(true);
-    try {
-      const page = await fetchPage(rows.length);
-      setRows(prev => [...prev, ...page]);
-      setHasMore(page.length === LIMIT);
-    } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : 'Не удалось догрузить');
-    } finally {
-      setLoadingMore(false);
-    }
   }
 
   function requestClear() {
@@ -126,6 +119,7 @@ export function AuditTab() {
       setConfirmClear(false);
       setClearDate('');
       toast.success(`Удалено ${data.deleted} записей`);
+      setPage(1);
       setTick(t => t + 1);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Не удалось очистить лог';
@@ -284,13 +278,7 @@ export function AuditTab() {
       ) : (
         <>
           <Table columns={columns} data={rows} emptyText="Событий нет" />
-          {hasMore && (
-            <div className={styles.loadMoreRow}>
-              <Button size="sm" variant="outline" onClick={loadMore} disabled={loadingMore}>
-                {loadingMore ? '…' : 'Ещё'}
-              </Button>
-            </div>
-          )}
+          <Pagination page={page} total={total} pageSize={LIMIT} onChange={setPage} />
         </>
       )}
     </>

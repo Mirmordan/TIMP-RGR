@@ -1410,13 +1410,21 @@ adminRouter.delete('/users/:id', requireCapability('user:delete'), async (req: R
  *           type: string
  *     responses:
  *       '200':
- *         description: Массив записей аудита
+ *         description: Страница записей аудита и общее число записей, подходящих под фильтры
  *         content:
  *           application/json:
  *             schema:
- *               type: array
- *               items:
- *                 $ref: '#/components/schemas/AuditEntry'
+ *               type: object
+ *               required: [events, total]
+ *               properties:
+ *                 events:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/AuditEntry'
+ *                 total:
+ *                   type: integer
+ *                   description: Общее число записей с учётом фильтров (для пагинации).
+ *                   example: 57
  *       '401':
  *         description: Требуется авторизация
  *         content:
@@ -1439,8 +1447,8 @@ adminRouter.get('/audit', requireCapability('audit:read'), async (req: Request, 
     if (typeof req.query.action === 'string' && req.query.action !== '') query.action = req.query.action;
     if (typeof req.query.from === 'string' && req.query.from !== '') query.from = req.query.from;
     if (typeof req.query.to === 'string' && req.query.to !== '') query.to = req.query.to;
-    const entries = await auditService.findAudit(query);
-    res.json(entries);
+    const { events, total } = await auditService.findAudit(query);
+    res.json({ events, total });
   } catch (e) {
     sendRbacError(res, e);
   }

@@ -66,6 +66,11 @@ export interface AuditListQuery {
   to?: string;
 }
 
+export interface AuditListResult {
+  events: AuditEntry[];
+  total: number;
+}
+
 export const auditService = {
   /** Вставить событие (best-effort, никогда не бросает наружу). */
   async logAudit(e: AuditEvent): Promise<void> {
@@ -87,8 +92,8 @@ export const auditService = {
     }
   },
 
-  /** Страница лога: created_at DESC, фильтры actor(partial)/action/from/to. */
-  async findAudit(q: AuditListQuery): Promise<AuditEntry[]> {
+  /** Страница лога: created_at DESC, фильтры actor(partial)/action/from/to. Возвращает events + total (для пагинации). */
+  async findAudit(q: AuditListQuery): Promise<AuditListResult> {
     const limit = Math.min(Math.max(Math.trunc(q.limit ?? 20) || 20, 1), 200);
     const offset = Math.max(Math.trunc(q.offset ?? 0) || 0, 0);
 
@@ -113,6 +118,13 @@ export const auditService = {
     }
 
     const whereSql = where.length > 0 ? `WHERE ${where.join(' AND ')}` : '';
+
+    const countRes = await pool.query<{ total: number | string }>(
+      `SELECT COUNT(*)::int AS total FROM audit_log ${whereSql}`,
+      params,
+    );
+    const total = Number(countRes.rows[0]?.total ?? 0);
+
     const { rows } = await pool.query<AuditEntry>(
       `SELECT id,
               created_at AS "createdAt",
@@ -126,9 +138,9 @@ export const auditService = {
        ${whereSql}
        ORDER BY created_at DESC, id DESC
        LIMIT $${push(limit)} OFFSET $${push(offset)}`,
-      params,
+      [...params],
     );
-    return rows;
+    return { events: rows, total };
   },
 
   /** Удалить записи старше before (created_at < $1). */
