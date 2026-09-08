@@ -375,7 +375,7 @@ export const statsService = {
         FROM recording_streams
       `),
       queryAs<DashboardDailyRow>(`
-        SELECT to_char(($1::date + g.i)::timestamp AT TIME ZONE 'UTC', 'YYYY-MM-DD') AS "day",
+        SELECT ($1::date + g.i)::text AS "day",
                COALESCE(SUM(EXTRACT(EPOCH FROM (
                  LEAST(d.seg_end, (($1::date + g.i + 1))::timestamp AT TIME ZONE 'UTC')
                - GREATEST(d.seg_start, ($1::date + g.i)::timestamp AT TIME ZONE 'UTC'))
