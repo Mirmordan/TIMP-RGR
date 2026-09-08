@@ -750,7 +750,7 @@ adminRouter.get('/capabilities', requireCapability('role:read'), (_req: Request,
  *               type: array
  *               items:
  *                 type: string
- *                 enum: [admin:read, admin:write, user:create, user:read, user:update, user:delete, user:password:reset, role:read, role:create, role:update, role:delete, group:read, group:create, group:update, group:delete, permission:read, permission:manage, audit:read, audit:delete, camera:create, stream:create, process:create, chunk:create, media:export]
+ *                 enum: [admin:read, admin:write, user:create, user:read, user:update, user:delete, user:password:reset, role:read, role:create, role:update, role:delete, group:read, group:create, group:update, group:delete, permission:read, permission:manage, audit:read, audit:delete, camera:create, stream:create, process:create, chunk:create, media:export, dashboard:read]
  *       '401':
  *         description: Требуется авторизация
  *         content:
@@ -813,7 +813,7 @@ adminRouter.get('/roles/:id/capabilities', requireCapability('role:read'), async
  *               type: array
  *               items:
  *                 type: string
- *                 enum: [admin:read, admin:write, user:create, user:read, user:update, user:delete, user:password:reset, role:read, role:create, role:update, role:delete, group:read, group:create, group:update, group:delete, permission:read, permission:manage, audit:read, audit:delete, camera:create, stream:create, process:create, chunk:create, media:export]
+ *                 enum: [admin:read, admin:write, user:create, user:read, user:update, user:delete, user:password:reset, role:read, role:create, role:update, role:delete, group:read, group:create, group:update, group:delete, permission:read, permission:manage, audit:read, audit:delete, camera:create, stream:create, process:create, chunk:create, media:export, dashboard:read]
  *       '400':
  *         description: capabilities не массив строк, неизвестный код или попытка изменить спец-права роли admin
  *         content:

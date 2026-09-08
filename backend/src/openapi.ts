@@ -97,7 +97,7 @@ const definition = {
               'user:password:reset', 'role:read', 'role:create', 'role:update', 'role:delete',
               'group:read', 'group:create', 'group:update', 'group:delete', 'permission:read',
               'permission:manage', 'audit:read', 'audit:delete', 'camera:create', 'stream:create',
-              'process:create', 'chunk:create', 'media:export'],
+              'process:create', 'chunk:create', 'dashboard:read', 'media:export'],
             },
             description: 'Актуальные system capabilities пользователя (union по его ролям из role_capabilities).',
           },
@@ -820,6 +820,182 @@ const definition = {
           },
         },
       },
+      DailyDashboardRow: {
+        type: 'object',
+        description: 'Бакет одного UTC-суток графика записи дашборда.',
+        required: ['day', 'recordingSeconds', 'segmentCount', 'incidents'],
+        properties: {
+          day: { type: 'string', description: 'Дата UTC-суток в формате YYYY-MM-DD.' },
+          recordingSeconds: {
+            type: 'number',
+            description: 'Секунд записи в сутках: сумма пересечений интервалов сегментов с [day, day+1) UTC.',
+          },
+          segmentCount: {
+            type: 'integer',
+            description: 'Сколько сегментов реально пересекают сутки (overlap > 0).',
+          },
+          incidents: {
+            type: 'object',
+            required: ['info', 'warning', 'critical', 'total'],
+            properties: {
+              info: { type: 'integer' },
+              warning: { type: 'integer' },
+              critical: { type: 'integer' },
+              total: { type: 'integer', description: 'Инцидентов за сутки.' },
+            },
+          },
+        },
+      },
+      DashboardSource: {
+        type: 'object',
+        description: 'Источник (поток) с записью за период дашборда.',
+        required: ['id', 'label', 'seconds', 'segmentCount', 'lastStartedAt'],
+        properties: {
+          id: { type: 'string', description: 'UUID потока (recording_streams.object_id).' },
+          label: {
+            type: 'string',
+            description: 'Человекочитаемое имя: имя камеры/потока либо fallback по URL.',
+          },
+          seconds: {
+            type: 'number',
+            description: 'Секунд записи источника за период (пересечение интервалов сегментов с периодом).',
+          },
+          segmentCount: {
+            type: 'integer',
+            description: 'Уникальных сегментов источника с overlap > 0 за период.',
+          },
+          lastStartedAt: {
+            type: 'string',
+            format: 'date-time',
+            nullable: true,
+            description: 'Максимальный started_at сегментов источника в периоде.',
+          },
+        },
+      },
+      DashboardStats: {
+        type: 'object',
+        description: 'Сводка рабочего дашборда (/stats/dashboard).',
+        required: [
+          'generatedAt',
+          'timezone',
+          'period',
+          'tiles',
+          'daily',
+          'sources',
+          'processStatuses',
+          'disk',
+        ],
+        properties: {
+          generatedAt: { type: 'string', format: 'date-time', description: 'Момент генерации ответа (ISO).' },
+          timezone: { type: 'string', enum: ['UTC'], description: 'Часовой пояс всех суточных бакетов.' },
+          period: {
+            type: 'object',
+            required: ['days', 'startDay', 'endDay'],
+            properties: {
+              days: { type: 'integer', description: 'Запрошенный размер периода (суток).' },
+              startDay: { type: 'string', description: 'Первый бакет (YYYY-MM-DD UTC).' },
+              endDay: { type: 'string', description: 'Текущий день (YYYY-MM-DD UTC).' },
+            },
+          },
+          tiles: {
+            type: 'object',
+            required: ['processes', 'segments', 'recording', 'streams', 'devices', 'incidents'],
+            properties: {
+              processes: {
+                type: 'object',
+                required: ['total', 'running', 'stopped', 'failed'],
+                properties: {
+                  total: { type: 'integer' },
+                  running: { type: 'integer' },
+                  stopped: { type: 'integer' },
+                  failed: { type: 'integer' },
+                },
+              },
+              segments: {
+                type: 'object',
+                required: ['count', 'durationS', 'sizeBytes'],
+                properties: {
+                  count: { type: 'integer', description: 'Всего сегментов.' },
+                  durationS: { type: 'number', description: 'Суммарная длительность, сек.' },
+                  sizeBytes: { type: 'number', description: 'Суммарный размер, байты.' },
+                },
+              },
+              recording: {
+                type: 'object',
+                required: ['todayS', 'last24hS'],
+                properties: {
+                  todayS: {
+                    type: 'number',
+                    description: 'Секунд записи в текущих UTC-сутках (до now()).',
+                  },
+                  last24hS: {
+                    type: 'number',
+                    description: 'Секунд записи за скользящие 24 часа (now()-24h … now()).',
+                  },
+                },
+              },
+              streams: {
+                type: 'object',
+                required: ['visible', 'recorded'],
+                properties: {
+                  visible: { type: 'integer', description: 'Видимых потоков-источников (всего).' },
+                  recorded: {
+                    type: 'integer',
+                    description: 'Потоков с записью (overlap > 0) за период.',
+                  },
+                },
+              },
+              devices: {
+                type: 'object',
+                required: ['visible'],
+                properties: {
+                  visible: { type: 'integer', description: 'Видимых устройств.' },
+                },
+              },
+              incidents: {
+                type: 'object',
+                required: ['total', 'last24h', 'bySeverity'],
+                properties: {
+                  total: { type: 'integer' },
+                  last24h: { type: 'integer', description: 'Инцидентов за последние 24 часа.' },
+                  bySeverity: {
+                    type: 'object',
+                    required: ['info', 'warning', 'critical'],
+                    properties: {
+                      info: { type: 'integer' },
+                      warning: { type: 'integer' },
+                      critical: { type: 'integer' },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          daily: {
+            type: 'array',
+            description: 'График записи/инцидентов по UTC-суткам. Дней ровно period.days (пустые — нулями).',
+            items: { $ref: '#/components/schemas/DailyDashboardRow' },
+          },
+          sources: {
+            type: 'array',
+            description: 'Топ-8 источников по записи за период (сек. DESC, затем label ASC).',
+            items: { $ref: '#/components/schemas/DashboardSource' },
+          },
+          processStatuses: {
+            type: 'array',
+            description: 'Счётчики процессов по статусам.',
+            items: {
+              type: 'object',
+              required: ['status', 'count'],
+              properties: {
+                status: { type: 'string', enum: ['running', 'stopped', 'failed'] },
+                count: { type: 'integer' },
+              },
+            },
+          },
+          disk: { $ref: '#/components/schemas/DiskStats' },
+        },
+      },
       RbacRole: {
         type: 'object',
         required: ['id', 'name', 'createdAt'],
@@ -993,7 +1169,7 @@ const definition = {
               'user:password:reset', 'role:read', 'role:create', 'role:update', 'role:delete',
               'group:read', 'group:create', 'group:update', 'group:delete', 'permission:read',
               'permission:manage', 'audit:read', 'audit:delete', 'camera:create', 'stream:create',
-              'process:create', 'chunk:create', 'media:export'],
+              'process:create', 'chunk:create', 'dashboard:read', 'media:export'],
             description: 'Код спец-права (хранится в role_capabilities.capability).',
           },
           label: { type: 'string', description: 'Короткая подпись для UI.' },
@@ -1014,7 +1190,7 @@ const definition = {
               'user:password:reset', 'role:read', 'role:create', 'role:update', 'role:delete',
               'group:read', 'group:create', 'group:update', 'group:delete', 'permission:read',
               'permission:manage', 'audit:read', 'audit:delete', 'camera:create', 'stream:create',
-              'process:create', 'chunk:create', 'media:export'],
+              'process:create', 'chunk:create', 'dashboard:read', 'media:export'],
             },
           },
         },

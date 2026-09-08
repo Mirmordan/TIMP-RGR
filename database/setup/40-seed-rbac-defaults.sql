@@ -51,3 +51,16 @@ ON CONFLICT ON CONSTRAINT role_capabilities_role_id_capability_key DO NOTHING;
 INSERT INTO public.role_capabilities (role_id, capability)
 SELECT id, 'media:export' FROM public.roles WHERE name = 'viewer'
 ON CONFLICT ON CONSTRAINT role_capabilities_role_id_capability_key DO NOTHING;
+
+-- 3) Дашборд: просмотр рабочей сводки доступен всем ролям.
+INSERT INTO public.role_capabilities (role_id, capability)
+SELECT id, 'dashboard:read' FROM public.roles WHERE name = 'admin'
+ON CONFLICT ON CONSTRAINT role_capabilities_role_id_capability_key DO NOTHING;
+
+INSERT INTO public.role_capabilities (role_id, capability)
+SELECT id, 'dashboard:read' FROM public.roles WHERE name = 'operator'
+ON CONFLICT ON CONSTRAINT role_capabilities_role_id_capability_key DO NOTHING;
+
+INSERT INTO public.role_capabilities (role_id, capability)
+SELECT id, 'dashboard:read' FROM public.roles WHERE name = 'viewer'
+ON CONFLICT ON CONSTRAINT role_capabilities_role_id_capability_key DO NOTHING;

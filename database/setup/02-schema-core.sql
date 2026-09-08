@@ -209,7 +209,7 @@ CREATE TABLE public.role_capabilities (
     role_id uuid NOT NULL,
     capability text NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT role_capabilities_capability_check CHECK ((capability = ANY (ARRAY['admin:read'::text, 'admin:write'::text, 'audit:delete'::text, 'audit:read'::text, 'camera:create'::text, 'chunk:create'::text, 'group:create'::text, 'group:delete'::text, 'group:read'::text, 'group:update'::text, 'media:export'::text, 'permission:manage'::text, 'permission:read'::text, 'process:create'::text, 'role:create'::text, 'role:delete'::text, 'role:read'::text, 'role:update'::text, 'stream:create'::text, 'user:create'::text, 'user:delete'::text, 'user:password:reset'::text, 'user:read'::text, 'user:update'::text])))
+    CONSTRAINT role_capabilities_capability_check CHECK ((capability = ANY (ARRAY['admin:read'::text, 'admin:write'::text, 'audit:delete'::text, 'audit:read'::text, 'camera:create'::text, 'chunk:create'::text, 'dashboard:read'::text, 'group:create'::text, 'group:delete'::text, 'group:read'::text, 'group:update'::text, 'media:export'::text, 'permission:manage'::text, 'permission:read'::text, 'process:create'::text, 'role:create'::text, 'role:delete'::text, 'role:read'::text, 'role:update'::text, 'stream:create'::text, 'user:create'::text, 'user:delete'::text, 'user:password:reset'::text, 'user:read'::text, 'user:update'::text])))
 );
 
 

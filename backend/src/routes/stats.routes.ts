@@ -169,3 +169,53 @@ statsRouter.get('/disk', requireCapability('admin:read'), async (_req: Request, 
   const disk = await statsService.getDisk();
   res.json(disk);
 });
+
+/** Парсинг days для /stats/dashboard: целое от 1 до 365 (по умолчанию 30). */
+function parseDashboardDays(raw: unknown): number {
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n <= 0) return 30;
+  return Math.min(Math.max(Math.floor(n), 1), 365);
+}
+
+/**
+ * @openapi
+ * /stats/dashboard:
+ *   get:
+ *     tags: [Stats]
+ *     operationId: getDashboard
+ *     summary: Сводка рабочего дашборда
+ *     description: Агрегированная сводка по процессам, сегментам, записи, источникам, инцидентам и диску за последние N UTC-суток. График записи считается как сумма пересечений интервалов сегментов с UTC-сутками (live-сегменты учитываются до now()). Требуется capability dashboard:read.
+ *     parameters:
+ *       - name: days
+ *         in: query
+ *         description: За сколько последних UTC-суток строить графики (целое, от 1 до 365).
+ *         required: false
+ *         schema:
+ *           type: integer
+ *           default: 30
+ *           maximum: 365
+ *     responses:
+ *       '200':
+ *         description: Сводные данные дашборда
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/DashboardStats'
+ *       '401':
+ *         description: Требуется авторизация
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       '403':
+ *         description: Недостаточно прав (нужна capability dashboard:read)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
+statsRouter.get('/dashboard', requireCapability('dashboard:read'), async (req: Request, res: Response) => {
+  const days = parseDashboardDays(req.query.days);
+  const dashboard = await statsService.getDashboard(days);
+  res.json(dashboard);
+});

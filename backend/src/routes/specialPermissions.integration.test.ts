@@ -28,6 +28,7 @@ const mocks = vi.hoisted(() => ({
   statsGetTimeline: vi.fn(),
   statsGetIncidentsTimeline: vi.fn(),
   statsGetDisk: vi.fn(),
+  statsGetDashboard: vi.fn(),
 }));
 
 vi.mock('../security/acl', () => ({
@@ -73,6 +74,7 @@ vi.mock('../services/stats.service', () => ({
     getTimeline: (...a: unknown[]) => mocks.statsGetTimeline(...a),
     getIncidentsTimeline: (...a: unknown[]) => mocks.statsGetIncidentsTimeline(...a),
     getDisk: (...a: unknown[]) => mocks.statsGetDisk(...a),
+    getDashboard: (...a: unknown[]) => mocks.statsGetDashboard(...a),
   },
 }));
 
@@ -105,6 +107,7 @@ const ALL_CODES = [
   'process:create',
   'chunk:create',
   'media:export',
+  'dashboard:read',
 ];
 
 // userId -> выданные спец-права (эмуляция union role_capabilities).
@@ -162,6 +165,27 @@ describe('specialPermissions.integration (route-level, роли и спец-пр
     mocks.statsGetTimeline.mockResolvedValue([]);
     mocks.statsGetIncidentsTimeline.mockResolvedValue([]);
     mocks.statsGetDisk.mockResolvedValue({ chunksBytes: null, freeBytes: null, totalBytes: null });
+    mocks.statsGetDashboard.mockResolvedValue({
+      generatedAt: '2026-01-01T00:00:00.000Z',
+      timezone: 'UTC',
+      period: { days: 30, startDay: '2025-12-03', endDay: '2026-01-01' },
+      tiles: {
+        processes: { total: 0, running: 0, stopped: 0, failed: 0 },
+        segments: { count: 0, durationS: 0, sizeBytes: 0 },
+        recording: { todayS: 0, last24hS: 0 },
+        streams: { visible: 0, recorded: 0 },
+        devices: { visible: 0 },
+        incidents: { total: 0, last24h: 0, bySeverity: { info: 0, warning: 0, critical: 0 } },
+      },
+      daily: [],
+      sources: [],
+      processStatuses: [
+        { status: 'running', count: 0 },
+        { status: 'stopped', count: 0 },
+        { status: 'failed', count: 0 },
+      ],
+      disk: { chunksBytes: null, freeBytes: null, totalBytes: null },
+    });
   });
 
   async function api(method: 'GET' | 'PUT' | 'POST' | 'PATCH' | 'DELETE', path: string, userId: string, body?: unknown) {
@@ -179,7 +203,7 @@ describe('specialPermissions.integration (route-level, роли и спец-пр
   }
 
   describe('admin full (роль admin в сиде role_capabilities → все коды)', () => {
-    it('GET /admin/capabilities → 200 и каталог из 24 спец-прав', async () => {
+    it(`GET /admin/capabilities → 200 и каталог из ${ALL_CODES.length} спец-прав`, async () => {
       grantAll('u-admin');
       const r = await api('GET', '/admin/capabilities', 'u-admin');
       expect(r.status).toBe(200);
@@ -273,6 +297,43 @@ describe('specialPermissions.integration (route-level, роли и спец-пр
       const incidentsRes = await api('GET', '/stats/incidents?days=30', uid);
       expect(incidentsRes.status).toBe(200);
       expect(mocks.statsGetIncidentsTimeline).toHaveBeenCalledWith(30);
+    });
+  });
+
+  describe('дашборд /stats/dashboard требует dashboard:read (отдельно от admin:read)', () => {
+    it('только с admin:read → 403 и БЕЗ обращения к statsService', async () => {
+      const uid = 'u-dash-adminread';
+      grant(uid, ['admin:read']);
+      expect((await api('GET', '/stats/dashboard', uid)).status).toBe(403);
+      expect(mocks.statsGetDashboard).not.toHaveBeenCalled();
+    });
+
+    it('с dashboard:read → 200 и данные от statsService (days=30 по умолчанию)', async () => {
+      const uid = 'u-dash-cap';
+      grant(uid, ['dashboard:read']);
+      const r = await api('GET', '/stats/dashboard', uid);
+      expect(r.status).toBe(200);
+      expect(r.body).toMatchObject({ timezone: 'UTC' });
+      expect(mocks.statsGetDashboard).toHaveBeenCalledTimes(1);
+      expect(mocks.statsGetDashboard).toHaveBeenCalledWith(30);
+
+      const rDays = await api('GET', '/stats/dashboard?days=7', uid);
+      expect(rDays.status).toBe(200);
+      expect(mocks.statsGetDashboard).toHaveBeenLastCalledWith(7);
+    });
+
+    it('с dashboard:read старые /stats/overview остаются недоступны (admin:read)', async () => {
+      const uid = 'u-dash-only';
+      grant(uid, ['dashboard:read']);
+      expect((await api('GET', '/stats/overview', uid)).status).toBe(403);
+      expect(mocks.statsGetOverview).not.toHaveBeenCalled();
+    });
+
+    it('без спец-прав → 403 и БЕЗ обращения к statsService', async () => {
+      const uid = 'u-dash-none';
+      // нет grants
+      expect((await api('GET', '/stats/dashboard', uid)).status).toBe(403);
+      expect(mocks.statsGetDashboard).not.toHaveBeenCalled();
     });
   });
 

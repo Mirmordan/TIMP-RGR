@@ -31,6 +31,7 @@ export const CAPABILITIES: readonly Capability[] = [
   'process:create',
   'chunk:create',
   'media:export',
+  'dashboard:read',
 ] as const;
 
 export function isCapability(value: string): value is Capability {
@@ -164,5 +165,10 @@ export const CAPABILITY_CATALOG: readonly CapabilityInfo[] = [
     code: 'media:export',
     label: 'Медиа: экспорт',
     description: 'Экспорт фрагмента записи в файл (GET /processes/:id/export).',
+  },
+  {
+    code: 'dashboard:read',
+    label: 'Дашборд: просмотр',
+    description: 'Доступ к сводке/графикам (/stats/dashboard). Не является правом админ-панели.',
   },
 ];

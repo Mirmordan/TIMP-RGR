@@ -37,7 +37,8 @@ export type Capability =
   | 'stream:create'
   | 'process:create'
   | 'chunk:create'
-  | 'media:export';
+  | 'media:export'
+  | 'dashboard:read';
 
 /**
  * Объектные действия для ACL на группах объектов.
