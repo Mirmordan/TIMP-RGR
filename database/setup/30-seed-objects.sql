@@ -60,16 +60,9 @@ INSERT INTO public.objects VALUES ('f6ddb844-7fe3-4914-b4f5-e6c01c4da510', '2026
 INSERT INTO public.objects VALUES ('bdc1ce80-22d4-49c8-bab0-2d151454ccfe', '2026-09-02 02:15:49.979436+00', 'stream', 'https://cameras.smarty.kz/rtplive/camera3.stream/playlist.m3u8', NULL, '6e95316d-732b-4c18-b9c3-2ddea969a1e1', NULL);
 INSERT INTO public.objects VALUES ('0c23f1b5-c85c-49ee-9e19-a3380a09612f', '2026-09-02 02:15:49.979436+00', 'stream', 'https://cameras.smarty.kz/rtplive/camera2.stream/playlist.m3u8', NULL, '60e35f71-e404-4ab7-9e9c-4bba1bf9907a', NULL);
 INSERT INTO public.objects VALUES ('c247a995-caea-4775-b7f3-d3b061cfecf3', '2026-09-02 02:15:49.979436+00', 'stream', 'https://cameras.smarty.kz/rtplive/camera4.stream/playlist.m3u8', NULL, '8b06bf05-03e4-4d43-9f3c-14a5e940859a', NULL);
-INSERT INTO public.objects VALUES ('675257af-eafe-4495-adfa-86acbb5c58cb', '2026-09-04 05:28:14.675665+00', 'segment', 'ivideon://100-gXWBAIs5iYCCGE2UNDkqZz/327680', NULL, '11a1ad9f-81bd-4e24-91f8-8197132141b5', NULL);
-INSERT INTO public.objects VALUES ('4f52a590-fa11-4007-b509-58dd4cc06451', '2026-09-04 08:34:30.559977+00', 'segment', 'ivideon://100-O49sV4p64NwZhD6mImjRhm/0', NULL, '15e7334d-e86e-4cea-9da2-5b7a2e3e0a85', NULL);
-INSERT INTO public.objects VALUES ('94f531f9-0156-4c49-950e-f0425755d41b', '2026-09-05 00:51:31.50182+00', 'segment', 'ivideon://100-gXWBAIs5iYCCGE2UNDkqZz/327680', NULL, '11a1ad9f-81bd-4e24-91f8-8197132141b5', NULL);
-INSERT INTO public.objects VALUES ('d6c5a480-8a5c-47a7-93b6-30b80fad65bd', '2026-09-05 00:52:45.084499+00', 'segment', 'ivideon://100-gXWBAIs5iYCCGE2UNDkqZz/327680', NULL, '11a1ad9f-81bd-4e24-91f8-8197132141b5', NULL);
-INSERT INTO public.objects VALUES ('84581e6a-d84a-4db5-8609-0a9e2c5e67d0', '2026-09-05 04:11:39.16637+00', 'segment', 'ivideon://100-3CPXm1fxzNgCzT01gyh41y/0', NULL, '93a04268-ade1-4b91-bac0-6ef23652012f', NULL);
-INSERT INTO public.objects VALUES ('8447b514-86af-4718-9a58-22b07c19b47c', '2026-09-05 00:53:13.664802+00', 'segment', 'ivideon://100-O49sV4p64NwZhD6mImjRhm/0', NULL, '15e7334d-e86e-4cea-9da2-5b7a2e3e0a85', NULL);
 INSERT INTO public.objects VALUES ('aaaaaaaa-0000-0000-0000-000000000001', '2026-09-07 04:12:04.279719+00', 'group', 'all', NULL, NULL, NULL);
 INSERT INTO public.objects VALUES ('aaaaaaaa-0000-0000-0000-000000000002', '2026-09-07 04:12:04.279719+00', 'group', 'ground-floor', NULL, 'aaaaaaaa-0000-0000-0000-000000000001', NULL);
 INSERT INTO public.objects VALUES ('aaaaaaaa-0000-0000-0000-000000000003', '2026-09-07 04:12:04.279719+00', 'group', 'archive', NULL, 'aaaaaaaa-0000-0000-0000-000000000001', NULL);
-INSERT INTO public.objects VALUES ('1678f6bf-b18d-4f2f-8a25-bfe117572da1', '2026-09-07 07:12:39.02471+00', 'segment', NULL, NULL, NULL, '11111111-1111-1111-1111-111111111111');
 INSERT INTO public.objects VALUES ('a1000000-0000-0000-0000-000000000001', '2026-09-03 02:55:20.705921+00', 'stream', 'ivideon://100-Ud6bCsaaUqAkdBaDisGWup/0', NULL, NULL, NULL);
 INSERT INTO public.objects VALUES ('a1000000-0000-0000-0000-000000000002', '2026-09-03 02:55:20.705921+00', 'stream', 'ivideon://100-gXWBAIs5iYCCGE2UNDkqZz/327680', NULL, NULL, NULL);
 INSERT INTO public.objects VALUES ('a1000000-0000-0000-0000-000000000003', '2026-09-03 02:55:20.705921+00', 'stream', 'ivideon://100-O49sV4p64NwZhD6mImjRhm/0', NULL, NULL, NULL);
@@ -80,19 +73,6 @@ INSERT INTO public.objects VALUES ('11a1ad9f-81bd-4e24-91f8-8197132141b5', '2026
 INSERT INTO public.objects VALUES ('15e7334d-e86e-4cea-9da2-5b7a2e3e0a85', '2026-09-04 08:34:25.022752+00', 'process', 'ivideon://100-O49sV4p64NwZhD6mImjRhm/0', NULL, 'a1000000-0000-0000-0000-000000000003', NULL);
 INSERT INTO public.objects VALUES ('f5f94945-82ad-471e-aaf8-64c40b238c80', '2026-09-05 00:56:08.018343+00', 'process', 'ivideon://100-ab7814da858ba1b5c3f69982c42a855c/0', NULL, 'a1000000-0000-0000-0000-000000000005', NULL);
 INSERT INTO public.objects VALUES ('93a04268-ade1-4b91-bac0-6ef23652012f', '2026-09-05 04:11:39.098006+00', 'process', 'ivideon://100-3CPXm1fxzNgCzT01gyh41y/0', NULL, 'a1000000-0000-0000-0000-000000000004', NULL);
-INSERT INTO public.objects VALUES ('3ade4ba7-0964-4b57-aedd-f63008d89950', '2026-09-05 07:00:15.435504+00', 'segment', 'ivideon://100-3CPXm1fxzNgCzT01gyh41y/0', NULL, '93a04268-ade1-4b91-bac0-6ef23652012f', NULL);
-INSERT INTO public.objects VALUES ('2970b591-66df-4c7e-ad8a-b1070a08a68e', '2026-09-05 07:01:04.330188+00', 'segment', 'ivideon://100-Ud6bCsaaUqAkdBaDisGWup/0', NULL, 'ffa1fb77-5466-4879-ae1d-2b628109dfd6', NULL);
-INSERT INTO public.objects VALUES ('169b2c1f-0e3a-43eb-ad67-99da950fa7d1', '2026-09-05 07:00:53.64499+00', 'segment', 'ivideon://100-3CPXm1fxzNgCzT01gyh41y/0', NULL, '93a04268-ade1-4b91-bac0-6ef23652012f', NULL);
-INSERT INTO public.objects VALUES ('e5d57742-a5b5-4ffb-bb37-a9fccc49dd36', '2026-09-05 04:30:02.307075+00', 'segment', 'ivideon://100-3CPXm1fxzNgCzT01gyh41y/0', NULL, '93a04268-ade1-4b91-bac0-6ef23652012f', NULL);
-INSERT INTO public.objects VALUES ('66f183c9-8755-4c48-8f47-ffd4ec7fb7d1', '2026-09-05 07:51:50.856249+00', 'segment', 'ivideon://100-3CPXm1fxzNgCzT01gyh41y/0', NULL, '93a04268-ade1-4b91-bac0-6ef23652012f', NULL);
-INSERT INTO public.objects VALUES ('ae6d3358-a2d1-4bfe-935a-182e191107a3', '2026-09-05 08:58:58.499171+00', 'segment', 'ivideon://100-3CPXm1fxzNgCzT01gyh41y/0', NULL, '93a04268-ade1-4b91-bac0-6ef23652012f', NULL);
-INSERT INTO public.objects VALUES ('044ea9ef-db4f-4238-b1e8-9e10250c07a6', '2026-09-05 09:09:18.708842+00', 'segment', 'ivideon://100-3CPXm1fxzNgCzT01gyh41y/0', NULL, '93a04268-ade1-4b91-bac0-6ef23652012f', NULL);
-INSERT INTO public.objects VALUES ('a2571d3b-530d-41ad-a8eb-027576a7d35c', '2026-09-05 09:30:48.203713+00', 'segment', 'ivideon://100-3CPXm1fxzNgCzT01gyh41y/0', NULL, '93a04268-ade1-4b91-bac0-6ef23652012f', NULL);
-INSERT INTO public.objects VALUES ('c1ca264a-2e61-4e58-8aab-8cf857534bbb', '2026-09-05 09:43:25.036708+00', 'segment', 'ivideon://100-3CPXm1fxzNgCzT01gyh41y/0', NULL, '93a04268-ade1-4b91-bac0-6ef23652012f', NULL);
-INSERT INTO public.objects VALUES ('1a430da6-329d-4874-adcd-960a505e1f0b', '2026-09-06 05:29:04.167596+00', 'segment', 'ivideon://100-O49sV4p64NwZhD6mImjRhm/0', NULL, '15e7334d-e86e-4cea-9da2-5b7a2e3e0a85', NULL);
-INSERT INTO public.objects VALUES ('3df2093d-1740-4260-a1d8-f9908ce07fb5', '2026-09-04 01:43:40.625789+00', 'segment', 'ivideon://100-Ud6bCsaaUqAkdBaDisGWup/0', NULL, 'ffa1fb77-5466-4879-ae1d-2b628109dfd6', NULL);
-INSERT INTO public.objects VALUES ('2033c915-0ac7-4d24-9d40-ab0410ed6886', '2026-09-04 01:45:23.158776+00', 'segment', 'ivideon://100-Ud6bCsaaUqAkdBaDisGWup/0', NULL, 'ffa1fb77-5466-4879-ae1d-2b628109dfd6', NULL);
-INSERT INTO public.objects VALUES ('53318369-0418-4940-801e-2aa44364bbf5', '2026-09-04 05:27:17.38643+00', 'segment', 'ivideon://100-gXWBAIs5iYCCGE2UNDkqZz/327680', NULL, '11a1ad9f-81bd-4e24-91f8-8197132141b5', NULL);
 INSERT INTO public.objects VALUES ('c33973df-77ea-4cae-ab60-291812284af3', '2026-08-14 22:53:14.298945+00', 'device', 'ТРЦ Хан-Шатыр — Торговый зал A', NULL, NULL, NULL);
 INSERT INTO public.objects VALUES ('ceca4acd-a698-4053-afe3-d0c9d9fcfcf3', '2026-08-27 23:35:04.137301+00', 'device', 'ТРЦ Хан-Шатыр — Торговый зал B', NULL, NULL, NULL);
 INSERT INTO public.objects VALUES ('a94320b2-28d8-4500-9aa7-83dceb6abb56', '2026-08-10 02:27:46.834601+00', 'device', 'ТРЦ Хан-Шатыр — Кинотеатр', NULL, NULL, NULL);
@@ -101,15 +81,6 @@ INSERT INTO public.objects VALUES ('1ef39b3e-97c0-456a-b303-4cc7180b8113', '2026
 INSERT INTO public.objects VALUES ('60e35f71-e404-4ab7-9e9c-4bba1bf9907a', '2026-08-27 06:26:30.415385+00', 'device', 'ТРЦ Мега — Вход', NULL, NULL, NULL);
 INSERT INTO public.objects VALUES ('0fcd53d4-456e-45fc-a484-dd9f83ece51a', '2026-08-08 02:53:44.541697+00', 'device', 'ТРЦ Мега — Супермаркет', NULL, NULL, NULL);
 INSERT INTO public.objects VALUES ('6e53e1e6-a518-4aef-8fb1-757e8d4dc25e', '2026-08-06 07:40:28.431713+00', 'device', 'ТРЦ Мега — Одежда', NULL, NULL, NULL);
-INSERT INTO public.objects VALUES ('385562d8-ee9a-4ba5-9f8e-c2bf843265e1', '2026-09-03 08:45:55.731638+00', 'incident', 'Подозрительный объект', 'Замечен человек у витрины', 'ffa1fb77-5466-4879-ae1d-2b628109dfd6', NULL);
-INSERT INTO public.objects VALUES ('7631df4f-12d5-41b8-9b64-60d43117b3f0', '2026-09-04 02:17:13.893494+00', 'incident', 'фыв', 'фыв', 'ffa1fb77-5466-4879-ae1d-2b628109dfd6', NULL);
-INSERT INTO public.objects VALUES ('433e87a7-3ceb-44b0-8f5b-99c97afca28b', '2026-09-04 02:17:19.892619+00', 'incident', 'фывфвфва', 'фывфыв', 'ffa1fb77-5466-4879-ae1d-2b628109dfd6', NULL);
-INSERT INTO public.objects VALUES ('f144d439-fde6-4332-b57f-71890d86f396', '2026-09-04 02:17:28.981526+00', 'incident', 'фывфывфыва', 'фыафыа', 'ffa1fb77-5466-4879-ae1d-2b628109dfd6', NULL);
-INSERT INTO public.objects VALUES ('fe2f7a24-f7ef-4d51-bd81-bf1f08aa757d', '2026-09-04 02:17:34.32608+00', 'incident', 'фыафыа', 'фыафа', 'ffa1fb77-5466-4879-ae1d-2b628109dfd6', NULL);
-INSERT INTO public.objects VALUES ('c46a9c0e-b151-486e-8d6b-0afb6a42cc23', '2026-09-04 02:17:42.047278+00', 'incident', 'фыапафыаф', 'фыафыафыа', 'ffa1fb77-5466-4879-ae1d-2b628109dfd6', NULL);
-INSERT INTO public.objects VALUES ('895952e2-3ec4-4fcc-b8bd-606ae76245c0', '2026-09-04 02:17:45.631018+00', 'incident', 'фыафыа', 'фыафа', 'ffa1fb77-5466-4879-ae1d-2b628109dfd6', NULL);
-INSERT INTO public.objects VALUES ('e4b11584-6a01-4b4d-a155-223efbbd237a', '2026-09-04 02:17:56.302244+00', 'incident', 'фывфвфв', 'фыв', 'ffa1fb77-5466-4879-ae1d-2b628109dfd6', NULL);
-INSERT INTO public.objects VALUES ('d1d701b4-9266-48be-9807-350744c33a59', '2026-09-04 02:21:20.685271+00', 'incident', 'фыфаф', 'фафа', 'ffa1fb77-5466-4879-ae1d-2b628109dfd6', NULL);
 INSERT INTO public.objects VALUES ('17e0b7f5-7053-4186-8899-30ca184ed90c', '2026-08-30 23:14:02.363955+00', 'device', 'ТРЦ Мега — Электроника', NULL, NULL, NULL);
 INSERT INTO public.objects VALUES ('cfcfa95a-2500-46b6-bfc6-7ea5c48cbce6', '2026-08-17 02:34:41.494747+00', 'device', 'ТРЦ Мега — Парковка крытая', NULL, NULL, NULL);
 INSERT INTO public.objects VALUES ('bc9fa4e6-f75f-4676-865d-bb2019283a79', '2026-08-07 06:33:06.172384+00', 'device', 'ТРЦ Мега — Детский мир', NULL, NULL, NULL);
@@ -215,10 +186,6 @@ INSERT INTO public.objects VALUES ('d58d659f-0f70-4b3e-807a-3ee4d2baaf63', '2026
 INSERT INTO public.objects VALUES ('08a162e1-5c9b-4593-8204-f4362273e6a6', '2026-08-25 11:35:58.58002+00', 'device', 'Вольго-Град — Вход', NULL, NULL, NULL);
 INSERT INTO public.objects VALUES ('68df97ce-84d8-45a5-ada9-bae6f9d5992c', '2026-08-20 11:28:09.810828+00', 'device', 'Вольго-Град — Магазин', NULL, NULL, NULL);
 INSERT INTO public.objects VALUES ('3906fde0-e3fa-4e9a-b561-5edc5a74ed67', '2026-08-08 20:23:46.750502+00', 'device', 'Вольго-Град — Склад', NULL, NULL, NULL);
-INSERT INTO public.objects VALUES ('aebcf78d-3358-4a79-b48f-20168350bf11', '2026-09-04 02:21:30.103915+00', 'incident', 'фыафыафа', 'фыафафафа', 'ffa1fb77-5466-4879-ae1d-2b628109dfd6', NULL);
-INSERT INTO public.objects VALUES ('a3ca520a-7b38-4552-931d-fe3d3694f26b', '2026-09-04 02:26:52.378262+00', 'incident', 'asdasf', 'afafaf', 'ffa1fb77-5466-4879-ae1d-2b628109dfd6', NULL);
-INSERT INTO public.objects VALUES ('54b037ad-0573-419a-bfcf-81d81f84c89b', '2026-09-04 02:26:58.419071+00', 'incident', 'aafafafafafg', NULL, 'ffa1fb77-5466-4879-ae1d-2b628109dfd6', NULL);
-INSERT INTO public.objects VALUES ('dbe187b0-f0d8-4c10-9604-7ef60927d012', '2026-09-04 08:33:04.391055+00', 'incident', 'фывфв', NULL, '11a1ad9f-81bd-4e24-91f8-8197132141b5', NULL);
 INSERT INTO public.objects VALUES ('9d009e01-d349-4f84-8b31-b47fd511cd0d', '2026-09-01 05:45:54.046231+00', 'device', 'Вольго-Град — Парковка', NULL, NULL, NULL);
 
 
@@ -258,6 +225,8 @@ INSERT INTO public.permissions VALUES ('9963ba3b-0861-40aa-9cc6-1ef16d70c666', '
 INSERT INTO public.permissions VALUES ('4e162f77-0986-488f-bb51-5c67f6148bd8', 'f4fdd515-c8f1-4965-8a67-b883fbee6022', 'aaaaaaaa-0000-0000-0000-000000000001', 'write');
 INSERT INTO public.permissions VALUES ('9e815a63-8b3d-40dc-ab58-0297ec500f13', 'f4fdd515-c8f1-4965-8a67-b883fbee6022', 'aaaaaaaa-0000-0000-0000-000000000001', 'delete');
 INSERT INTO public.permissions VALUES ('448eb876-48d6-47ba-a8f7-320c0267c3dd', '014641df-a049-4948-9c40-6179a9837b36', 'aaaaaaaa-0000-0000-0000-000000000002', 'read');
+INSERT INTO public.permissions VALUES ('2b6058a6-b737-466e-be56-dd8f155876cc', '014641df-a049-4948-9c40-6179a9837b36', 'aaaaaaaa-0000-0000-0000-000000000001', 'read');
+INSERT INTO public.permissions VALUES ('d7768f7f-f99b-4a8a-a0ef-853324597a86', '9f901d9a-43a6-4262-a27b-858645d68081', 'aaaaaaaa-0000-0000-0000-000000000001', 'read');
 INSERT INTO public.permissions VALUES ('d2684033-6731-43af-a40c-76e26e59688b', '82b54abf-3bdb-40bd-88b7-570935f9d5a5', 'aaaaaaaa-0000-0000-0000-000000000001', 'delete');
 INSERT INTO public.permissions VALUES ('aff186a8-ea6e-4446-b6d3-285fc6cc99d4', '82b54abf-3bdb-40bd-88b7-570935f9d5a5', 'aaaaaaaa-0000-0000-0000-000000000001', 'read');
 INSERT INTO public.permissions VALUES ('8d4016ca-624c-4f56-af85-fdd7b1fb1ecd', '82b54abf-3bdb-40bd-88b7-570935f9d5a5', 'aaaaaaaa-0000-0000-0000-000000000001', 'write');
@@ -295,6 +264,11 @@ INSERT INTO public.role_capabilities VALUES ('f4fdd515-c8f1-4965-8a67-b883fbee60
 INSERT INTO public.role_capabilities VALUES ('f4fdd515-c8f1-4965-8a67-b883fbee6022', 'role:update', '2026-09-06 16:40:45.529689+00');
 INSERT INTO public.role_capabilities VALUES ('f4fdd515-c8f1-4965-8a67-b883fbee6022', 'stream:create', '2026-09-06 16:40:45.529689+00');
 INSERT INTO public.role_capabilities VALUES ('f4fdd515-c8f1-4965-8a67-b883fbee6022', 'user:password:reset', '2026-09-06 16:40:45.529689+00');
+INSERT INTO public.role_capabilities VALUES ('014641df-a049-4948-9c40-6179a9837b36', 'camera:create', '2026-09-06 16:40:45.529689+00');
+INSERT INTO public.role_capabilities VALUES ('014641df-a049-4948-9c40-6179a9837b36', 'chunk:create', '2026-09-06 16:40:45.529689+00');
+INSERT INTO public.role_capabilities VALUES ('014641df-a049-4948-9c40-6179a9837b36', 'process:create', '2026-09-06 16:40:45.529689+00');
+INSERT INTO public.role_capabilities VALUES ('014641df-a049-4948-9c40-6179a9837b36', 'stream:create', '2026-09-06 16:40:45.529689+00');
+INSERT INTO public.role_capabilities VALUES ('9f901d9a-43a6-4262-a27b-858645d68081', 'media:export', '2026-09-06 16:40:45.529689+00');
 
 
 ALTER TABLE public.role_capabilities ENABLE TRIGGER ALL;
