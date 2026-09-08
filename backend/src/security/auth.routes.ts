@@ -113,6 +113,7 @@ authRouter.post('/login', async (req: Request, res: Response) => {
     setAuthCookies(res, result.accessToken, result.refreshToken);
     res.json(await authPayload(result.user.id));
   } catch (e: any) {
+    console.error('[login] fail:', e?.message, e?.stack?.split('\n').slice(0, 4).join(' | '));
     const raw = (req.body ?? {})?.username;
     await auditService.logAudit({
       actorId: null,
