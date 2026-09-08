@@ -4,6 +4,7 @@ import { Layout, Card } from '../components/Layout/Layout';
 import { Skeleton } from '../components/Skeleton/Skeleton';
 import { Button } from '../components/Button/Button';
 import { useAuth } from '../auth';
+import { canSeeAdmin } from '../adminAccess';
 import { apiFetch } from '../api';
 import {
   ResponsiveContainer,
@@ -162,7 +163,7 @@ export function HomePage() {
           <div className={styles.heroUser}>
             <span className={styles.userName}>{user?.username ?? 'гость'}</span>
             <span className={styles.userRole}>{user?.role ?? ''}</span>
-            {capabilities.includes('admin:read') && (
+            {canSeeAdmin(capabilities) && (
               <Link to="/admin" className={styles.adminLink}>Админ-панель</Link>
             )}
           </div>

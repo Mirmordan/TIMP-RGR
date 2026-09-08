@@ -8,6 +8,7 @@ import { AuthPage } from './pages/AuthPage';
 import { NotFoundPage } from './pages/NotFoundPage';
 import { HomePage } from './pages/HomePage';
 import { AdminPage } from './pages/AdminPage';
+import { ADMIN_ENTRY_CAPS } from './adminAccess';
 import { DevicesPage } from './pages/DevicesPage';
 import { DeviceDetailPage } from './pages/DeviceDetailPage';
 import { DeviceEditPage } from './pages/DeviceEditPage';
@@ -49,7 +50,7 @@ function AppRoutes() {
       <Route path="/streams/:id" element={<ProtectedRoute><StreamDetailPage /></ProtectedRoute>} />
       <Route path="/streams/:id/edit" element={<ProtectedRoute><StreamEditPage /></ProtectedRoute>} />
       <Route path="/processes" element={<ProtectedRoute><ProcessesPage /></ProtectedRoute>} />
-      <Route path="/admin" element={<ProtectedRoute><RequireCapability caps={['admin:read']}><AdminPage /></RequireCapability></ProtectedRoute>} />
+      <Route path="/admin" element={<ProtectedRoute><RequireCapability caps={ADMIN_ENTRY_CAPS}><AdminPage /></RequireCapability></ProtectedRoute>} />
       <Route path="/profile" element={<ProtectedRoute><ProfilePage /></ProtectedRoute>} />
       <Route path="/processes/new" element={<ProtectedRoute><ProcessCreatePage /></ProtectedRoute>} />
       <Route path="/processes/:id" element={<ProtectedRoute><ProcessDetailPage /></ProtectedRoute>} />

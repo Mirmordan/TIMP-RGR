@@ -1,5 +1,6 @@
 import { Link, NavLink } from 'react-router';
 import { useAuth } from '../../auth';
+import { canSeeAdmin } from '../../adminAccess';
 import { Button } from '../Button/Button';
 import styles from './Header.module.css';
 
@@ -12,7 +13,7 @@ const baseLinks = [
 export function Header() {
   const { user, capabilities, logout } = useAuth();
 
-  const links = capabilities.includes('admin:read')
+  const links = canSeeAdmin(capabilities)
     ? [...baseLinks, { to: '/admin', label: 'Админ' }]
     : baseLinks;
 
