@@ -216,6 +216,13 @@
   display: flex;
   flex-direction: column;
 }
+.dashHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  margin-bottom: var(--space-4);
+}
 .dashTitle {
   font-family: var(--font-display);
   font-size: 14px;
@@ -223,12 +230,11 @@
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--text);
-  margin-bottom: var(--space-4);
 }
 
 .tiles {
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: var(--space-4);
   margin-bottom: var(--space-4);
 }
@@ -375,6 +381,62 @@
   font-weight: 500;
 }
 
+.spanDaily {
+  min-width: 0;
+}
+
+.sourceList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+}
+.sourceItem {
+  min-width: 0;
+}
+.sourceMeta {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--space-3);
+  align-items: baseline;
+  margin-bottom: 5px;
+}
+.sourceLabel,
+.sourceValue {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sourceLabel {
+  font-size: 12px;
+  color: var(--text);
+}
+.sourceValue {
+  color: var(--accent);
+  font-size: 12px;
+  font-family: var(--font-mono);
+}
+.sourceTrack {
+  position: relative;
+  height: 7px;
+  width: 100%;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.06);
+  overflow: hidden;
+}
+.sourceFill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  height: 100%;
+  border-radius: 9999px;
+  box-shadow: 0 0 10px var(--accent-glow);
+}
+.sourceSub {
+  margin-top: 5px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
 .failed {
   display: flex;
   flex-direction: column;
@@ -386,6 +448,12 @@
   font-size: 12px;
   color: var(--danger);
   letter-spacing: 0.06em;
+}
+
+@media (max-width: 1280px) {
+  .tiles {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 1100px) {
@@ -408,10 +476,13 @@
   .gridArea {
     grid-template-columns: 1fr;
   }
+  .tiles {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 640px) {
   .tiles {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: 1fr;
   }
 }

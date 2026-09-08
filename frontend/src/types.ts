@@ -240,6 +240,40 @@ export interface StatsDiskWire {
   totalBytes: number | null;
 }
 
+/** Ответ GET /stats/dashboard?days=N — сводка рабочего дашборда. */
+export interface StatsDashboardWire {
+  generatedAt: string;
+  timezone: string;
+  period: { days: number; startDay: string; endDay: string };
+  tiles: {
+    processes: { total: number; running: number; stopped: number; failed: number };
+    segments: { count: number; durationS: number; sizeBytes: number };
+    recording: { todayS: number; last24hS: number };
+    streams: { visible: number; recorded: number };
+    devices: { visible: number };
+    incidents: {
+      total: number;
+      last24h: number;
+      bySeverity: StatsSeverityCountsWire;
+    };
+  };
+  daily: Array<{
+    day: string;
+    recordingSeconds: number;
+    segmentCount: number;
+    incidents: StatsSeverityCountsWire & { total: number };
+  }>;
+  sources: Array<{
+    id: string;
+    label: string;
+    seconds: number;
+    segmentCount: number;
+    lastStartedAt: string | null;
+  }>;
+  processStatuses: Array<{ status: 'running' | 'stopped' | 'failed'; count: number }>;
+  disk: StatsDiskWire;
+}
+
 // --- Роли и права: объекты, прямые grants (U4) ---
 
 /** Унифицированная запись объекта-кандидата для permission-UI (GET /admin/objects). */

@@ -7,8 +7,6 @@ import { useAuth } from '../auth';
 import { apiFetch } from '../api';
 import {
   ResponsiveContainer,
-  AreaChart,
-  Area,
   BarChart,
   Bar,
   XAxis,
@@ -16,17 +14,17 @@ import {
   CartesianGrid,
   Tooltip,
   Legend,
+  PieChart,
+  Pie,
+  Cell,
 } from 'recharts';
-import type {
-  StatsDiskWire,
-  StatsIncidentRowWire,
-  StatsOverviewWire,
-  StatsTimelineRowWire,
-} from '../types';
+import type { StatsDashboardWire } from '../types';
 import styles from './HomePage.module.css';
 
+const DASHBOARD_PERIOD_DAYS = 30;
 const DEVICE_COLORS = ['#3AAFA9', '#4C9FDD', '#E8A838', '#B87333', '#9B7EDE', '#E85D75'];
-
+const STATUS_COLORS = { running: '#3AAFA9', stopped: '#4C9FDD', failed: '#ef4444' } as const;
+const STATUS_LABELS = { running: 'В эфире', stopped: 'Остановлены', failed: 'Ошибки' } as const;
 const SEVERITY_COLORS = { info: '#3b82f6', warning: '#eab308', critical: '#ef4444' } as const;
 const SEVERITY_LABELS: Record<string, string> = {
   info: 'Инфо',
@@ -59,7 +57,6 @@ const STACK_GROUPS: Array<{ name: string; items: string[] }> = [
   { name: 'Media', items: ['mediaMTX', 'FFmpeg', 'ffmpeg-manager'] },
   { name: 'Развёртывание', items: ['Node.js', 'npm', 'Docker', 'Docker Compose'] },
 ];
-
 const SECTION_CARDS = [
   {
     to: '/processes',
@@ -81,29 +78,19 @@ const SECTION_CARDS = [
   },
 ];
 
-interface DashboardData {
-  overview: StatsOverviewWire;
-  timeline: StatsTimelineRowWire[];
-  incidents: StatsIncidentRowWire[];
-  disk: StatsDiskWire;
-}
-
-interface DashboardCounts {
-  streams: number | null;
-  devices: number | null;
-}
-
-interface TimelineChart {
-  data: Array<Record<string, number | string>>;
-  devices: string[];
+interface ChartDay {
+  day: string;
+  hours: number;
+  info: number;
+  warning: number;
+  critical: number;
+  segmentCount: number;
 }
 
 export function HomePage() {
   const { user, capabilities } = useAuth();
-  const canDashboard = capabilities.includes('admin:read');
-
-  const [data, setData] = useState<DashboardData | null>(null);
-  const [counts, setCounts] = useState<DashboardCounts>({ streams: null, devices: null });
+  const canDashboard = capabilities.includes('dashboard:read');
+  const [dashboard, setDashboard] = useState<StatsDashboardWire | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [tick, setTick] = useState(0);
@@ -113,35 +100,16 @@ export function HomePage() {
     let cancelled = false;
     setLoading(true);
     setLoadError('');
-    const stats = [
-      apiFetch('/stats/overview'),
-      apiFetch('/stats/timeline?days=14'),
-      apiFetch('/stats/incidents?days=30'),
-      apiFetch('/stats/disk'),
-    ];
-    Promise.all(stats)
-      .then(async ([overviewRes, timelineRes, incidentsRes, diskRes]) => {
-        const failed = ([['overview', overviewRes], ['timeline', timelineRes], ['incidents', incidentsRes], ['disk', diskRes]] as [string, Response][])
-          .filter(([, r]) => !r?.ok)
-          .map(([n, r]) => `${n}:${r?.status ?? '-'}`);
-        if (failed.length) {
-          throw new Error(`Ошибка загрузки статистики (${failed.join(', ')})`);
+    apiFetch(`/stats/dashboard?days=${DASHBOARD_PERIOD_DAYS}`)
+      .then(async (res) => {
+        if (!res.ok) {
+          const body = await res.json().catch(() => null) as { error?: string } | null;
+          throw new Error(body?.error || `Дашборд недоступен (${res.status})`);
         }
-        return Promise.all([
-          overviewRes.json(),
-          timelineRes.json(),
-          incidentsRes.json(),
-          diskRes.json(),
-        ]);
+        return res.json() as Promise<StatsDashboardWire>;
       })
-      .then(([overview, timeline, incidents, disk]) => {
-        if (cancelled) return;
-        setData({
-          overview: overview as StatsOverviewWire,
-          timeline: timeline as StatsTimelineRowWire[],
-          incidents: incidents as StatsIncidentRowWire[],
-          disk: disk as StatsDiskWire,
-        });
+      .then((data) => {
+        if (!cancelled) setDashboard(data);
       })
       .catch((e: unknown) => {
         if (!cancelled) setLoadError(e instanceof Error ? e.message : 'Не удалось загрузить дашборд');
@@ -150,73 +118,38 @@ export function HomePage() {
         if (!cancelled) setLoading(false);
       });
     return () => { cancelled = true; };
-  }, [tick, canDashboard]);
+  }, [canDashboard, tick]);
 
-  useEffect(() => {
-    let cancelled = false;
-    Promise.all([
-      apiFetch('/streams?limit=1').then(r => (r.ok ? r.json() : null)).catch(() => null),
-      apiFetch('/devices?limit=1').then(r => (r.ok ? r.json() : null)).catch(() => null),
-    ]).then(([streams, devices]) => {
-      if (cancelled) return;
-      setCounts({
-        streams: typeof streams?.total === 'number' ? streams.total : null,
-        devices: typeof devices?.total === 'number' ? devices.total : null,
-      });
-    });
-    return () => { cancelled = true; };
-  }, [tick]);
+  const chartData = useMemo<ChartDay[]>(() => {
+    return (dashboard?.daily ?? []).map((row) => ({
+      day: row.day,
+      hours: Number((row.recordingSeconds / 3600).toFixed(2)),
+      info: row.incidents.info,
+      warning: row.incidents.warning,
+      critical: row.incidents.critical,
+      segmentCount: row.segmentCount,
+    }));
+  }, [dashboard?.daily]);
 
-  const timelineChart = useMemo<TimelineChart>(() => {
-    const rows = data?.timeline ?? [];
-    if (rows.length === 0) return { data: [], devices: [] };
-    const totals = new Map<string, number>();
-    for (const r of rows) totals.set(r.device, (totals.get(r.device) ?? 0) + r.seconds);
-    const devices = [...totals.keys()].sort((a, b) => (totals.get(b) ?? 0) - (totals.get(a) ?? 0));
-    const dayList = [...new Set(rows.map(r => r.day))].sort();
-    const recByDay = new Map<string, Record<string, number | string>>();
-    for (const day of dayList) {
-      const rec: Record<string, number | string> = { day };
-      for (const d of devices) rec[d] = 0;
-      recByDay.set(day, rec);
-    }
-    for (const r of rows) {
-      const rec = recByDay.get(r.day);
-      if (rec) rec[r.device] = Number(rec[r.device]) + r.seconds;
-    }
-    return { data: dayList.map(d => recByDay.get(d) as Record<string, number | string>), devices };
-  }, [data?.timeline]);
-
-  // «Отснято сегодня». Серверное recordingTodayS режет «сегодня» по календарю Postgres (UTC)
-  // и по дню СТАРТА сегмента: для живых/длинных сегментов, начатых вчера по UTC, в утренние
-  // часы локального дня оно даёт ложный 0. Когда оно 0 — берём сумму секунд из timeline за
-  // ЛОКАЛЬНЫЙ день пользователя (та же выборка, что у графика); нет локального дня — честный 0.
-  const recordedTodayS = useMemo<number>(() => {
-    const backend = data?.overview.recordingTodayS ?? 0;
-    if (backend > 0) return backend;
-    const rows = data?.timeline ?? [];
-    if (rows.length === 0) return 0;
-    const today = localDayKey(new Date());
-    return rows.reduce((acc, r) => (r.day === today ? acc + r.seconds : acc), 0);
-  }, [data]);
-
-  const incidentData = useMemo<Array<Record<string, number | string>>>(() => {
-    const rows = data?.incidents ?? [];
-    if (rows.length === 0) return [];
-    const dayList = [...new Set(rows.map(r => r.day))].sort();
-    const recByDay = new Map<string, Record<string, number | string>>();
-    for (const day of dayList) {
-      recByDay.set(day, { day, info: 0, warning: 0, critical: 0 });
-    }
-    for (const r of rows) {
-      const rec = recByDay.get(r.day);
-      if (rec && r.severity in rec) rec[r.severity] = Number(rec[r.severity]) + r.count;
-    }
-    return dayList.map(d => recByDay.get(d) as Record<string, number | string>);
-  }, [data?.incidents]);
-
-  const overview = data?.overview;
-  const disk = data?.disk;
+  const hasRecordingData = chartData.some((row) => row.hours > 0);
+  const hasIncidentData = chartData.some((row) => row.info + row.warning + row.critical > 0);
+  const sourceMaxSeconds = useMemo(
+    () => Math.max(1, ...(dashboard?.sources ?? []).map((source) => source.seconds)),
+    [dashboard?.sources],
+  );
+  const statusChart = useMemo(() => {
+    return (dashboard?.processStatuses ?? [])
+      .map((item) => ({
+        name: STATUS_LABELS[item.status],
+        status: item.status,
+        value: item.count,
+        fill: STATUS_COLORS[item.status],
+      }))
+      .filter((item) => item.value > 0);
+  }, [dashboard?.processStatuses]);
+  const statusTotal = statusChart.reduce((acc, item) => acc + item.value, 0);
+  const tiles = dashboard?.tiles;
+  const periodDays = dashboard?.period.days ?? DASHBOARD_PERIOD_DAYS;
 
   return (
     <Layout>
@@ -267,7 +200,12 @@ export function HomePage() {
 
       {canDashboard && (
         <section className={styles.dashboard} aria-label="Дашборд">
-          <h2 className={styles.dashTitle}>Дашборд</h2>
+          <div className={styles.dashHeader}>
+            <h2 className={styles.dashTitle}>Дашборд</h2>
+            <Button variant="outline" size="sm" onClick={() => setTick((t) => t + 1)} disabled={loading}>
+              Обновить
+            </Button>
+          </div>
 
           {loading && <DashboardSkeleton />}
 
@@ -278,52 +216,58 @@ export function HomePage() {
             </div>
           )}
 
-          {!loading && !loadError && overview && (
+          {!loading && !loadError && tiles && (
             <>
               <div className={styles.tiles}>
                 <StatTile label="Сейчас в эфире">
                   <div className={styles.tileLive}>
-                    {overview.processes.running > 0 && <span className={styles.tileLiveDot} />}
-                    <span className={styles.tileValue}>{overview.processes.running.toLocaleString('ru-RU')}</span>
+                    {tiles.processes.running > 0 && <span className={styles.tileLiveDot} />}
+                    <span className={styles.tileValue}>{tiles.processes.running.toLocaleString('ru-RU')}</span>
                   </div>
                   <div className={styles.tileSub}>сессий записи</div>
                 </StatTile>
 
-                <StatTile label="Записей всего">
-                  <div className={styles.tileValue}>{overview.processes.total.toLocaleString('ru-RU')}</div>
-                  {overview.processes.total - overview.processes.running > 0 && (
-                    <div className={styles.tileSub}>
-                      остановлено {(overview.processes.total - overview.processes.running).toLocaleString('ru-RU')}
-                    </div>
-                  )}
+                <StatTile label="Всего процессов">
+                  <div className={styles.tileValue}>{tiles.processes.total.toLocaleString('ru-RU')}</div>
+                  <div className={styles.tileSub}>
+                    {tiles.processes.stopped.toLocaleString('ru-RU')} остановлено · {tiles.processes.failed.toLocaleString('ru-RU')} с ошибкой
+                  </div>
                 </StatTile>
 
-                <StatTile label="Потоков">
-                  <div className={styles.tileValue}>{counts.streams === null ? '—' : counts.streams.toLocaleString('ru-RU')}</div>
+                <StatTile label="Потоки">
+                  <div className={styles.tileValue}>{tiles.streams.visible.toLocaleString('ru-RU')}</div>
+                  <div className={styles.tileSub}>записывались {tiles.streams.recorded.toLocaleString('ru-RU')}</div>
                 </StatTile>
 
-                <StatTile label="Камер">
-                  <div className={styles.tileValue}>{counts.devices === null ? '—' : counts.devices.toLocaleString('ru-RU')}</div>
+                <StatTile label="Камеры">
+                  <div className={styles.tileValue}>{tiles.devices.visible.toLocaleString('ru-RU')}</div>
+                  <div className={styles.tileSub}>в зоне доступа</div>
                 </StatTile>
 
                 <StatTile label="Отснято сегодня">
-                  <div className={styles.tileValue}>{formatHours(recordedTodayS)}</div>
+                  <div className={styles.tileValue}>{formatHours(tiles.recording.todayS)}</div>
+                  <div className={styles.tileSub}>UTC-сутки</div>
                 </StatTile>
 
-                <StatTile label="Всего">
-                  <div className={styles.tileValue}>{overview.segments.count.toLocaleString('ru-RU')}</div>
+                <StatTile label="За сутки">
+                  <div className={styles.tileValue}>{formatHours(tiles.recording.last24hS)}</div>
+                  <div className={styles.tileSub}>скользящие 24 ч</div>
+                </StatTile>
+
+                <StatTile label="Сегменты">
+                  <div className={styles.tileValue}>{tiles.segments.count.toLocaleString('ru-RU')}</div>
                   <div className={styles.tileSub}>
-                    {formatHours(overview.segments.durationS)} · {formatBytes(overview.segments.sizeBytes)}
+                    {formatHours(tiles.segments.durationS)} · {formatBytes(tiles.segments.sizeBytes)}
                   </div>
                 </StatTile>
 
                 <StatTile label="Инциденты 24ч">
-                  <div className={styles.tileValue}>{overview.incidents.last24h.toLocaleString('ru-RU')}</div>
+                  <div className={styles.tileValue}>{tiles.incidents.last24h.toLocaleString('ru-RU')}</div>
                   <div className={styles.sevRow}>
-                    {(Object.keys(SEVERITY_COLORS) as Array<keyof typeof SEVERITY_COLORS>).map(s => (
-                      <span key={s} className={styles.sevItem} title={`всего ${SEVERITY_LABELS[s].toLowerCase()}`}>
-                        <span className={styles.sevDot} style={{ background: SEVERITY_COLORS[s] }} />
-                        <span className={styles.sevCount}>{overview.incidents.bySeverity[s]}</span>
+                    {(Object.keys(SEVERITY_COLORS) as Array<keyof typeof SEVERITY_COLORS>).map((severity) => (
+                      <span key={severity} className={styles.sevItem} title={SEVERITY_LABELS[severity]}>
+                        <span className={styles.sevDot} style={{ background: SEVERITY_COLORS[severity] }} />
+                        <span className={styles.sevCount}>{tiles.incidents.bySeverity[severity].toLocaleString('ru-RU')}</span>
                       </span>
                     ))}
                   </div>
@@ -331,39 +275,28 @@ export function HomePage() {
               </div>
 
               <div className={styles.gridArea}>
-                <div className={styles.span2}>
+                <div className={`${styles.span2} ${styles.spanDaily}`}>
                   <Card>
                     <div className={styles.chartBody}>
-                      <div className={styles.chartTitle}>Запись по дням, 14д</div>
-                      {timelineChart.devices.length === 0 ? (
-                        <div className={styles.chartEmpty}>Нет данных за период</div>
+                      <div className={styles.chartTitle}>Запись по дням, {periodDays} д</div>
+                      {!hasRecordingData ? (
+                        <div className={styles.chartEmpty}>Нет записей за период</div>
                       ) : (
                         <div className={styles.chartBox}>
                           <ResponsiveContainer width="100%" height={300}>
-                            <AreaChart data={timelineChart.data} margin={{ top: 8, right: 12, left: 0, bottom: 4 }}>
+                            <BarChart data={chartData} margin={{ top: 8, right: 12, left: 0, bottom: 4 }}>
                               <CartesianGrid stroke={GRID_STROKE} strokeDasharray="3 3" vertical={false} />
-                              <XAxis dataKey="day" tickFormatter={fmtAxisDay} tick={AXIS_TICK} minTickGap={20} tickLine={false} axisLine={{ stroke: GRID_STROKE }} />
-                              <YAxis tickFormatter={fmtAxisSeconds} tick={AXIS_TICK} width={40} tickLine={false} axisLine={false} />
+                              <XAxis dataKey="day" tickFormatter={fmtAxisDay} tick={AXIS_TICK} minTickGap={22} tickLine={false} axisLine={{ stroke: GRID_STROKE }} />
+                              <YAxis tickFormatter={fmtAxisHours} tick={AXIS_TICK} width={46} tickLine={false} axisLine={false} />
                               <Tooltip
+                                cursor={{ fill: 'rgba(255,255,255,0.05)' }}
                                 contentStyle={TOOLTIP_STYLE}
                                 labelStyle={{ color: '#D4D8DE' }}
                                 labelFormatter={label => fmtTooltipDay(String(label))}
-                                formatter={(value) => formatHours(Number(value))}
+                                formatter={(value) => [`${Number(value).toLocaleString('ru-RU', { maximumFractionDigits: 2 })} ч`, 'Запись']}
                               />
-                              <Legend wrapperStyle={{ fontSize: 11, color: '#6A7A8C', paddingTop: 6 }} iconSize={9} />
-                              {timelineChart.devices.map((device, i) => (
-                                <Area
-                                  key={device}
-                                  type="monotone"
-                                  dataKey={device}
-                                  stackId="rec"
-                                  stroke={DEVICE_COLORS[i % DEVICE_COLORS.length]}
-                                  fill={DEVICE_COLORS[i % DEVICE_COLORS.length]}
-                                  fillOpacity={0.55}
-                                  strokeWidth={1.2}
-                                />
-                              ))}
-                            </AreaChart>
+                              <Bar dataKey="hours" name="Часы" fill="#3AAFA9" radius={[4, 4, 0, 0]} />
+                            </BarChart>
                           </ResponsiveContainer>
                         </div>
                       )}
@@ -373,13 +306,13 @@ export function HomePage() {
 
                 <Card>
                   <div className={styles.chartBody}>
-                    <div className={styles.chartTitle}>Инциденты по дням, 30д</div>
-                    {incidentData.length === 0 ? (
-                      <div className={styles.chartEmpty}>Нет данных за период</div>
+                    <div className={styles.chartTitle}>Инциденты по дням, {periodDays} д</div>
+                    {!hasIncidentData ? (
+                      <div className={styles.chartEmpty}>Инцидентов за период нет</div>
                     ) : (
                       <div className={styles.chartBox}>
                         <ResponsiveContainer width="100%" height={260}>
-                          <BarChart data={incidentData} margin={{ top: 8, right: 12, left: 0, bottom: 4 }}>
+                          <BarChart data={chartData} margin={{ top: 8, right: 12, left: 0, bottom: 4 }}>
                             <CartesianGrid stroke={GRID_STROKE} strokeDasharray="3 3" vertical={false} />
                             <XAxis dataKey="day" tickFormatter={fmtAxisDay} tick={AXIS_TICK} minTickGap={24} tickLine={false} axisLine={{ stroke: GRID_STROKE }} />
                             <YAxis allowDecimals={false} tick={AXIS_TICK} width={28} tickLine={false} axisLine={false} />
@@ -400,7 +333,73 @@ export function HomePage() {
                   </div>
                 </Card>
 
-                <DiskCard disk={disk} />
+                <Card>
+                  <div className={styles.chartBody}>
+                    <div className={styles.chartTitle}>Статусы процессов</div>
+                    {statusTotal === 0 ? (
+                      <div className={styles.chartEmpty}>Нет процессов для графика</div>
+                    ) : (
+                      <div className={styles.chartBox}>
+                        <ResponsiveContainer width="100%" height={260}>
+                          <PieChart>
+                            <Tooltip
+                              contentStyle={TOOLTIP_STYLE}
+                              formatter={(value) => [`${Number(value).toLocaleString('ru-RU')} шт.`, 'Процессы']}
+                            />
+                            <Legend wrapperStyle={{ fontSize: 11, color: '#6A7A8C', paddingTop: 6 }} iconSize={9} />
+                            <Pie
+                              data={statusChart}
+                              dataKey="value"
+                              nameKey="name"
+                              cx="50%"
+                              cy="46%"
+                              innerRadius={58}
+                              outerRadius={88}
+                              paddingAngle={2}
+                              stroke="none"
+                            >
+                              {statusChart.map((entry) => <Cell key={entry.status} fill={entry.fill} />)}
+                            </Pie>
+                          </PieChart>
+                        </ResponsiveContainer>
+                      </div>
+                    )}
+                  </div>
+                </Card>
+
+                <Card>
+                  <div className={styles.chartBody}>
+                    <div className={styles.chartTitle}>Источники записи, {periodDays} д</div>
+                    {(dashboard?.sources.length ?? 0) === 0 ? (
+                      <div className={styles.chartEmpty}>Записей по источникам нет</div>
+                    ) : (
+                      <div className={styles.sourceList}>
+                        {dashboard?.sources.map((source, index) => (
+                          <div key={source.id} className={styles.sourceItem} title={source.label}>
+                            <div className={styles.sourceMeta}>
+                              <span className={styles.sourceLabel}>{source.label}</span>
+                              <span className={styles.sourceValue}>{formatHours(source.seconds)}</span>
+                            </div>
+                            <div className={styles.sourceTrack}>
+                              <div
+                                className={styles.sourceFill}
+                                style={{
+                                  width: `${Math.max(1.5, (source.seconds / sourceMaxSeconds) * 100)}%`,
+                                  background: `linear-gradient(90deg, ${DEVICE_COLORS[index % DEVICE_COLORS.length]}, var(--copper))`,
+                                }}
+                              />
+                            </div>
+                            <div className={styles.sourceSub}>
+                              {source.segmentCount.toLocaleString('ru-RU')} сегментов · {formatDate(source.lastStartedAt)}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </Card>
+
+                <DiskCard disk={dashboard?.disk} />
               </div>
             </>
           )}
@@ -419,7 +418,7 @@ function StatTile({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
-function DiskCard({ disk }: { disk: StatsDiskWire | undefined }) {
+function DiskCard({ disk }: { disk: StatsDashboardWire['disk'] | undefined }) {
   if (!disk || disk.totalBytes == null || disk.freeBytes == null || disk.totalBytes <= 0) {
     return (
       <Card>
@@ -454,7 +453,7 @@ function DashboardSkeleton() {
   return (
     <>
       <div className={styles.tiles}>
-        {Array.from({ length: 7 }, (_, i) => (
+        {Array.from({ length: 8 }, (_, i) => (
           <div key={i} className={styles.tile}>
             <Skeleton width="55%" height={11} />
             <Skeleton width="70%" height={24} />
@@ -463,38 +462,25 @@ function DashboardSkeleton() {
         ))}
       </div>
       <div className={styles.gridArea}>
-        <div className={styles.span2}>
+        <div className={`${styles.span2} ${styles.spanDaily}`}>
           <Card>
             <div className={styles.chartBody}>
-              <Skeleton width={160} height={13} />
+              <Skeleton width={180} height={13} />
               <Skeleton width="100%" height={280} />
             </div>
           </Card>
         </div>
-        <Card>
-          <div className={styles.chartBody}>
-            <Skeleton width={160} height={13} />
-            <Skeleton width="100%" height={240} />
-          </div>
-        </Card>
-        <div>
-          <Card>
+        {Array.from({ length: 5 }, (_, i) => (
+          <Card key={i}>
             <div className={styles.chartBody}>
-              <Skeleton width={120} height={13} />
-              <Skeleton width="100%" height={40} />
+              <Skeleton width={150} height={13} />
+              <Skeleton width="100%" height={i === 0 ? 220 : 130} />
             </div>
           </Card>
-        </div>
+        ))}
       </div>
     </>
   );
-}
-
-/** Локальный календарный день как YYYY-MM-DD — ключ «day» строк /stats/timeline. */
-function localDayKey(d: Date): string {
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${d.getFullYear()}-${m}-${day}`;
 }
 
 function fmtAxisDay(day: string): string {
@@ -507,15 +493,19 @@ function fmtTooltipDay(day: string): string {
   return `${d}.${m}.${y}`;
 }
 
-function fmtAxisSeconds(v: number | string): string {
-  const s = Number(v);
-  if (!Number.isFinite(s)) return '';
-  if (s >= 3600) return `${Math.round(s / 3600)} ч`;
-  if (s >= 60) return `${Math.round(s / 60)} мин`;
-  return `${Math.round(s)} с`;
+function fmtAxisHours(v: number | string): string {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return '';
+  if (n >= 24) return `${Math.round(n / 24)} д`;
+  if (n >= 1) return `${n.toFixed(n < 10 ? 1 : 0)} ч`;
+  return '0 ч';
 }
 
-/** Человекочитаемое представление длительности (дни/часы/минуты). */
+function formatDate(value: string | null): string {
+  if (!value) return '—';
+  return new Date(value).toLocaleString('ru-RU');
+}
+
 function formatHours(seconds: number): string {
   const s = Math.max(0, Math.floor(seconds));
   const d = Math.floor(s / 86400);
@@ -526,7 +516,6 @@ function formatHours(seconds: number): string {
   return `${m} мин`;
 }
 
-/** Человекочитаемый размер в двоичных единицах. */
 function formatBytes(bytes: number): string {
   if (!Number.isFinite(bytes) || bytes < 0) return '0 Б';
   if (bytes < 1024) return `${Math.round(bytes)} Б`;
