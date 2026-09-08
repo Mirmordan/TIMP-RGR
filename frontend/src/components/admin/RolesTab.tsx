@@ -17,7 +17,7 @@ import type {
 } from '../../types';
 import styles from './RolesTab.module.css';
 
-const SYSTEM_ROLE_NAMES = ['admin', 'operator', 'viewer'];
+const PROTECTED_ROLE_NAMES = ['admin'];
 
 const ACTIONS = [
   { value: 'read', label: 'просмотр' },
@@ -93,7 +93,7 @@ function entryKey(groupId: string, action: string) {
 }
 
 function isSystemRole(role: AdminRole) {
-  return SYSTEM_ROLE_NAMES.includes(role.name);
+  return PROTECTED_ROLE_NAMES.includes(role.name);
 }
 
 function isAdminRole(role: AdminRole) {
@@ -651,8 +651,8 @@ export function RolesTab() {
     }
 
     // 3) Спец-права роли (system capabilities). PUT — полная замена: без успешной
-    // GET-загрузки не отправляем (пустой Set сотрёт коды); системные роли
-    // (admin/operator/viewer) зафиксированы сидом, изменение требует admin:write.
+    // GET-загрузки не отправляем (пустой Set сотрёт коды); спец-права роли admin
+    // зафиксированы сидом, изменение требует admin:write. Остальные роли редактируются.
     if (canManageSpecialCaps && !isSystemRole(activeRole)) {
       if (!capsLoaded) {
         const msg = 'спец-права: список не загружен, изменения не отправлены — повторите загрузку';
@@ -1006,7 +1006,7 @@ export function RolesTab() {
           <div className={styles.matrixTitle}>Системные специальные права</div>
           <div className={styles.matrixHint}>
             {system
-              ? 'набор системных ролей задан сидом и не редактируется'
+              ? 'набор спец-прав роли admin задан сидом и не редактируется'
               : editable
                 ? 'глобальные операции роли — отметьте нужные и сохраните'
                 : 'просмотр доступен, изменение требует capability admin:write'}

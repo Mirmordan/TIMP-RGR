@@ -17,7 +17,7 @@ import type {
   RbacUserWithRoles,
 } from '../repositories/rbac.repository';
 
-const SYSTEM_ROLE_NAMES = ['admin', 'operator', 'viewer'];
+const PROTECTED_ROLE_NAMES = ['admin'];
 const ROLE_NAME_RE = /^[a-z][a-z0-9_-]{1,30}$/;
 
 /** HTTP-ошибка с кодом статуса (для тонких роутов /admin). */
@@ -98,10 +98,10 @@ export const rbacService = {
     return updated;
   },
 
-  /** Создать кастомную роль (имя не занято и не из системных). */
+  /** Создать роль (имя не занято; имя admin зарезервировано). */
   async createRole(name: unknown, actor: AuditActor): Promise<RbacRole> {
     assertValidRoleName(name);
-    if (SYSTEM_ROLE_NAMES.includes(name)) throw new HttpError(400, 'системные роли неизменяемы');
+    if (PROTECTED_ROLE_NAMES.includes(name)) throw new HttpError(400, 'имя admin зарезервировано');
     const existing = await rbacRepository.findRoleByName(name);
     if (existing) throw new HttpError(409, 'роль с таким именем уже существует');
     const role = await rbacRepository.createRole(name);
@@ -116,14 +116,14 @@ export const rbacService = {
     return role;
   },
 
-  /** Переименовать кастомную роль (системные роли менять нельзя). */
+  /** Переименовать роль (роль admin переименовывать нельзя). */
   async renameRole(id: string, actor: AuditActor, name: unknown): Promise<RbacRole> {
     const role = await rbacRepository.findRoleById(id);
     if (!role) throw new HttpError(404, 'роль не найдена');
-    if (SYSTEM_ROLE_NAMES.includes(role.name)) throw new HttpError(400, 'системные роли неизменяемы');
+    if (PROTECTED_ROLE_NAMES.includes(role.name)) throw new HttpError(400, 'роль admin неизменяема');
 
     assertValidRoleName(name);
-    if (SYSTEM_ROLE_NAMES.includes(name)) throw new HttpError(400, 'системные роли неизменяемы');
+    if (PROTECTED_ROLE_NAMES.includes(name)) throw new HttpError(400, 'имя admin зарезервировано');
     const clash = await rbacRepository.findRoleByName(name);
     if (clash && clash.id !== role.id) throw new HttpError(409, 'роль с таким именем уже существует');
 
@@ -140,11 +140,11 @@ export const rbacService = {
     return updated;
   },
 
-  /** Удалить кастомную роль + инвалидировать ACL-кеш затронутых юзеров и групп. */
+  /** Удалить роль + инвалидировать ACL-кеш затронутых юзеров и групп. Роль admin удалить нельзя. */
   async deleteRole(id: string, actor: AuditActor): Promise<void> {
     const role = await rbacRepository.findRoleById(id);
     if (!role) throw new HttpError(404, 'роль не найдена');
-    if (SYSTEM_ROLE_NAMES.includes(role.name)) throw new HttpError(400, 'системные роли неизменяемы');
+    if (PROTECTED_ROLE_NAMES.includes(role.name)) throw new HttpError(400, 'роль admin неизменяема');
 
     const affected = await rbacRepository.deleteRole(id);
     if (!affected) throw new HttpError(404, 'роль не найдена');
@@ -221,17 +221,17 @@ export const rbacService = {
 
   /**
    * Полностью заменить набор спец-прав (system capabilities) роли.
-   * Системные роли (admin/operator/viewer) неизменяемы: набор зафиксирован
-   * сидом role_capabilities — это не даёт «понизить» активных админов
-   * (админ-роль всегда сохраняет admin:read/admin:write и остальных).
-   * Коды валидируются по CAPABILITIES (совпадает с CHECK в БД). После
-   * записи инвалидируется кеш спец-прав всех пользователей роли.
+   * Защищена только роль admin: её набор зафиксирован сидом role_capabilities —
+   * это не даёт «понизить» активных админов (админ-роль всегда сохраняет
+   * admin:read/admin:write и остальных). Остальные роли (в т.ч. operator/viewer)
+   * редактируются как кастомные. Коды валидируются по CAPABILITIES (совпадает
+   * с CHECK в БД). После записи инвалидируется кеш спец-прав всех пользователей роли.
    */
   async replaceRoleCapabilities(id: string, actor: AuditActor, capabilities: unknown): Promise<string[]> {
     const role = await rbacRepository.findRoleById(id);
     if (!role) throw new HttpError(404, 'роль не найдена');
-    if (SYSTEM_ROLE_NAMES.includes(role.name)) {
-      throw new HttpError(400, 'системные роли неизменяемы');
+    if (PROTECTED_ROLE_NAMES.includes(role.name)) {
+      throw new HttpError(400, 'спец-права роли admin зафиксированы сидом');
     }
 
     if (!Array.isArray(capabilities) || capabilities.some((c: unknown) => typeof c !== 'string')) {

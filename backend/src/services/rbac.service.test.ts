@@ -165,10 +165,24 @@ describe('rbacService.deleteRole', () => {
     await expectHttpError(rbacService.deleteRole('r-missing', ACTOR), 404);
   });
 
-  it('системную роль удалять нельзя → 400', async () => {
+  it('роль admin удалять нельзя → 400', async () => {
     (rbacRepository.findRoleById as unknown as Mock).mockResolvedValue(role('r1', 'admin'));
     await expectHttpError(rbacService.deleteRole('r1', ACTOR), 400);
     expect(rbacRepository.deleteRole).not.toHaveBeenCalled();
+  });
+
+  it('обычную роль (operator) удалять можно', async () => {
+    (rbacRepository.findRoleById as unknown as Mock).mockResolvedValue(role('r3', 'operator'));
+    (rbacRepository.deleteRole as unknown as Mock).mockResolvedValue({
+      userIds: ['u1'],
+      groupIds: ['g1'],
+    });
+
+    await rbacService.deleteRole('r3', ACTOR);
+
+    expect(rbacRepository.deleteRole).toHaveBeenCalledWith('r3');
+    expect(invalidateUser).toHaveBeenCalledWith('u1');
+    expect(invalidateGroup).toHaveBeenCalledWith('g1');
   });
 
   it('happy path: инвалидируются затронутые юзеры и группы', async () => {
@@ -182,6 +196,69 @@ describe('rbacService.deleteRole', () => {
 
     expect(invalidateUser).toHaveBeenCalledWith('u1');
     expect(invalidateGroup).toHaveBeenCalledWith('g1');
+  });
+});
+
+describe('rbacService.createRole', () => {
+  it('роль с именем admin создать нельзя → 400', async () => {
+    await expectHttpError(rbacService.createRole('admin', ACTOR), 400);
+    expect(rbacRepository.createRole).not.toHaveBeenCalled();
+  });
+
+  it('невалидное имя → 400', async () => {
+    await expectHttpError(rbacService.createRole('Bad Name!', ACTOR), 400);
+    expect(rbacRepository.createRole).not.toHaveBeenCalled();
+  });
+
+  it('operator/viewer — обычные имена: создаются, если не заняты', async () => {
+    (rbacRepository.findRoleByName as unknown as Mock).mockResolvedValue(null);
+    (rbacRepository.createRole as unknown as Mock).mockResolvedValue(role('r-new', 'operator'));
+    const created = await rbacService.createRole('operator', ACTOR);
+    expect(created.name).toBe('operator');
+    expect(rbacRepository.createRole).toHaveBeenCalledWith('operator');
+  });
+
+  it('занятое имя → 409', async () => {
+    (rbacRepository.findRoleByName as unknown as Mock).mockResolvedValue(role('r1', 'operator'));
+    await expectHttpError(rbacService.createRole('operator', ACTOR), 409);
+    expect(rbacRepository.createRole).not.toHaveBeenCalled();
+  });
+});
+
+describe('rbacService.renameRole', () => {
+  it('роль не найдена → 404', async () => {
+    (rbacRepository.findRoleById as unknown as Mock).mockResolvedValue(null);
+    await expectHttpError(rbacService.renameRole('r-missing', ACTOR, 'newname'), 404);
+  });
+
+  it('роль admin переименовывать нельзя → 400', async () => {
+    (rbacRepository.findRoleById as unknown as Mock).mockResolvedValue(role('ra', 'admin'));
+    await expectHttpError(rbacService.renameRole('ra', ACTOR, 'newname'), 400);
+    expect(rbacRepository.renameRole).not.toHaveBeenCalled();
+  });
+
+  it('переименовать роль в admin нельзя → 400', async () => {
+    (rbacRepository.findRoleById as unknown as Mock).mockResolvedValue(role('r1', 'custom-role'));
+    await expectHttpError(rbacService.renameRole('r1', ACTOR, 'admin'), 400);
+    expect(rbacRepository.renameRole).not.toHaveBeenCalled();
+  });
+
+  it('operator/viewer переименовываются как обычные роли', async () => {
+    (rbacRepository.findRoleById as unknown as Mock).mockResolvedValue(role('ro', 'operator'));
+    (rbacRepository.findRoleByName as unknown as Mock).mockResolvedValue(null);
+    (rbacRepository.renameRole as unknown as Mock).mockResolvedValue(role('ro', 'operator2'));
+
+    const updated = await rbacService.renameRole('ro', ACTOR, 'operator2');
+
+    expect(rbacRepository.renameRole).toHaveBeenCalledWith('ro', 'operator2');
+    expect(updated.name).toBe('operator2');
+  });
+
+  it('конфликт имени с другой ролью → 409', async () => {
+    (rbacRepository.findRoleById as unknown as Mock).mockResolvedValue(role('ro', 'operator'));
+    (rbacRepository.findRoleByName as unknown as Mock).mockResolvedValue(role('other', 'operator2'));
+    await expectHttpError(rbacService.renameRole('ro', ACTOR, 'operator2'), 409);
+    expect(rbacRepository.renameRole).not.toHaveBeenCalled();
   });
 });
 
@@ -289,13 +366,26 @@ describe('rbacService.replaceRoleCapabilities', () => {
     await expectHttpError(rbacService.replaceRoleCapabilities('r-missing', ACTOR, ['user:read']), 404);
   });
 
-  it('системную роль (admin) менять нельзя → 400 — защита от понижения админов', async () => {
+  it('роль admin менять нельзя → 400 — защита от понижения админов', async () => {
     (rbacRepository.findRoleById as unknown as Mock).mockResolvedValue(role('r-admin', 'admin'));
     await expectHttpError(
       rbacService.replaceRoleCapabilities('r-admin', ACTOR, ['user:read']),
       400,
     );
     expect(rbacRepository.replaceRoleCapabilities).not.toHaveBeenCalled();
+  });
+
+  it('оператор/viewer редактируются как обычные роли', async () => {
+    (rbacRepository.findRoleById as unknown as Mock).mockResolvedValue(role('r-op', 'operator'));
+    (rbacRepository.findUsersByRole as unknown as Mock).mockResolvedValue(['u1']);
+    (rbacRepository.replaceRoleCapabilities as unknown as Mock).mockResolvedValue(undefined);
+    (rbacRepository.findRoleCapabilities as unknown as Mock).mockResolvedValue(['camera:create']);
+
+    const result = await rbacService.replaceRoleCapabilities('r-op', ACTOR, ['camera:create']);
+
+    expect(rbacRepository.replaceRoleCapabilities).toHaveBeenCalledWith('r-op', ['camera:create']);
+    expect(invalidateUser).toHaveBeenCalledWith('u1');
+    expect(result).toEqual(['camera:create']);
   });
 
   it('не массив → 400', async () => {

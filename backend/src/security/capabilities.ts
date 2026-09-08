@@ -88,17 +88,17 @@ export const CAPABILITY_CATALOG: readonly CapabilityInfo[] = [
   {
     code: 'role:create',
     label: 'Роли: создание',
-    description: 'Создание кастомных ролей (POST /admin/roles).',
+    description: 'Создание ролей (имя admin зарезервировано) (POST /admin/roles).',
   },
   {
     code: 'role:update',
     label: 'Роли: изменение',
-    description: 'Переименование кастомных ролей (PATCH /admin/roles/:id).',
+    description: 'Переименование ролей (роль admin переименовывать нельзя) (PATCH /admin/roles/:id).',
   },
   {
     code: 'role:delete',
     label: 'Роли: удаление',
-    description: 'Удаление кастомных ролей (DELETE /admin/roles/:id).',
+    description: 'Удаление ролей (роль admin удалить нельзя) (DELETE /admin/roles/:id).',
   },
   {
     code: 'group:read',

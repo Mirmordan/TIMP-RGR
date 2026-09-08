@@ -453,7 +453,7 @@ export const rbacRepository = {
     });
   },
 
-  /** Создать пользователя и сразу выдать ему системную роль viewer (одна транзакция). */
+  /** Создать пользователя и сразу выдать ему роль viewer (одна транзакция). */
   async createUserWithViewerRole(data: {
     username: string;
     email: string;
@@ -472,7 +472,7 @@ export const rbacRepository = {
         ['viewer'],
       );
       const viewerId = role.rows[0]?.id;
-      if (!viewerId) throw new Error('системная роль viewer не найдена');
+      if (!viewerId) throw new Error('роль viewer не найдена (она нужна для назначения новому пользователю)');
       await client.query(
         'INSERT INTO user_roles (user_id, role_id) VALUES ($1, $2)',
         [userId, viewerId],

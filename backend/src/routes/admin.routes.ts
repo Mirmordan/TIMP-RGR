@@ -449,7 +449,7 @@ adminRouter.put('/users/:id/roles', requireCapability('admin:write'), async (req
  *     tags: [Admin]
  *     operationId: createAdminRole
  *     summary: Создание кастомной роли
- *     description: Создаёт роль с проверкой имени по шаблону. Имя системных ролей (admin/operator/viewer) использовать нельзя. Требуется capability role:create.
+ *     description: Создаёт роль с проверкой имени по шаблону. Имя admin зарезервировано. Требуется capability role:create.
  *     requestBody:
  *       required: true
  *       content:
@@ -464,7 +464,7 @@ adminRouter.put('/users/:id/roles', requireCapability('admin:write'), async (req
  *             schema:
  *               $ref: '#/components/schemas/RbacRole'
  *       '400':
- *         description: Имя не соответствует шаблону или занято системной ролью
+ *         description: Имя не соответствует шаблону или занято ролью admin
  *         content:
  *           application/json:
  *             schema:
@@ -504,7 +504,7 @@ adminRouter.post('/roles', requireCapability('role:create'), async (req: Request
  *     tags: [Admin]
  *     operationId: patchAdminRole
  *     summary: Переименование роли
- *     description: Меняет имя кастомной роли. Системные роли переименовывать нельзя. Требуется capability role:update.
+ *     description: Меняет имя роли. Роль admin переименовывать нельзя. Требуется capability role:update.
  *     parameters:
  *       - name: id
  *         in: path
@@ -574,7 +574,7 @@ adminRouter.patch('/roles/:id', requireCapability('role:update'), async (req: Re
  *     tags: [Admin]
  *     operationId: deleteAdminRole
  *     summary: Удаление роли
- *     description: Удаляет кастомную роль (связи с пользователями и правами сносятся каскадно). Системные роли удалять нельзя. Требуется capability role:delete.
+ *     description: Удаляет роль (связи с пользователями и правами сносятся каскадно). Роль admin удалить нельзя. Требуется capability role:delete.
  *     parameters:
  *       - name: id
  *         in: path
@@ -789,7 +789,7 @@ adminRouter.get('/roles/:id/capabilities', requireCapability('role:read'), async
  *     tags: [Admin]
  *     operationId: setRoleCapabilities
  *     summary: Замена спец-прав роли
- *     description: Полностью заменяет набор system capabilities кастомной роли. Системные роли (admin/operator/viewer) неизменяемы — это защищает систему от понижения последнего активного администратора. Коды валидируются по каталогу спец-прав. Требуется capability admin:write.
+ *     description: Полностью заменяет набор system capabilities роли. Спец-права роли admin зафиксированы сидом — это защищает систему от понижения последнего активного администратора. Остальные роли (в т.ч. operator/viewer) редактируются как кастомные. Коды валидируются по каталогу спец-прав. Требуется capability admin:write.
  *     parameters:
  *       - name: id
  *         in: path
@@ -815,7 +815,7 @@ adminRouter.get('/roles/:id/capabilities', requireCapability('role:read'), async
  *                 type: string
  *                 enum: [admin:read, admin:write, user:create, user:read, user:update, user:delete, user:password:reset, role:read, role:create, role:update, role:delete, group:read, group:create, group:update, group:delete, permission:read, permission:manage, audit:read, audit:delete, camera:create, stream:create, process:create, chunk:create, media:export]
  *       '400':
- *         description: capabilities не массив строк, неизвестный код или системную роль менять нельзя
+ *         description: capabilities не массив строк, неизвестный код или попытка изменить спец-права роли admin
  *         content:
  *           application/json:
  *             schema:

@@ -315,6 +315,7 @@ describe('specialPermissions.integration (route-level, роли и спец-пр
   describe('admin API ролей: GET/PUT capabilities', () => {
     const customRole = { id: '00000000-0000-0000-0000-00000000cafe', name: 'hr', createdAt: '2026-01-01T00:00:00.000Z' };
     const adminRole = { id: '00000000-0000-0000-0000-00000000aaaa', name: 'admin', createdAt: '2026-01-01T00:00:00.000Z' };
+    const operatorRole = { id: '00000000-0000-0000-0000-00000000beef', name: 'operator', createdAt: '2026-01-01T00:00:00.000Z' };
 
     it('GET /admin/roles/:id/capabilities → 200 и коды роли', async () => {
       grantAll('u-admin');
@@ -337,6 +338,20 @@ describe('specialPermissions.integration (route-level, роли и спец-пр
       const r = await api('PUT', `/admin/roles/${adminRole.id}/capabilities`, 'u-admin', { capabilities: [] });
       expect(r.status).toBe(400);
       expect(mocks.replaceRoleCapabilities).not.toHaveBeenCalled();
+    });
+
+    it('PUT capabilities роли operator (обычная роль) → 200', async () => {
+      grantAll('u-admin');
+      (mocks.findRoleById as unknown as Mock).mockResolvedValue(operatorRole);
+      (mocks.findUsersByRole as unknown as Mock).mockResolvedValue(['u1']);
+      (mocks.replaceRoleCapabilities as unknown as Mock).mockResolvedValue(undefined);
+      (mocks.findRoleCapabilities as unknown as Mock).mockResolvedValue(['camera:create']);
+
+      const r = await api('PUT', `/admin/roles/${operatorRole.id}/capabilities`, 'u-admin', {
+        capabilities: ['camera:create'],
+      });
+      expect(r.status).toBe(200);
+      expect(mocks.replaceRoleCapabilities).toHaveBeenCalledWith(operatorRole.id, ['camera:create']);
     });
 
     it('PUT capabilities кастомной роли → 200, holder-ы инвалидированы, аудит записан', async () => {
