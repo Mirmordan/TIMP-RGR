@@ -1,3 +1,5 @@
+name: timp-rgr
+
 services:
   webserver:
     build: web-server

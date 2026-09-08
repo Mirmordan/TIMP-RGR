@@ -5,6 +5,9 @@ on:
     branches: [main]
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   backend:
     runs-on: ubuntu-latest
@@ -47,3 +50,138 @@ jobs:
       - name: Lint
         working-directory: frontend
         run: npx oxlint
+
+  deploy-production:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == 'Mirmordan/TIMP-RGR'
+    needs: [backend, frontend]
+    environment: production
+    concurrency:
+      group: production-deploy
+      cancel-in-progress: false
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      # Никакого checkout/third-party actions: всё делается по SSH на сервере.
+      - name: Configure SSH
+        shell: bash
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.DEPLOY_SSH_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          if [ -z "$SSH_PRIVATE_KEY" ]; then
+            echo "::error::Secret DEPLOY_SSH_PRIVATE_KEY is not configured"
+            exit 1
+          fi
+          if [ -z "$SSH_KNOWN_HOSTS" ]; then
+            echo "::error::Secret DEPLOY_SSH_KNOWN_HOSTS is not configured"
+            exit 1
+          fi
+          mkdir -p "$HOME/.ssh"
+          chmod 700 "$HOME/.ssh"
+          umask 077
+          printf '%s\n' "$SSH_PRIVATE_KEY" > "$HOME/.ssh/deploy_key"
+          chmod 600 "$HOME/.ssh/deploy_key"
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 644 "$HOME/.ssh/known_hosts"
+
+      - name: Deploy app/webserver
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/deploy_key" \
+            -o BatchMode=yes \
+            -o ConnectTimeout=15 \
+            -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            -p "${{ vars.DEPLOY_SSH_PORT }}" \
+            "${{ vars.DEPLOY_SSH_USER }}@${{ vars.DEPLOY_SSH_HOST }}" \
+            bash -s -- "${{ github.sha }}" "${{ vars.DEPLOY_PATH }}" <<'REMOTE'
+          set -euo pipefail
+
+          # Один деплой одновременно; занятость блокировки — честный отказ (exit 75).
+          exec 9>/tmp/timp-rgr-deploy.lock
+          if ! flock -n 9; then
+            echo "ERROR: another deployment is in progress (lock /tmp/timp-rgr-deploy.lock held); aborting." >&2
+            exit 75
+          fi
+
+          SHA="${1:?missing target commit SHA}"
+          DEPLOY_PATH="${2:?missing deploy path}"
+          echo "== TIMP-RGR deploy: target SHA=$SHA path=$DEPLOY_PATH =="
+
+          cd "$DEPLOY_PATH"
+
+          # 1. Tracked-файлы на сервере не должны быть изменены локально.
+          DIRTY="$(git status --porcelain --untracked-files=no)"
+          if [ -n "$DIRTY" ]; then
+            echo "ERROR: refusing to deploy: server has locally modified tracked files:" >&2
+            printf '%s\n' "$DIRTY" >&2
+            echo "Commit or revert them on the server manually, then re-run the workflow." >&2
+            exit 1
+          fi
+
+          # 2. Fast-forward-only до целевого SHA. Никаких reset/checkout/clean/non-ff merge.
+          git fetch --prune origin
+          OLD_SHA="$(git rev-parse HEAD)"
+          if [ "$OLD_SHA" != "$SHA" ]; then
+            git cat-file -e "$SHA^{commit}"
+            if ! git merge-base --is-ancestor "$OLD_SHA" "$SHA"; then
+              echo "ERROR: target $SHA is not a descendant of server HEAD $OLD_SHA; refusing non-fast-forward." >&2
+              exit 1
+            fi
+            git merge --ff-only "$SHA"
+          fi
+          NEW_SHA="$(git rev-parse HEAD)"
+          echo "OLD_SHA=$OLD_SHA"
+          echo "NEW_SHA=$NEW_SHA"
+
+          # 3. Какие сервисы трогать: по умолчанию app, + webserver при изменениях его файлов.
+          CHANGED="$(git diff --name-only "$OLD_SHA" "$NEW_SHA")"
+          echo "Changed files:"
+          printf '%s\n' "$CHANGED"
+
+          SERVICES="app"
+          if printf '%s\n' "$CHANGED" | grep -Eq '(^|/)docker-compose\.yml$' \
+             || printf '%s\n' "$CHANGED" | grep -Eq '^web-server(/|$)'; then
+            SERVICES="app webserver"
+          fi
+          echo "Services to (re)build/up: $SERVICES"
+
+          # 4. Валидация конфига и запуск. down/volume-операций здесь нет и быть не должно.
+          docker compose config -q
+          docker compose up -d --build $SERVICES
+
+          # 5. Health-проверки (макс. ~120 c).
+          HEALTH_OK=""
+          for i in $(seq 1 24); do
+            if curl -fsS http://127.0.0.1/api/v1/health >/dev/null 2>&1; then
+              HEALTH_OK=1
+              break
+            fi
+            sleep 5
+          done
+
+          FRONT_OK=""
+          if curl -fsS -o /dev/null http://127.0.0.1/ >/dev/null 2>&1; then
+            FRONT_OK=1
+          fi
+
+          if [ -z "$HEALTH_OK" ] || [ -z "$FRONT_OK" ]; then
+            echo "ERROR: post-deploy health check failed (health=${HEALTH_OK:-no} frontend=${FRONT_OK:-no})" >&2
+            docker compose ps --format 'table {{.Service}}\t{{.State}}\t{{.Status}}\t{{.Ports}}' >&2 || true
+            docker compose logs --tail=120 $SERVICES >&2 || true
+            exit 1
+          fi
+
+          # 6. Итог.
+          echo "Deploy OK"
+          echo "SHA=$NEW_SHA"
+          echo "Services=$SERVICES"
+          docker compose ps --format 'table {{.Service}}\t{{.State}}\t{{.Status}}\t{{.Ports}}' || true
+          docker compose logs --tail=20 $SERVICES || true
+          echo "Health: OK (http://127.0.0.1/api/v1/health)"
+          echo "Frontend: OK (http://127.0.0.1/)"
+          REMOTE

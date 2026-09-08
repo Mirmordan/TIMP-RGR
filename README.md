@@ -124,6 +124,49 @@ docker image prune -f          # (опционально) счистить ви�
 tmux на проде не нужен, всём управляет docker.
 
 
+## CI/CD прода (GitHub Actions)
+
+Пайплайн в `.github/workflows/ci.yml`. Как работает:
+
+1. `backend` + `frontend` jobs — установка зависимостей, typecheck, lint, тесты;
+2. `deploy-production` job запускается только на `push` в ветку `main`
+   репозитория `Mirmordan/TIMP-RGR`, только после зелёных `backend`/`frontend`
+   и в GitHub Environment `production`;
+3. job по SSH (без checkout на раннере, только OpenSSH) выполняет на сервере
+   в `/home/deploy/TIMP-RGR` встроенный bash-скрипт:
+   - lock `/tmp/timp-rgr-deploy.lock` — один деплой одновременно (иначе exit 75);
+   - проверка, что tracked-файлы сервера не изменены локально;
+   - `git fetch --prune origin` и строго fast-forward (`git merge --ff-only`)
+     до закоммиченного SHA — никаких `reset`/`checkout`/`clean`/не-ff слияний;
+   - `docker compose config -q` и `docker compose up -d --build` только для
+     сервиса `app`; сервис `webserver` добавляется, только если в диффе
+     затронуты `docker-compose.yml` или файлы `web-server/`;
+   - health-проверка (`curl http://127.0.0.1/api/v1/health` + `curl http://127.0.0.1/`).
+
+Деплой **не трогает**: PostgreSQL volume `pgdata`, `./data/chunks`,
+`./data/backups` и `docker-compose.override.yml` (локальные серверные настройки,
+gitignored). В пайплайн **запрещено** добавлять `docker compose down -v`,
+`volume rm`/`prune`, `system prune`, `git clean -fdx`, `restore --promote`.
+
+Настройки репозитория (GitHub → Settings → Secrets and variables → Actions).
+**Variables** (значения сервера):
+
+| Имя | Значение |
+|---|---|
+| `DEPLOY_SSH_HOST` | `ssh.cloud.nstu.ru` |
+| `DEPLOY_SSH_PORT` | `6456` |
+| `DEPLOY_SSH_USER` | `deploy` |
+| `DEPLOY_PATH` | `/home/deploy/TIMP-RGR` |
+
+**Secrets** (сами значения вводятся на GitHub, в репозитории — только имена):
+
+| Имя | Назначение |
+|---|---|
+| `DEPLOY_SSH_PRIVATE_KEY` | приватный ключ PEM, чей публичный ключ добавлен в `~/.ssh/authorized_keys` пользователя `deploy` на сервере |
+| `DEPLOY_SSH_KNOWN_HOSTS` | host key сервера: `ssh-keyscan -p 6456 ssh.cloud.nstu.ru` |
+
+Никакие SSH/БД пароли в секреты и файлы репозитория не класть.
+
 ## Резервные копии (`scripts/backups.sh`, `verify-backup.sh`, `restore-backup.sh`)
 
 Раздельно хранит три слоя:
