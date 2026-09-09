@@ -158,7 +158,7 @@ export function HomePage() {
         <div className={styles.heroRow}>
           <div className={styles.heroBrand}>
             <div className={styles.heroIcon}>T</div>
-            <h1 className={styles.heroTitle}>ТИМП-РГР</h1>
+            <h1 className={styles.heroTitle}>ТИМП-VIGIL</h1>
           </div>
           <div className={styles.heroUser}>
             <span className={styles.userName}>{user?.username ?? 'гость'}</span>

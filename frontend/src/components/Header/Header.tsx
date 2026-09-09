@@ -21,7 +21,7 @@ export function Header() {
     <header className={styles.header}>
       <NavLink to="/" className={styles.logo}>
         <span className={styles.logoIcon}>T</span>
-        ТИМП-РГР
+        ТИМП-VIGIL
       </NavLink>
       {user && (
         <nav className={styles.nav}>

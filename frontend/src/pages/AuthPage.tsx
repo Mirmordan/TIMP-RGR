@@ -42,7 +42,7 @@ export function AuthPage() {
           <div className={styles.header}>
             <div className={styles.logo}>
               <span className={styles.logoIcon}>T</span>
-              ТИМП-РГР
+              ТИМП-VIGIL
             </div>
             <div className={styles.subtitle}>Система записи видеонаблюдения</div>
           </div>
