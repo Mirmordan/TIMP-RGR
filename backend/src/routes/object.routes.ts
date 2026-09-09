@@ -3,6 +3,7 @@ import type { Request, Response } from 'express';
 import { objectRepository } from '../repositories/object.repository';
 import { authenticate } from '../security/middleware/authenticate';
 import { requirePermission } from '../security/middleware/requirePermission';
+import { replyError } from '../http/errors';
 
 export const objectRouter = Router();
 
@@ -119,6 +120,6 @@ objectRouter.patch('/:id/metadata', requirePermission('write'), async (req: Requ
     if (!updated) return res.status(404).json({ error: 'объект не найден' });
     res.json(updated);
   } catch (e: any) {
-    res.status(400).json({ error: e.message });
+    replyError(res, e, 'object.1');
   }
 });

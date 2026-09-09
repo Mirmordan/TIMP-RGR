@@ -8,6 +8,7 @@ import { AuthError } from '../security/auth.service';
 import { authenticate } from '../security/middleware/authenticate';
 import { requireCapability } from '../security/middleware/requireCapability';
 import { CAPABILITY_CATALOG } from '../security/capabilities';
+import { replyError } from '../http/errors';
 
 /**
  * Эндпоинты /admin для панели RBAC.
@@ -28,7 +29,7 @@ function actorOf(req: Request): AuditActor {
 /** Разложить ошибку мутации в { error } с нужным статусом (uuid/unique → не 500). */
 function sendRbacError(res: Response, e: unknown): void {
   if (e instanceof HttpError || e instanceof AuthError) {
-    res.status(e.status).json({ error: e.message });
+    replyError(res, e, 'admin');
     return;
   }
   const code = (e as { code?: string })?.code;
@@ -49,7 +50,7 @@ function sendRbacError(res: Response, e: unknown): void {
     res.status(409).json({ error: 'роль с таким именем уже существует' });
     return;
   }
-  res.status(400).json({ error: e instanceof Error ? e.message : 'ошибка запроса' });
+  replyError(res, e, 'admin.request', 400);
 }
 
 adminRouter.use(authenticate);

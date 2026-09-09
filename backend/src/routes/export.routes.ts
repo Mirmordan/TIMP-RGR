@@ -6,6 +6,7 @@ import { exportService, ExportError } from '../services/export.service';
 import { authenticate } from '../security/middleware/authenticate';
 import { requirePermission } from '../security/middleware/requirePermission';
 import { requireCapability } from '../security/middleware/requireCapability';
+import { replyError } from '../http/errors';
 
 export const exportRouter = Router();
 
@@ -87,12 +88,11 @@ exportRouter.get('/:id/export', requireCapability('media:export'), requirePermis
   let result;
   try {
     result = await exportService.exportSegment(processId, fromS, toS);
-  } catch (e: any) {
-    if (e instanceof ExportError) {
-      return res.status(e.status).json({ error: e.message });
+  } catch (e: unknown) {
+    if (!(e instanceof ExportError)) {
+      console.error(`[export] ошибка экспорта процесса ${processId}:`, e);
     }
-    console.error(`[export] ошибка экспорта процесса ${processId}:`, e);
-    return res.status(500).json({ error: 'ошибка экспорта видео' });
+    return replyError(res, e, 'export.create', 500);
   }
 
   // Временный каталог с mp4 удаляем после завершения передачи (finish/close).

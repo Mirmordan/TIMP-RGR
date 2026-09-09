@@ -4,6 +4,7 @@ import { deviceService } from '../services/device.service';
 import { authenticate } from '../security/middleware/authenticate';
 import { requirePermission } from '../security/middleware/requirePermission';
 import { requireCapability } from '../security/middleware/requireCapability';
+import { replyError } from '../http/errors';
 
 export const deviceRouter = Router();
 
@@ -164,7 +165,7 @@ deviceRouter.post('/', requireCapability('camera:create'), async (req: Request, 
     const device = await deviceService.create(name, type, description);
     res.status(201).json(device);
   } catch (e: any) {
-    res.status(400).json({ error: e.message });
+    replyError(res, e, 'device.1');
   }
 });
 
@@ -230,7 +231,7 @@ deviceRouter.put('/:id', requirePermission('write'), async (req: Request, res: R
     if (!device) return res.status(404).json({ error: 'устройство не найдено' });
     res.json(device);
   } catch (e: any) {
-    res.status(400).json({ error: e.message });
+    replyError(res, e, 'device.2');
   }
 });
 
@@ -295,7 +296,7 @@ deviceRouter.patch('/:id', requirePermission('write'), async (req: Request, res:
     if (!device) return res.status(404).json({ error: 'устройство не найдено' });
     res.json(device);
   } catch (e: any) {
-    res.status(400).json({ error: e.message });
+    replyError(res, e, 'device.3');
   }
 });
 

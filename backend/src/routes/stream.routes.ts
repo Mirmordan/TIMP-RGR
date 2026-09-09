@@ -5,6 +5,7 @@ import { streamViewService } from '../services/streamView.service';
 import { authenticate } from '../security/middleware/authenticate';
 import { requirePermission } from '../security/middleware/requirePermission';
 import { requireCapability } from '../security/middleware/requireCapability';
+import { replyError } from '../http/errors';
 
 export const streamRouter = Router();
 
@@ -252,7 +253,7 @@ streamRouter.post('/', requireCapability('stream:create'), async (req: Request, 
     const stream = await streamService.create(url, deviceId, sourceFingerprint, name, description);
     res.status(201).json(stream);
   } catch (e: any) {
-    res.status(400).json({ error: e.message });
+    replyError(res, e, 'stream.1');
   }
 });
 
@@ -318,7 +319,7 @@ streamRouter.put('/:id', requirePermission('write'), async (req: Request, res: R
     if (!stream) return res.status(404).json({ error: 'поток не найден' });
     res.json(stream);
   } catch (e: any) {
-    res.status(400).json({ error: e.message });
+    replyError(res, e, 'stream.2');
   }
 });
 
@@ -383,7 +384,7 @@ streamRouter.patch('/:id', requirePermission('write'), async (req: Request, res:
     if (!stream) return res.status(404).json({ error: 'поток не найден' });
     res.json(stream);
   } catch (e: any) {
-    res.status(400).json({ error: e.message });
+    replyError(res, e, 'stream.3');
   }
 });
 

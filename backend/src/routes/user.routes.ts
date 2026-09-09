@@ -3,6 +3,7 @@ import type { Request, Response } from 'express';
 import { userService } from '../services/user.service';
 import { authenticate } from '../security/middleware/authenticate';
 import { requireCapability } from '../security/middleware/requireCapability';
+import { replyError } from '../http/errors';
 
 export const userRouter = Router();
 
@@ -159,7 +160,7 @@ userRouter.post('/', requireCapability('user:create'), async (req: Request, res:
     const user = await userService.create({ username, email, password });
     res.status(201).json(user);
   } catch (e: any) {
-    res.status(400).json({ error: e.message });
+    replyError(res, e, 'user.1');
   }
 });
 
@@ -225,7 +226,7 @@ userRouter.put('/:id', requireCapability('user:update'), async (req: Request, re
     if (!user) return res.status(404).json({ error: 'пользователь не найден' });
     res.json(user);
   } catch (e: any) {
-    res.status(400).json({ error: e.message });
+    replyError(res, e, 'user.2');
   }
 });
 
@@ -290,7 +291,7 @@ userRouter.patch('/:id', requireCapability('user:update'), async (req: Request, 
     if (!user) return res.status(404).json({ error: 'пользователь не найден' });
     res.json(user);
   } catch (e: any) {
-    res.status(400).json({ error: e.message });
+    replyError(res, e, 'user.3');
   }
 });
 

@@ -4,6 +4,7 @@ import { processService } from '../services/process.service';
 import { authenticate } from '../security/middleware/authenticate';
 import { requirePermission } from '../security/middleware/requirePermission';
 import { requireCapability } from '../security/middleware/requireCapability';
+import { replyError } from '../http/errors';
 
 export const processRouter = Router();
 
@@ -166,7 +167,7 @@ processRouter.post('/', requireCapability('process:create'), async (req: Request
     const process = await processService.create(streamId, finalStartedAt, finalStatus, name, description);
     res.status(201).json(process);
   } catch (e: any) {
-    res.status(400).json({ error: e.message });
+    replyError(res, e, 'process.1');
   }
 });
 
@@ -240,7 +241,7 @@ processRouter.put('/:id', requirePermission('write'), async (req: Request, res: 
     if (!process) return res.status(404).json({ error: 'процесс не найден' });
     res.json(process);
   } catch (e: any) {
-    res.status(400).json({ error: e.message });
+    replyError(res, e, 'process.2');
   }
 });
 
@@ -313,7 +314,7 @@ processRouter.patch('/:id', requirePermission('write'), async (req: Request, res
     if (!process) return res.status(404).json({ error: 'процесс не найден' });
     res.json(process);
   } catch (e: any) {
-    res.status(400).json({ error: e.message });
+    replyError(res, e, 'process.3');
   }
 });
 

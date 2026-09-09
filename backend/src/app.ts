@@ -8,6 +8,7 @@ import swaggerUi from 'swagger-ui-express';
 import { apiRouter } from './routes';
 import { config } from './config';
 import { openapiSpec } from './openapi';
+import { globalErrorHandler } from './http/errors';
 
 const app: Application = express();
 
@@ -79,5 +80,7 @@ if (fs.existsSync(publicDir)) {
     res.sendFile(path.join(publicDir, 'index.html'));
   });
 }
+
+app.use(globalErrorHandler);
 
 export default app;

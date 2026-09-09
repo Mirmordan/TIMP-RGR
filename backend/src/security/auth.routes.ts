@@ -8,6 +8,7 @@ import { pool } from '../database/connection';
 import { auditService } from '../services/audit.service';
 import { config } from '../config';
 import type { Role, Capability } from './types';
+import { replyError } from '../http/errors';
 
 export const authRouter = Router();
 
@@ -123,7 +124,7 @@ authRouter.post('/login', async (req: Request, res: Response) => {
         ip: req.ip,
       },
     });
-    res.status(401).json({ error: e.message });
+    replyError(res, e, 'auth.login', 401);
   }
 });
 
@@ -162,7 +163,7 @@ authRouter.post('/refresh', async (req: Request, res: Response) => {
     res.json(await authPayload(result.user.id));
   } catch (e: any) {
     clearAuthCookies(res);
-    res.status(401).json({ error: e.message });
+    replyError(res, e, 'auth.refresh', 401);
   }
 });
 
@@ -223,7 +224,7 @@ authRouter.get('/me', authenticate, async (req: Request, res: Response) => {
     }
     res.json(await authPayload(req.user.id));
   } catch (e: any) {
-    res.status(401).json({ error: e.message });
+    replyError(res, e, 'auth.me', 401);
   }
 });
 
@@ -292,6 +293,6 @@ authRouter.post('/change-password', authenticate, async (req: Request, res: Resp
     });
     res.json({ ok: true, user: await authPayload(req.user.id) });
   } catch (e: any) {
-    res.status(e instanceof AuthError ? e.status : 400).json({ error: e.message });
+    replyError(res, e, 'auth.password.change', 400);
   }
 });

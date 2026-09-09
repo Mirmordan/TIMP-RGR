@@ -4,6 +4,7 @@ import { segmentService } from '../services/segment.service';
 import { processRepository } from '../repositories/process.repository';
 import { authenticate } from '../security/middleware/authenticate';
 import { requirePermission } from '../security/middleware/requirePermission';
+import { replyError } from '../http/errors';
 
 export const segmentRouter = Router();
 
@@ -534,14 +535,27 @@ segmentRouter.get('/:id/video', requirePermission('read'), async (req: Request, 
   const ffmpeg = segmentService.createSegmentVideoStream(segment.path);
   if (!ffmpeg) return res.status(404).json({ error: 'файлы не найдены' });
 
-  res.setHeader('Content-Type', 'video/mp4');
-  res.setHeader('Cache-Control', 'public, max-age=86400');
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Transfer-Encoding', 'chunked');
-
-  if (ffmpeg.stdout) ffmpeg.stdout.pipe(res);
-
-  ffmpeg.stderr?.on('data', () => {});
+  // Ответ начинаем отдавать только после успешного запуска процесса: при
+  // системной ошибке спавна (например ffmpeg не установлен — ENOENT) у нас ещё
+  // нет заголовков и можно вернуть аккуратный 500-generic вместо 200-пустышки.
+  let started = false;
+  ffmpeg.on('spawn', () => {
+    started = true;
+    res.setHeader('Content-Type', 'video/mp4');
+    res.setHeader('Cache-Control', 'public, max-age=86400');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Transfer-Encoding', 'chunked');
+    if (ffmpeg.stdout) ffmpeg.stdout.pipe(res);
+    // Дренаж stderr: при stdio 'pipe' непрочитанный буфер (~64KB) блокирует ffmpeg.
+    ffmpeg.stderr?.resume();
+  });
+  ffmpeg.on('error', (e: unknown) => {
+    if (!started) replyError(res, e, 'segments.video', 500);
+    else if (!res.headersSent) replyError(res, new Error('ffmpeg error after spawn'), 'segments.video', 500);
+    else {
+      try { res.end(); } catch { /* ignore */ }
+    }
+  });
 
   req.on('close', () => {
     ffmpeg.kill('SIGTERM');

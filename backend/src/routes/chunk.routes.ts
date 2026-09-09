@@ -4,6 +4,7 @@ import { chunkService } from '../services/chunk.service';
 import { authenticate } from '../security/middleware/authenticate';
 import { requirePermission } from '../security/middleware/requirePermission';
 import { requireCapability } from '../security/middleware/requireCapability';
+import { replyError } from '../http/errors';
 
 export const chunkRouter = Router();
 
@@ -162,7 +163,7 @@ chunkRouter.post('/', requireCapability('chunk:create'), async (req: Request, re
     );
     res.status(201).json(chunk);
   } catch (e: any) {
-    res.status(400).json({ error: e.message });
+    replyError(res, e, 'chunk.1');
   }
 });
 
@@ -234,7 +235,7 @@ chunkRouter.put('/:id', requirePermission('write'), async (req: Request, res: Re
     if (!chunk) return res.status(404).json({ error: 'кусок не найден' });
     res.json(chunk);
   } catch (e: any) {
-    res.status(400).json({ error: e.message });
+    replyError(res, e, 'chunk.2');
   }
 });
 
@@ -305,7 +306,7 @@ chunkRouter.patch('/:id', requirePermission('write'), async (req: Request, res: 
     if (!chunk) return res.status(404).json({ error: 'кусок не найден' });
     res.json(chunk);
   } catch (e: any) {
-    res.status(400).json({ error: e.message });
+    replyError(res, e, 'chunk.3');
   }
 });
 
