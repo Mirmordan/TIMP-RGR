@@ -181,35 +181,6 @@
   margin-top: var(--space-8);
   margin-bottom: var(--space-4);
 }
-.segmentList {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-}
-.segmentRow {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: var(--space-4);
-  gap: var(--space-4);
-}
-.segmentInfo {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-}
-.segmentLabel {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text);
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-.segmentMeta {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  color: var(--text-muted);
-}
 .playerContainer {
   padding: 0 var(--space-4) var(--space-4);
 }
@@ -226,11 +197,6 @@
 }
 .playerSection {
   margin-top: var(--space-6);
-}
-.segmentTime {
-  font-family: var(--font-mono);
-  font-size: 10px;
-  color: var(--text-dim);
 }
 .noSegments {
   padding: var(--space-8);

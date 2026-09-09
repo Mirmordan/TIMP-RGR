@@ -241,54 +241,6 @@ export function ProcessDetailPage() {
           <Skeleton width="100%" height={544} />
         )}
       </div>
-
-      {hasSegments && (
-        <>
-          <h2 className={styles.sectionTitle}>Сегменты ({recordedSegs.length})</h2>
-          <div className={styles.segmentList}>
-            {recordedSegs.map((seg, i) => (
-              <Card key={seg.id}>
-                <div
-                  className={styles.segmentRow}
-                  style={liveViewerShown ? { cursor: 'pointer' } : undefined}
-                  onClick={liveViewerShown ? () => setForceArchive(true) : undefined}
-                  title={liveViewerShown ? 'Открыть в плеере записи' : undefined}
-                >
-                  <div className={styles.segmentInfo}>
-                    <span className={styles.segmentLabel}>
-                      Сегмент {i + 1}
-                      {seg.live && <span className={styles.liveIndicator}>● LIVE</span>}
-                    </span>
-                    <span className={styles.segmentMeta}>
-                      {seg.fileCount} файлов · {formatSize(seg.sizeBytes)} · {formatDuration(seg.durationS)}
-                    </span>
-                    <span className={styles.segmentTime}>
-                      {new Date(seg.startedAt).toLocaleString('ru-RU')} — {seg.endedAt ? new Date(seg.endedAt).toLocaleString('ru-RU') : '—'}
-                    </span>
-                  </div>
-                </div>
-              </Card>
-            ))}
-          </div>
-        </>
-      )}
-
-      {!hasSegments && process.status === 'stopped' && (
-        <div className={styles.noSegments}>Нет записанных сегментов</div>
-      )}
     </Layout>
   );
-}
-
-function formatSize(bytes: number | string): string {
-  const b = Number(bytes);
-  if (b < 1024) return `${b} Б`;
-  if (b < 1024 * 1024) return `${(b / 1024).toFixed(1)} КБ`;
-  return `${(b / (1024 * 1024)).toFixed(1)} МБ`;
-}
-
-function formatDuration(seconds: number): string {
-  const m = Math.floor(seconds / 60);
-  const s = Math.floor(seconds % 60);
-  return `${m}м ${s}с`;
 }
