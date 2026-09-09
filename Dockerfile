@@ -28,6 +28,10 @@ ENV NODE_ENV=production
 ENV PORT=5000
 WORKDIR /app/backend
 
+# ffmpeg: бэкенд сам спавнит его для экспорта фрагментов (/processes/:id/export)
+# и отдачи сегментов (/segments/:id/video).
+RUN apk add --no-cache ffmpeg
+
 COPY --from=backend-deps /be/node_modules ./node_modules
 COPY backend/ ./
 # Статика фронтенда, раздаётся express'ом (см. backend/src/app.ts: SPA-fallback)
