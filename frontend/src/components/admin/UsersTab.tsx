@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
 import { Table, type Column } from '../Table/Table'
 import { Button } from '../Button/Button'
 import { apiFetch } from '../../api'
@@ -24,11 +24,18 @@ interface PasswordBanner {
 }
 
 export function UsersTab() {
-  const { user } = useAuth();
+  const { user, capabilities } = useAuth();
   const actorIsOwner = Boolean(user?.isOwner);
+  const canCreateUser = capabilities.includes('user:create');
+  const canUpdateUser = capabilities.includes('user:update');
+  const canResetPassword = capabilities.includes('user:password:reset');
+  const canDeleteUser = capabilities.includes('user:delete');
+  const canManageRoles = capabilities.includes('admin:write');
   const { toast } = useNotify();
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [roles, setRoles] = useState<AdminRole[]>([]);
+  const [rolesLoading, setRolesLoading] = useState(true);
+  const [rolesAvailable, setRolesAvailable] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [tick, setTick] = useState(0);
@@ -62,23 +69,16 @@ export function UsersTab() {
     let cancelled = false;
     setLoading(true);
     setLoadError('');
-    Promise.all([
-      apiFetch('/admin/users?limit=100'),
-      apiFetch('/admin/roles'),
-    ])
-      .then(async ([usersRes, rolesRes]) => {
-        if (!usersRes.ok || !rolesRes.ok) {
-          throw new Error(`Ошибка загрузки (${usersRes.status}/${rolesRes.status})`);
-        }
-        return Promise.all([usersRes.json(), rolesRes.json()]);
+    apiFetch('/admin/users?limit=100')
+      .then(async r => {
+        if (!r.ok) throw new Error(`Ошибка загрузки (${r.status})`);
+        return (await r.json()) as AdminUser[];
       })
-      .then(([usersData, rolesData]: [AdminUser[], AdminRole[]]) => {
-        if (cancelled) return;
-        setUsers(usersData);
-        setRoles(rolesData);
+      .then(data => {
+        if (!cancelled) setUsers(data);
       })
       .catch((e: unknown) => {
-        if (!cancelled) setLoadError(e instanceof Error ? e.message : 'Не удалось загрузить');
+        if (!cancelled) setLoadError(e instanceof Error ? e.message : 'Не удалось загрузить пользователей');
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -86,12 +86,40 @@ export function UsersTab() {
     return () => { cancelled = true; };
   }, [tick]);
 
+  useEffect(() => {
+    if (!canManageRoles) return;
+    let cancelled = false;
+    setRolesLoading(true);
+    apiFetch('/admin/roles')
+      .then(async r => {
+        if (r.status === 403) return null;
+        if (!r.ok) throw new Error(`Ошибка загрузки (${r.status})`);
+        return (await r.json()) as AdminRole[];
+      })
+      .then(data => {
+        if (cancelled) return;
+        setRoles(data ?? []);
+        setRolesAvailable(data !== null);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setRoles([]);
+          setRolesAvailable(false);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setRolesLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [tick, canManageRoles]);
+
   const createDisabled = creating
     || !USERNAME_RE.test(username.trim())
     || !EMAIL_RE.test(email.trim());
 
   async function handleCreate(e: FormEvent) {
     e.preventDefault();
+    if (!canCreateUser) return;
     const trimmedUsername = username.trim();
     const trimmedEmail = email.trim();
     if (creating || !USERNAME_RE.test(trimmedUsername) || !EMAIL_RE.test(trimmedEmail)) return;
@@ -134,6 +162,7 @@ export function UsersTab() {
   }
 
   function startEdit(target: AdminUser) {
+    if (!canManageRoles || !rolesAvailable) return;
     setConfirmDeleteId(null);
     setProfileId(null);
     setProfileError('');
@@ -153,7 +182,7 @@ export function UsersTab() {
   }
 
   async function handleSave() {
-    if (!editingId) return;
+    if (!editingId || !canManageRoles || !rolesAvailable) return;
     setSaving(true);
     setSaveError('');
     try {
@@ -179,6 +208,7 @@ export function UsersTab() {
   }
 
   function openProfile(row: AdminUser) {
+    if (!canUpdateUser) return;
     setEditingId(null);
     setConfirmDeleteId(null);
     setSaveError('');
@@ -195,7 +225,7 @@ export function UsersTab() {
   }
 
   async function handleProfileSave() {
-    if (!profileId || profileSaving) return;
+    if (!profileId || profileSaving || !canUpdateUser) return;
     const trimmedUsername = draftUsername.trim();
     const trimmedEmail = draftEmail.trim();
     if (!trimmedUsername && !trimmedEmail) return;
@@ -236,7 +266,7 @@ export function UsersTab() {
   }
 
   async function handleDelete(row: AdminUser) {
-    if (!confirmDeleteId || deleting) return;
+    if (!confirmDeleteId || deleting || !canDeleteUser) return;
     setDeleting(true);
     setActionError('');
     try {
@@ -259,7 +289,7 @@ export function UsersTab() {
   }
 
   async function handleReset(row: AdminUser) {
-    if (resettingId) return;
+    if (resettingId || !canResetPassword) return;
     setResettingId(row.id);
     setActionError('');
     try {
@@ -362,21 +392,16 @@ export function UsersTab() {
         </div>
       );
     }
-    return (
-      <div className={styles.editorActions}>
-        <Button size="sm" variant="outline" onClick={() => startEdit(row)}>Роли</Button>
-        <Button size="sm" variant="outline" onClick={() => openProfile(row)}>Ред.</Button>
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={() => handleReset(row)}
-          disabled={resettingId === row.id}
-        >
-          {resettingId === row.id ? '…' : row.passwordSet ? 'Сбросить пароль' : 'Задать пароль'}
-        </Button>
-        <Button size="sm" variant="outline" onClick={() => askDelete(row)}>Удалить</Button>
-      </div>
-    );
+    const actionButtons: ReactNode[] = [];
+    if (!rolesLoading && canManageRoles && rolesAvailable) actionButtons.push(<Button key='roles' size='sm' variant='outline' onClick={() => startEdit(row)}>Роли</Button>);
+
+    if (canUpdateUser) actionButtons.push(<Button key='profile' size='sm' variant='outline' onClick={() => openProfile(row)}>Ред.</Button>);
+
+    if (canResetPassword) actionButtons.push(<Button key='reset' size='sm' variant='outline' onClick={() => handleReset(row)} disabled={resettingId === row.id}>
+      {resettingId === row.id ? '…' : row.passwordSet ? 'Сбросить пароль' : 'Задать пароль'}
+    </Button>);
+    if (canDeleteUser) actionButtons.push(<Button key='delete' size='sm' variant='outline' onClick={() => askDelete(row)}>Удалить</Button>);
+    return actionButtons.length > 0 ? <div className={styles.editorActions}>{actionButtons}</div> : <span className={styles.youMark}>просмотр</span>;
   }
 
   function renderProfilePanel() {
@@ -471,36 +496,38 @@ export function UsersTab() {
 
   return (
     <>
-      <form className={styles.createBox} onSubmit={handleCreate}>
-        <div className={styles.createLabel}>Создать пользователя</div>
-        <div className={styles.createRow}>
-          <input
-            className={styles.createInput}
-            placeholder="логин"
-            value={username}
-            onChange={e => setUsername(e.target.value)}
-            autoComplete="off"
-          />
-          <input
-            className={styles.createInput}
-            placeholder="email"
-            value={email}
-            onChange={e => setEmail(e.target.value)}
-            autoComplete="off"
-          />
-          <input
-            className={styles.createInput}
-            placeholder="оставьте пустым — сгенерируем"
-            value={password}
-            onChange={e => setPassword(e.target.value)}
-            autoComplete="new-password"
-          />
-          <Button size="sm" variant="primary" type="submit" disabled={createDisabled}>
-            {creating ? '…' : 'Создать'}
-          </Button>
-        </div>
-        {createError && <div className={styles.formError}>{createError}</div>}
-      </form>
+      {canCreateUser && (
+        <form className={styles.createBox} onSubmit={handleCreate}>
+          <div className={styles.createLabel}>Создать пользователя</div>
+          <div className={styles.createRow}>
+            <input
+              className={styles.createInput}
+              placeholder="логин"
+              value={username}
+              onChange={e => setUsername(e.target.value)}
+              autoComplete="off"
+            />
+            <input
+              className={styles.createInput}
+              placeholder="email"
+              value={email}
+              onChange={e => setEmail(e.target.value)}
+              autoComplete="off"
+            />
+            <input
+              className={styles.createInput}
+              placeholder="оставьте пустым — сгенерируем"
+              value={password}
+              onChange={e => setPassword(e.target.value)}
+              autoComplete="new-password"
+            />
+            <Button size="sm" variant="primary" type="submit" disabled={createDisabled}>
+              {creating ? '…' : 'Создать'}
+            </Button>
+          </div>
+          {createError && <div className={styles.formError}>{createError}</div>}
+        </form>
+      )}
       {banner && (
         <div className={styles.successBanner}>
           <span className={styles.bannerText}>{banner.prefix}</span>
