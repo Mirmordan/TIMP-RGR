@@ -96,14 +96,28 @@ Prod-стек — весь проект в контейнерах, хостов�
      ```bash
      printf 'JWT_SECRET=%s\nJWT_REFRESH_SECRET=%s\n' "$(openssl rand -hex 32)" "$(openssl rand -hex 32)" >> .env
      ```
-   - на сервер NSTU Cloud наружи отдаётся только 80-й порт через `217.71.129.139:6310`, TLS нет —
-     создать `docker-compose.override.yml` (gitignore'd, подхватывается автоматически):
-     ```yaml
-     services:
-       app:
-         environment:
-           COOKIE_SECURE: "0"
+   - задать защищённый owner-аккаунт (обычный пользователь с ролью `admin`, чей логин
+     совпадает с `OWNER_USERNAME`; только он может менять других администраторов и
+     назначать роль `admin` — в т.ч. при создании пользователя через
+     `POST /admin/users` с полем `roleNames`; без него создаётся `viewer`,
+     его самого через API не трогает никто):
+     ```bash
+     printf 'OWNER_USERNAME=%s\nOWNER_PASSWORD=%s\nOWNER_EMAIL=%s\n' \
+       'owner' "$(openssl rand -hex 16)" 'owner@example.com' >> .env
      ```
+     - `OWNER_USERNAME` — логин owner (пусто → owner не инициализируется, в лог пишется warn);
+     - `OWNER_PASSWORD` — пароль (≥12 символов), хэшируется bcrypt при создании;
+     - `OWNER_EMAIL` — опционально (по умолчанию `<username>@owner.local`);
+      - `OWNER_PASSWORD_FORCE=1` — пересоздать пароль уже существующего owner из env
+        (без него существующий аккаунт не трогается). После смены пароля убрать флаг.
+    - на сервер NSTU Cloud наружи отдаётся только 80-й порт через `217.71.129.139:6310`, TLS нет —
+      создать `docker-compose.override.yml` (gitignore'd, подхватывается автоматически):
+      ```yaml
+      services:
+        app:
+          environment:
+            COOKIE_SECURE: "0"
+      ```
      Без этого браузер сбрасывает Secure-cookie по HTTP и сессия мгновенно слетает в logout.
 4. Перезапустить app после правки `.env`/override: `docker compose up -d app`.
 5. Остановить стек: `docker compose down` (БД сохранится в volume `pgdata`).

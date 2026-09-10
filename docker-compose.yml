@@ -49,6 +49,13 @@ services:
       COOKIE_SECURE: ${COOKIE_SECURE:-1}
       # Swagger UI в проде по умолчанию выключен: SWAGGER_ENABLED=1 docker compose up -d app
       SWAGGER_ENABLED: ${SWAGGER_ENABLED:-0}
+      # Защищённый owner-аккаунт (обычный admin, чей username === OWNER_USERNAME).
+      # При пустом OWNER_USERNAME owner не инициализируется.
+      # OWNER_PASSWORD_FORCE=1 — на старте пересоздать пароль существующего owner из OWNER_PASSWORD.
+      OWNER_USERNAME: ${OWNER_USERNAME:-}
+      OWNER_PASSWORD: ${OWNER_PASSWORD:-}
+      OWNER_EMAIL: ${OWNER_EMAIL:-}
+      OWNER_PASSWORD_FORCE: ${OWNER_PASSWORD_FORCE:-0}
     ports:
       # Чтобы в U10 поднять параллельно дев-режиму на тестовом порту:
       #   APP_PUBLISH_PORT=15000 docker compose up -d app

@@ -47,4 +47,14 @@ export const config = {
     /** Период тика watchdog (сек). */
     tickS: Number(process.env.WATCHDOG_TICK_S) || 60,
   },
+  owner: {
+    /** Логин защищённого owner-аккаунта; пусто — owner не инициализируется. */
+    username: (process.env.OWNER_USERNAME || '').trim(),
+    /** Пароль owner (bcrypt-хэшируется при создании/сбросе). */
+    password: process.env.OWNER_PASSWORD || '',
+    /** Email owner (если пусто — синтетический <username>@owner.local). */
+    email: (process.env.OWNER_EMAIL || '').trim(),
+    /** При truthy (1/true) пересоздать пароль существующего owner из OWNER_PASSWORD. */
+    passwordForce: ['1', 'true'].includes((process.env.OWNER_PASSWORD_FORCE || '').trim().toLowerCase()),
+  },
 };

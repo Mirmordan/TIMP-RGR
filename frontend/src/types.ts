@@ -4,6 +4,7 @@ export interface User {
   email?: string;
   createdAt?: string;
   role?: string;
+  isOwner?: boolean;
 }
 
 export type Capabilities = string[];
@@ -109,6 +110,8 @@ export interface AdminUser {
   createdAt: string;
   passwordSet: boolean;
   roles: Array<{ id: string; name: string }>;
+  /** Защищённый owner-аккаунт (username === OWNER_USERNAME). */
+  isOwner?: boolean;
 }
 
 export interface AdminCreateUserResponse {

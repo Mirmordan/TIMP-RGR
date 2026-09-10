@@ -1,5 +1,19 @@
 import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
 
+const state = vi.hoisted(() => ({ ownerUsername: 'owner' }));
+
+vi.mock('../config', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../config')>();
+  return {
+    config: {
+      ...actual.config,
+      get owner() {
+        return { username: state.ownerUsername, password: '', email: '', passwordForce: false };
+      },
+    },
+  };
+});
+
 vi.mock('../repositories/rbac.repository', () => ({
   rbacRepository: {
     findUsersWithRoles: vi.fn(),
@@ -14,7 +28,7 @@ vi.mock('../repositories/rbac.repository', () => ({
     findRoleIdsByNames: vi.fn(),
     countAdminsExcluding: vi.fn(),
     setUserRoles: vi.fn(),
-    createUserWithViewerRole: vi.fn(),
+    createUserWithRoles: vi.fn(),
     setUserPasswordHash: vi.fn(),
     createRole: vi.fn(),
     renameRole: vi.fn(),
@@ -61,13 +75,13 @@ import { rbacRepository } from '../repositories/rbac.repository';
 import { invalidateUser, invalidateObject, invalidateGroup } from '../security/acl';
 import { userRepository } from '../repositories/user.repository';
 import { auditService } from './audit.service';
-import { rbacService } from './rbac.service';
+import { rbacService, assertCanModifyUser } from './rbac.service';
 import { assertPassword } from '../security/auth.service';
 
 const role = (id: string, name: string) => ({ id, name });
-const user = (id: string, roles: Array<{ id: string; name: string }> = []) => ({
+const user = (id: string, roles: Array<{ id: string; name: string }> = [], username = 'alice') => ({
   id,
-  username: 'alice',
+  username,
   email: 'alice@example.test',
   createdAt: '2026-01-01T00:00:00.000Z',
   passwordSet: true,
@@ -76,6 +90,8 @@ const user = (id: string, roles: Array<{ id: string; name: string }> = []) => ({
 
 // Актор (req.user) для мутаций сервиса.
 const ACTOR = { id: 'actor', username: 'alice' };
+// Владелец (username === OWNER_USERNAME из замоканного config).
+const OWNER = { id: 'owner-id', username: 'owner' };
 
 function expectHttpError(promise: Promise<unknown>, status: number): Promise<void> {
   return expect(promise).rejects.toMatchObject({ status });
@@ -113,7 +129,7 @@ describe('rbacService.setUserRoles', () => {
       { id: 'rv', name: 'viewer' },
     ]);
     (rbacRepository.countAdminsExcluding as unknown as Mock).mockResolvedValue(0);
-    await expectHttpError(rbacService.setUserRoles('t2', ACTOR, ['viewer']), 400);
+    await expectHttpError(rbacService.setUserRoles('t2', OWNER, ['viewer']), 400);
     expect(rbacRepository.setUserRoles).not.toHaveBeenCalled();
   });
 
@@ -280,7 +296,7 @@ describe('rbacService.deleteUser', () => {
       user('adm', [role('ra', 'admin')]),
     );
     (rbacRepository.countAdminsExcluding as unknown as Mock).mockResolvedValue(0);
-    await expectHttpError(rbacService.deleteUser('adm', ACTOR), 400);
+    await expectHttpError(rbacService.deleteUser('adm', OWNER), 400);
     expect(userRepository.deleteById).not.toHaveBeenCalled();
   });
 
@@ -304,6 +320,265 @@ describe('rbacService.deleteUser', () => {
   });
 });
 
+describe('rbacService — защита owner/админов', () => {
+  it('setUserRoles: админ-non-owner не может менять роли админа → 403', async () => {
+    (rbacRepository.findUserWithRoles as unknown as Mock).mockResolvedValue(
+      user('adm', [role('ra', 'admin')]),
+    );
+    await expectHttpError(rbacService.setUserRoles('adm', ACTOR, ['viewer']), 403);
+    expect(rbacRepository.setUserRoles).not.toHaveBeenCalled();
+  });
+
+  it('setUserRoles: owner неприкосновенен даже для админа → 403', async () => {
+    (rbacRepository.findUserWithRoles as unknown as Mock).mockResolvedValue(
+      user('owner-id', [role('ra', 'admin')], 'owner'),
+    );
+    await expectHttpError(rbacService.setUserRoles('owner-id', ACTOR, ['viewer']), 403);
+    expect(rbacRepository.setUserRoles).not.toHaveBeenCalled();
+  });
+
+  it('deleteUser: админ-non-owner не может удалить админа → 403', async () => {
+    (rbacRepository.findUserWithRoles as unknown as Mock).mockResolvedValue(
+      user('adm', [role('ra', 'admin')]),
+    );
+    await expectHttpError(rbacService.deleteUser('adm', ACTOR), 403);
+    expect(userRepository.deleteById).not.toHaveBeenCalled();
+  });
+
+  it('deleteUser: owner нельзя удалить → 403', async () => {
+    (rbacRepository.findUserWithRoles as unknown as Mock).mockResolvedValue(
+      user('owner-id', [role('ra', 'admin')], 'owner'),
+    );
+    await expectHttpError(rbacService.deleteUser('owner-id', ACTOR), 403);
+    expect(userRepository.deleteById).not.toHaveBeenCalled();
+  });
+
+  it('resetUserPassword: админ-non-owner не может сбросить пароль админу → 403', async () => {
+    (rbacRepository.findUserWithRoles as unknown as Mock).mockResolvedValue(
+      user('adm', [role('ra', 'admin')]),
+    );
+    await expectHttpError(rbacService.resetUserPassword('adm', ACTOR, 'newpassword123'), 403);
+    expect(rbacRepository.setUserPasswordHash).not.toHaveBeenCalled();
+  });
+
+  it('resetUserPassword: owner защищён даже от самого себя → 403', async () => {
+    (rbacRepository.findUserWithRoles as unknown as Mock).mockResolvedValue(
+      user('owner-id', [role('ra', 'admin')], 'owner'),
+    );
+    await expectHttpError(rbacService.resetUserPassword('owner-id', OWNER, 'newpassword123'), 403);
+    expect(rbacRepository.setUserPasswordHash).not.toHaveBeenCalled();
+  });
+
+  it('resetUserPassword: non-owner админ может сбросить свой пароль (не регресс)', async () => {
+    (rbacRepository.findUserWithRoles as unknown as Mock).mockResolvedValue(
+      user('actor', [role('ra', 'admin')]),
+    );
+    (rbacRepository.setUserPasswordHash as unknown as Mock).mockResolvedValue(true);
+    const result = await rbacService.resetUserPassword('actor', ACTOR, 'newpassword123');
+    expect(result).toEqual({ ok: true });
+    expect(rbacRepository.setUserPasswordHash).toHaveBeenCalled();
+  });
+
+  it('deleteUser: не-админа по-прежнему можно удалить', async () => {
+    (rbacRepository.findUserWithRoles as unknown as Mock).mockResolvedValue(
+      user('plain', [role('rv', 'viewer')]),
+    );
+    (userRepository.deleteById as unknown as Mock).mockResolvedValue(true);
+
+    await rbacService.deleteUser('plain', ACTOR);
+
+    expect(userRepository.deleteById).toHaveBeenCalledWith('plain');
+  });
+
+  it('replaceRolePermissions: роль admin неизменяема → 400', async () => {
+    (rbacRepository.findRoleById as unknown as Mock).mockResolvedValue(role('ra', 'admin'));
+    await expectHttpError(
+      rbacService.replaceRolePermissions('ra', ACTOR, [{ groupId: 'g1', action: 'read' }]),
+      400,
+    );
+    expect(rbacRepository.replaceRolePermissions).not.toHaveBeenCalled();
+  });
+
+  it('replaceRoleObjectGrants: роль admin неизменяема → 400', async () => {
+    (rbacRepository.findRoleById as unknown as Mock).mockResolvedValue(role('ra', 'admin'));
+    await expectHttpError(
+      rbacService.replaceRoleObjectGrants('ra', ACTOR, [{ objectId: 'o1', action: 'read' }]),
+      400,
+    );
+    expect(rbacRepository.replaceRoleObjectGrants).not.toHaveBeenCalled();
+  });
+
+  it('listUsers: проставляет isOwner по OWNER_USERNAME', async () => {
+    (rbacRepository.findUsersWithRoles as unknown as Mock).mockResolvedValue([
+      user('u1', [role('rv', 'viewer')], 'alice'),
+      user('u2', [role('ra', 'admin')], 'owner'),
+    ]);
+
+    const list = await rbacService.listUsers(20, 0);
+
+    expect(list).toHaveLength(2);
+    expect(list[0]).toMatchObject({ username: 'alice', isOwner: false });
+    expect(list[1]).toMatchObject({ username: 'owner', isOwner: true });
+  });
+});
+
+describe('assertCanModifyUser', () => {
+  const adminTarget = (id: string, username: string) => ({
+    id,
+    username,
+    roles: [{ name: 'admin' }],
+  });
+
+  function statusOf(fn: () => void): number | undefined {
+    try {
+      fn();
+      return undefined;
+    } catch (e) {
+      return (e as { status?: number }).status;
+    }
+  }
+
+  it('owner неприкосновенен даже для себя → 403', () => {
+    const owner = { id: 'o', username: 'owner', roles: [{ name: 'admin' }] };
+    expect(statusOf(() => assertCanModifyUser(owner, { id: 'o', username: 'owner' }))).toBe(403);
+  });
+
+  it('admin target не-owner админом → 403', () => {
+    expect(statusOf(() => assertCanModifyUser(adminTarget('a', 'admin2'), ACTOR))).toBe(403);
+  });
+
+  it('allowSelfAdmin: себя (не-owner admin) можно', () => {
+    expect(statusOf(() => assertCanModifyUser(adminTarget('actor', 'alice'), ACTOR, { allowSelfAdmin: true }))).toBeUndefined();
+  });
+
+  it('owner-actor может менять админа', () => {
+    expect(statusOf(() => assertCanModifyUser(adminTarget('a', 'admin2'), OWNER))).toBeUndefined();
+  });
+
+  it('обычного пользователя не-owner админ трогать может', () => {
+    const viewer = { id: 'v', username: 'viewer', roles: [{ name: 'viewer' }] };
+    expect(statusOf(() => assertCanModifyUser(viewer, ACTOR))).toBeUndefined();
+  });
+});
+
+describe('rbacService — owner-username и выдача admin', () => {
+  it('createUser: username владельца зарезервирован → 403', async () => {
+    await expectHttpError(
+      rbacService.createUser({ username: 'owner', email: 'o@example.test' }, ACTOR),
+      403,
+    );
+    expect(rbacRepository.createUserWithRoles).not.toHaveBeenCalled();
+  });
+
+  it('createUser: requested roleNames admin не-owner админом → 403', async () => {
+    await expectHttpError(
+      rbacService.createUser({ username: 'newuser', email: 'n@example.test', roleNames: ['admin'] }, ACTOR),
+      403,
+    );
+    expect(rbacRepository.createUserWithRoles).not.toHaveBeenCalled();
+  });
+
+  it('createUser: roleNames отсутствует → по умолчанию viewer', async () => {
+    (userRepository.findByUsername as unknown as Mock).mockResolvedValue(null);
+    (userRepository.findByEmail as unknown as Mock).mockResolvedValue(null);
+    (rbacRepository.createUserWithRoles as unknown as Mock).mockResolvedValue('u-new');
+    (rbacRepository.findUserWithRoles as unknown as Mock).mockResolvedValue(
+      user('u-new', [role('rv', 'viewer')]),
+    );
+
+    const result = await rbacService.createUser({ username: 'newuser', email: 'n@example.test' }, ACTOR);
+
+    expect(result.user.id).toBe('u-new');
+    expect(rbacRepository.findRoleIdsByNames).not.toHaveBeenCalled();
+    expect(rbacRepository.createUserWithRoles).toHaveBeenCalledWith(
+      expect.objectContaining({ roleNames: ['viewer'] }),
+    );
+  });
+
+  it('createUser: пустой roleNames → viewer', async () => {
+    (userRepository.findByUsername as unknown as Mock).mockResolvedValue(null);
+    (userRepository.findByEmail as unknown as Mock).mockResolvedValue(null);
+    (rbacRepository.createUserWithRoles as unknown as Mock).mockResolvedValue('u-new');
+    (rbacRepository.findUserWithRoles as unknown as Mock).mockResolvedValue(
+      user('u-new', [role('rv', 'viewer')]),
+    );
+
+    await rbacService.createUser({ username: 'newuser', email: 'n@example.test', roleNames: [] }, ACTOR);
+
+    expect(rbacRepository.findRoleIdsByNames).not.toHaveBeenCalled();
+    expect(rbacRepository.createUserWithRoles).toHaveBeenCalledWith(
+      expect.objectContaining({ roleNames: ['viewer'] }),
+    );
+  });
+
+  it('createUser: владелец создаёт пользователя с ролью admin', async () => {
+    (userRepository.findByUsername as unknown as Mock).mockResolvedValue(null);
+    (userRepository.findByEmail as unknown as Mock).mockResolvedValue(null);
+    (rbacRepository.findRoleIdsByNames as unknown as Mock).mockResolvedValue([
+      { id: 'ra', name: 'admin' },
+    ]);
+    (rbacRepository.createUserWithRoles as unknown as Mock).mockResolvedValue('u-new');
+    (rbacRepository.findUserWithRoles as unknown as Mock).mockResolvedValue(
+      user('u-new', [role('ra', 'admin')]),
+    );
+
+    const result = await rbacService.createUser(
+      { username: 'admin2', email: 'admin2@example.test', roleNames: ['admin'] },
+      OWNER,
+    );
+
+    expect(rbacRepository.createUserWithRoles).toHaveBeenCalledWith(
+      expect.objectContaining({ roleNames: ['admin'] }),
+    );
+    expect(result.user.roles.some((r) => r.name === 'admin')).toBe(true);
+  });
+
+  it('createUser: неизвестная роль → 400, пользователь не создаётся', async () => {
+    (rbacRepository.findRoleIdsByNames as unknown as Mock).mockResolvedValue([]);
+
+    await expectHttpError(
+      rbacService.createUser({ username: 'newuser', email: 'n@example.test', roleNames: ['ghost'] }, ACTOR),
+      400,
+    );
+    expect(rbacRepository.createUserWithRoles).not.toHaveBeenCalled();
+  });
+
+  it('createUser: roleNames не массив строк → 400', async () => {
+    await expectHttpError(
+      rbacService.createUser({ username: 'newuser', email: 'n@example.test', roleNames: 'viewer' }, ACTOR),
+      400,
+    );
+    expect(rbacRepository.createUserWithRoles).not.toHaveBeenCalled();
+  });
+
+  it('patchUser: username владельца зарезервирован → 403', async () => {
+    await expectHttpError(rbacService.patchUser('u1', ACTOR, { username: 'owner' }), 403);
+  });
+
+  it('setUserRoles: не-owner admin не может выдать роль admin viewer-у → 403', async () => {
+    (rbacRepository.findUserWithRoles as unknown as Mock).mockResolvedValue(
+      user('t1', [role('rv', 'viewer')]),
+    );
+    await expectHttpError(rbacService.setUserRoles('t1', ACTOR, ['admin']), 403);
+    expect(rbacRepository.setUserRoles).not.toHaveBeenCalled();
+  });
+
+  it('setUserRoles: owner может выдать роль admin', async () => {
+    (rbacRepository.findUserWithRoles as unknown as Mock)
+      .mockResolvedValueOnce(user('t1', [role('rv', 'viewer')]))
+      .mockResolvedValueOnce(user('t1', [role('rv', 'viewer'), role('ra', 'admin')]));
+    (rbacRepository.findRoleIdsByNames as unknown as Mock).mockResolvedValue([
+      { id: 'ra', name: 'admin' },
+    ]);
+    (rbacRepository.setUserRoles as unknown as Mock).mockResolvedValue(undefined);
+
+    const updated = await rbacService.setUserRoles('t1', OWNER, ['admin']);
+
+    expect(rbacRepository.setUserRoles).toHaveBeenCalledWith('t1', ['ra']);
+    expect(updated.roles.some((r) => r.name === 'admin')).toBe(true);
+  });
+});
+
 describe('rbacService.createUser (парольная политика)', () => {
   function mockNoClashes() {
     (userRepository.findByUsername as unknown as Mock).mockResolvedValue(null);
@@ -312,7 +587,7 @@ describe('rbacService.createUser (парольная политика)', () => {
 
   it('без password генерируется временный пароль: 24 символа и валиден assertPassword', async () => {
     mockNoClashes();
-    (rbacRepository.createUserWithViewerRole as unknown as Mock).mockResolvedValue('u-new');
+    (rbacRepository.createUserWithRoles as unknown as Mock).mockResolvedValue('u-new');
     (rbacRepository.findUserWithRoles as unknown as Mock).mockResolvedValue(
       user('u-new', [role('rv', 'viewer')]),
     );
@@ -325,10 +600,11 @@ describe('rbacService.createUser (парольная политика)', () => {
     expect(result.initialPassword).toBeDefined();
     expect(result.initialPassword).toHaveLength(24);
     expect(() => assertPassword(result.initialPassword as string)).not.toThrow();
-    expect(rbacRepository.createUserWithViewerRole).toHaveBeenCalledWith({
+    expect(rbacRepository.createUserWithRoles).toHaveBeenCalledWith({
       username: 'newuser',
       email: 'new@example.test',
       passwordHash: expect.any(String),
+      roleNames: ['viewer'],
     });
   });
 
@@ -340,12 +616,12 @@ describe('rbacService.createUser (парольная политика)', () => {
         ACTOR,
       ),
     ).rejects.toMatchObject({ status: 400, message: 'пароль минимум 12 символов' });
-    expect(rbacRepository.createUserWithViewerRole).not.toHaveBeenCalled();
+    expect(rbacRepository.createUserWithRoles).not.toHaveBeenCalled();
   });
 
   it('явный пароль от 12 символов принимается', async () => {
     mockNoClashes();
-    (rbacRepository.createUserWithViewerRole as unknown as Mock).mockResolvedValue('u-new');
+    (rbacRepository.createUserWithRoles as unknown as Mock).mockResolvedValue('u-new');
     (rbacRepository.findUserWithRoles as unknown as Mock).mockResolvedValue(
       user('u-new', [role('rv', 'viewer')]),
     );
@@ -356,7 +632,7 @@ describe('rbacService.createUser (парольная политика)', () => {
     );
 
     expect(result.initialPassword).toBeUndefined();
-    expect(rbacRepository.createUserWithViewerRole).toHaveBeenCalledTimes(1);
+    expect(rbacRepository.createUserWithRoles).toHaveBeenCalledTimes(1);
   });
 });
 

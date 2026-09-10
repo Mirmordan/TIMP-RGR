@@ -7,6 +7,9 @@ import { OBJECT_ACTIONS } from '../security/types';
 import type { ObjectAction } from '../security/types';
 import { isCapability } from '../security/capabilities';
 import { auditService } from './audit.service';
+import { isOwnerUsername, assertOwnerUsernameReserved } from './owner.service';
+import { HttpError } from '../http/HttpError';
+export { HttpError };
 import type { AuditActor } from './audit.service';
 import type {
   RbacGroup,
@@ -19,17 +22,6 @@ import type {
 
 const PROTECTED_ROLE_NAMES = ['admin'];
 const ROLE_NAME_RE = /^[a-z][a-z0-9_-]{1,30}$/;
-
-/** HTTP-ошибка с кодом статуса (для тонких роутов /admin). */
-export class HttpError extends Error {
-  status: number;
-
-  constructor(status: number, message: string) {
-    super(message);
-    this.name = 'HttpError';
-    this.status = status;
-  }
-}
 
 function assertValidRoleName(name: unknown): asserts name is string {
   if (typeof name !== 'string' || !ROLE_NAME_RE.test(name)) {
@@ -49,6 +41,40 @@ function assertValidGroupName(name: unknown): asserts name is string {
   }
 }
 
+/** Актор — владелец (username из OWNER_USERNAME)? */
+function isActorOwner(actor: AuditActor): boolean {
+  return isOwnerUsername(actor.username);
+}
+
+export interface ModifyUserOptions {
+  /** Разрешить не-owner админу менять себя (сброс пароля, правка профиля, legacy /users). */
+  allowSelfAdmin?: boolean;
+}
+
+/**
+ * Единый guard мутаций пользователя (admin-панель + legacy /users):
+ *  - owner-аккаунт неприкосновенен даже для себя → 403 «владелец защищён»;
+ *  - админов трогает только владелец; не-owner админ может менять себя, если
+ *    передан allowSelfAdmin.
+ */
+export function assertCanModifyUser(
+  target: { id: string; username: string; roles: Array<{ name: string }> },
+  actor: AuditActor,
+  opts: ModifyUserOptions = {},
+): void {
+  if (isOwnerUsername(target.username)) throw new HttpError(403, 'владелец защищён');
+  if (isActorOwner(actor)) return;
+  if (!target.roles.some((r) => r.name === 'admin')) return;
+  const isSelf = target.id === actor.id;
+  if (isSelf && opts.allowSelfAdmin) return;
+  throw new HttpError(403, 'изменять администраторов может только владелец');
+}
+
+/** Только владелец может назначать роль admin (создание/выдача). */
+function assertCanAssignAdmin(actor: AuditActor): void {
+  if (!isActorOwner(actor)) throw new HttpError(403, 'назначать роль admin может только владелец');
+}
+
 /** Криптостойкий временный пароль: 24 символа base64url (18 случайных байт). */
 function generateTemporaryPassword(): string {
   return randomBytes(18).toString('base64url');
@@ -65,8 +91,10 @@ export const rbacService = {
 
     const user = await rbacRepository.findUserWithRoles(targetId);
     if (!user) throw new HttpError(404, 'пользователь не найден');
+    assertCanModifyUser(user, actor);
 
     const uniqueNames = [...new Set(roleNames)];
+    if (uniqueNames.includes('admin')) assertCanAssignAdmin(actor);
     const found = await rbacRepository.findRoleIdsByNames(uniqueNames);
     if (found.length !== uniqueNames.length) {
       const foundNames = new Set(found.map((r) => r.name));
@@ -170,6 +198,7 @@ export const rbacService = {
   async replaceRolePermissions(id: string, actor: AuditActor, entries: unknown): Promise<RbacPermission[]> {
     const role = await rbacRepository.findRoleById(id);
     if (!role) throw new HttpError(404, 'роль не найдена');
+    if (PROTECTED_ROLE_NAMES.includes(role.name)) throw new HttpError(400, 'роль admin неизменяема');
 
     if (!Array.isArray(entries)) {
       throw new HttpError(400, 'entries должен быть массивом объектов { groupId, action }');
@@ -268,6 +297,7 @@ export const rbacService = {
   async replaceRoleObjectGrants(id: string, actor: AuditActor, grants: unknown): Promise<RbacObjectGrant[]> {
     const role = await rbacRepository.findRoleById(id);
     if (!role) throw new HttpError(404, 'роль не найдена');
+    if (PROTECTED_ROLE_NAMES.includes(role.name)) throw new HttpError(400, 'роль admin неизменяема');
 
     if (!Array.isArray(grants)) {
       throw new HttpError(400, 'grants должен быть массивом объектов { objectId, action }');
@@ -454,12 +484,27 @@ async replaceGroupObjects(id: string, actor: AuditActor, objectIds: unknown): Pr
   // --- P4: CRUD пользователей (панель /admin) ---
 
   /**
+   * Список пользователей для админ-панели. Дополняет DB-проекцию флагом
+   * isOwner (username === OWNER_USERNAME); при пустом env — всегда false.
+   */
+  async listUsers(limit: number, offset: number): Promise<RbacUserWithRoles[]> {
+    const users = await rbacRepository.findUsersWithRoles(limit, offset);
+    return users.map((u) => ({ ...u, isOwner: isOwnerUsername(u.username) }));
+  },
+
+  /**
    * Создать пользователя админом. username/email валидируются теми же
    * правилами, что в /auth; коллизии → 409. Если password не передан (или "")
    * — генерируется криптостойкий временный и возвращается один раз в
-   * initialPassword. Всегда выдаётся роль viewer, роли из тела игнорируются.
+   * initialPassword. Роли берутся из roleNames (опционально): пусто → viewer;
+   * роль admin может назначить только владелец.
    */
-  async createUser(input: { username?: unknown; email?: unknown; password?: unknown }, actor: AuditActor): Promise<{
+  async createUser(input: {
+    username?: unknown;
+    email?: unknown;
+    password?: unknown;
+    roleNames?: unknown;
+  }, actor: AuditActor): Promise<{
     user: RbacUserWithRoles;
     initialPassword?: string;
   }> {
@@ -467,6 +512,28 @@ async replaceGroupObjects(id: string, actor: AuditActor, objectIds: unknown): Pr
     const email = input.email;
     assertUsername(username);
     assertEmail(email);
+    assertOwnerUsernameReserved(username);
+
+    const rawRoleNames = input.roleNames;
+    let roleNames: string[];
+    if (rawRoleNames === undefined) {
+      roleNames = [];
+    } else if (Array.isArray(rawRoleNames) && rawRoleNames.every((n) => typeof n === 'string')) {
+      roleNames = rawRoleNames as string[];
+    } else {
+      throw new HttpError(400, 'roleNames должен быть массивом строк');
+    }
+    const uniqueNames = [...new Set(roleNames)];
+    if (uniqueNames.includes('admin')) assertCanAssignAdmin(actor);
+    const effectiveNames = uniqueNames.length > 0 ? uniqueNames : ['viewer'];
+    if (uniqueNames.length > 0) {
+      const found = await rbacRepository.findRoleIdsByNames(uniqueNames);
+      if (found.length !== uniqueNames.length) {
+        const foundNames = new Set(found.map((r) => r.name));
+        const unknown = uniqueNames.filter((n) => !foundNames.has(n));
+        throw new HttpError(400, `неизвестная роль: ${unknown.join(', ')}`);
+      }
+    }
 
     const clashName = await userRepository.findByUsername(username);
     if (clashName) throw new HttpError(409, 'username уже занят');
@@ -486,7 +553,12 @@ async replaceGroupObjects(id: string, actor: AuditActor, objectIds: unknown): Pr
     }
 
     const passwordHash = await authService.hashPassword(plain);
-    const userId = await rbacRepository.createUserWithViewerRole({ username, email, passwordHash });
+    const userId = await rbacRepository.createUserWithRoles({
+      username,
+      email,
+      passwordHash,
+      roleNames: effectiveNames,
+    });
     const user = await rbacRepository.findUserWithRoles(userId);
     if (!user) throw new Error('пользователь не создан');
     await auditService.logAudit({
@@ -495,7 +567,7 @@ async replaceGroupObjects(id: string, actor: AuditActor, objectIds: unknown): Pr
       action: 'user.create',
       targetType: 'user',
       targetId: userId,
-      details: { email: user.email, generated: initialPassword !== undefined },
+      details: { email: user.email, roleNames: effectiveNames, generated: initialPassword !== undefined },
     });
     if (initialPassword === undefined) return { user };
     return { user, initialPassword };
@@ -512,6 +584,7 @@ async replaceGroupObjects(id: string, actor: AuditActor, objectIds: unknown): Pr
   }> {
     const target = await rbacRepository.findUserWithRoles(userId);
     if (!target) throw new HttpError(404, 'пользователь не найден');
+    assertCanModifyUser(target, actor, { allowSelfAdmin: true });
 
     let plain: string;
     let initialPassword: string | undefined;
@@ -554,7 +627,12 @@ async replaceGroupObjects(id: string, actor: AuditActor, objectIds: unknown): Pr
       throw new HttpError(400, 'укажите username или email');
     }
     if (username !== undefined) assertUsername(username);
+    if (username !== undefined) assertOwnerUsernameReserved(username);
     if (email !== undefined) assertEmail(email);
+
+    const target = await rbacRepository.findUserWithRoles(userId);
+    if (!target) throw new HttpError(404, 'пользователь не найден');
+    assertCanModifyUser(target, actor, { allowSelfAdmin: true });
 
     await authService.updateProfile(userId, {
       ...(username !== undefined ? { username } : {}),
@@ -580,6 +658,7 @@ async replaceGroupObjects(id: string, actor: AuditActor, objectIds: unknown): Pr
 
     const target = await rbacRepository.findUserWithRoles(userId);
     if (!target) throw new HttpError(404, 'пользователь не найден');
+    assertCanModifyUser(target, actor);
     if (target.roles.some((r) => r.name === 'admin')) {
       const otherAdmins = await rbacRepository.countAdminsExcluding(userId);
       if (otherAdmins === 0) throw new HttpError(400, 'нельзя удалить последнего администратора');

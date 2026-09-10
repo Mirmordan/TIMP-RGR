@@ -6,7 +6,8 @@
 
 - `authenticate` — обязательна активная сессия (httpOnly-куки `access_token`/`refresh_token`, выдаются на `POST /auth/login`); ставится на весь роутер или отдельно на обработчик;
 - `permission("read"|"write"|"delete")` — `requirePermission`: право на конкретный объект (super-type `objects`) с наложением RLS по строкам; `scope: процесс` — право проверяется по объекту процесса/потока из URL;
-- `capability("...")` — `requireCapability`: системное спец-право роли (например `camera:create`, `media:export`, `audit:read`).
+- `capability("...")` — `requireCapability`: системное спец-право роли (например `camera:create`, `media:export`, `audit:read`);
+- owner/admin guard — мутации пользователей (`PUT/PATCH/DELETE /users/:id` и `/admin/users/:id`, роли, сброс пароля) наследуют защиту: owner-аккаунт (`username === OWNER_USERNAME`) неприкосновенен для всех, включая себя → 403 «владелец защищён»; трогать пользователя с ролью `admin` может только владелец (иначе 403 «изменять администраторов может только владелец»). Назначение роли `admin` при создании (`POST /admin/users`, поле `roleNames`) тоже доступно только владельцу (иначе 403 «назначать роль admin может только владелец»); без `roleNames` создаётся `viewer`.
 
 Списки (`GET /`...) дополнительно фильтруются на уровне БД (RLS), возвращают `limit`/`offset`, поиск `q`.
 
@@ -90,7 +91,7 @@
 | PATCH | `/api/v1/admin/groups/:id` | Переименование группы объектов | authenticate, capability("group:update") |
 | DELETE | `/api/v1/admin/groups/:id` | Удаление группы объектов | authenticate, capability("group:delete") |
 | PUT | `/api/v1/admin/groups/:id/objects` | Замена состава объектов группы | authenticate, capability("permission:manage") |
-| POST | `/api/v1/admin/users` | Создание пользователя | authenticate, capability("user:create") |
+| POST | `/api/v1/admin/users` | Создание пользователя (тело: `username`, `email`, `password?`, `roleNames?`; пусто → viewer) | authenticate, capability("user:create") |
 | PUT | `/api/v1/admin/users/:id/password` | Сброс/установка пароля пользователя | authenticate, capability("user:password:reset") |
 | PATCH | `/api/v1/admin/users/:id` | Редактирование пользователя | authenticate, capability("user:update") |
 | DELETE | `/api/v1/admin/users/:id` | Удаление пользователя | authenticate, capability("user:delete") |

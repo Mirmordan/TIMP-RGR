@@ -1,6 +1,9 @@
 import { Router } from 'express';
 import type { Request, Response } from 'express';
 import { userService } from '../services/user.service';
+import { rbacRepository } from '../repositories/rbac.repository';
+import { rbacService, assertCanModifyUser, HttpError } from '../services/rbac.service';
+import type { AuditActor } from '../services/audit.service';
 import { authenticate } from '../security/middleware/authenticate';
 import { requireCapability } from '../security/middleware/requireCapability';
 import { replyError } from '../http/errors';
@@ -8,6 +11,13 @@ import { replyError } from '../http/errors';
 export const userRouter = Router();
 
 userRouter.use(authenticate);
+
+/** Актор (req.user) для guard-проверок и аудита. */
+function actorOf(req: Request): AuditActor {
+  const user = req.user;
+  if (!user) throw new HttpError(401, 'требуется авторизация');
+  return { id: user.id, username: user.username };
+}
 
 /**
  * @openapi
@@ -221,6 +231,9 @@ userRouter.post('/', requireCapability('user:create'), async (req: Request, res:
 userRouter.put('/:id', requireCapability('user:update'), async (req: Request, res: Response) => {
   try {
     const id = req.params.id as string;
+    const target = await rbacRepository.findUserWithRoles(id);
+    if (!target) return res.status(404).json({ error: 'пользователь не найден' });
+    assertCanModifyUser(target, actorOf(req), { allowSelfAdmin: true });
     const { username, email, password } = req.body;
     const user = await userService.put(id, { username, email, password });
     if (!user) return res.status(404).json({ error: 'пользователь не найден' });
@@ -287,6 +300,9 @@ userRouter.put('/:id', requireCapability('user:update'), async (req: Request, re
 userRouter.patch('/:id', requireCapability('user:update'), async (req: Request, res: Response) => {
   try {
     const id = req.params.id as string;
+    const target = await rbacRepository.findUserWithRoles(id);
+    if (!target) return res.status(404).json({ error: 'пользователь не найден' });
+    assertCanModifyUser(target, actorOf(req), { allowSelfAdmin: true });
     const user = await userService.patch(id, req.body);
     if (!user) return res.status(404).json({ error: 'пользователь не найден' });
     res.json(user);
@@ -334,8 +350,11 @@ userRouter.patch('/:id', requireCapability('user:update'), async (req: Request, 
  *               $ref: '#/components/schemas/Error'
  */
 userRouter.delete('/:id', requireCapability('user:delete'), async (req: Request, res: Response) => {
-  const id = req.params.id as string;
-  const deleted = await userService.deleteById(id);
-  if (!deleted) return res.status(404).json({ error: 'пользователь не найден' });
-  res.status(204).send();
+  try {
+    const id = req.params.id as string;
+    await rbacService.deleteUser(id, actorOf(req));
+    res.status(204).send();
+  } catch (e: any) {
+    replyError(res, e, 'user.4');
+  }
 });

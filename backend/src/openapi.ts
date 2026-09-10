@@ -74,11 +74,16 @@ const definition = {
           { $ref: '#/components/schemas/User' },
           {
             type: 'object',
-            required: ['role'],
+            required: ['role', 'isOwner'],
             properties: {
               role: {
                 type: 'string',
                 enum: ['admin', 'operator', 'viewer'],
+              },
+              isOwner: {
+                type: 'boolean',
+                description:
+                  'true, если это защищённый owner-аккаунт (username === OWNER_USERNAME); вычисляется на сервере.',
               },
             },
           },
@@ -1014,6 +1019,10 @@ const definition = {
           email: { type: 'string', format: 'email' },
           createdAt: { type: 'string', format: 'date-time' },
           passwordSet: { type: 'boolean', description: 'Задан ли пароль пользователю.' },
+          isOwner: {
+            type: 'boolean',
+            description: 'true, если это защищённый owner-аккаунт (username === OWNER_USERNAME). Присутствует в списке пользователей.',
+          },
           roles: {
             type: 'array',
             description: 'Роли пользователя.',
@@ -1249,6 +1258,12 @@ const definition = {
             minLength: 12,
             description:
               'Пароль. Если не указан (или пуст) — генерируется временный и возвращается один раз в initialPassword.',
+          },
+          roleNames: {
+            type: 'array',
+            items: { type: 'string' },
+            description:
+              'Роли нового пользователя. Если не указан или пуст — выдаётся viewer. Роль admin может назначить только владелец (иначе 403).',
           },
         },
       },

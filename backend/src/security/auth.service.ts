@@ -2,6 +2,7 @@ import { createAccessToken, createRefreshToken, verifyRefreshToken } from './tok
 import { hashPassword, verifyPassword } from './password';
 import { invalidateUser } from './acl';
 import { userRepository } from '../repositories/user.repository';
+import { assertOwnerUsernameReserved } from '../services/owner.service';
 import { pool } from '../database/connection';
 import type { Role } from './types';
 
@@ -58,6 +59,7 @@ export const authService = {
   },
 
   async register(username: string, email: string, password: string) {
+    assertOwnerUsernameReserved(username);
     const existing = await userRepository.findAuthByUsername(username);
     if (existing) throw new Error('пользователь уже существует');
     const passwordHash = await hashPassword(password);
@@ -109,6 +111,7 @@ export const authService = {
       throw new AuthError(400, 'укажите username или email');
     }
     if (patch.username !== undefined) assertUsername(patch.username);
+    if (patch.username !== undefined) assertOwnerUsernameReserved(patch.username);
     if (patch.email !== undefined) assertEmail(patch.email);
     if (patch.username !== undefined) {
       const clash = await userRepository.findByUsername(patch.username);

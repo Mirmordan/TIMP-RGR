@@ -25,6 +25,7 @@ interface PasswordBanner {
 
 export function UsersTab() {
   const { user } = useAuth();
+  const actorIsOwner = Boolean(user?.isOwner);
   const { toast } = useNotify();
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [roles, setRoles] = useState<AdminRole[]>([]);
@@ -327,6 +328,14 @@ export function UsersTab() {
   function renderActions(row: AdminUser) {
     if (row.id === user?.id) {
       return <span className={styles.youMark}>это вы</span>;
+    }
+    // Owner-строка неприкосновенна для всех: только владелец может открыть на ней действия.
+    if (row.isOwner) {
+      return <span className={styles.youMark}>владелец</span>;
+    }
+    // Чужие admin-строки защищены от не-owner; owner видит и управляет ими.
+    if (row.roles.some(r => r.name === 'admin') && !actorIsOwner) {
+      return <span className={styles.youMark}>админ</span>;
     }
     if (row.id === confirmDeleteId) {
       return (

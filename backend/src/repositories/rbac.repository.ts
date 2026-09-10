@@ -38,6 +38,8 @@ export interface RbacUserWithRoles {
   createdAt: string;
   passwordSet: boolean;
   roles: Array<{ id: string; name: string }>;
+  /** true, если username совпадает с OWNER_USERNAME (не колонка БД). */
+  isOwner?: boolean;
 }
 
 export interface RbacGroup {
@@ -453,12 +455,18 @@ export const rbacRepository = {
     });
   },
 
-  /** Создать пользователя и сразу выдать ему роль viewer (одна транзакция). */
-  async createUserWithViewerRole(data: {
+  /**
+   * Создать пользователя и сразу выдать ему набор ролей (одна транзакция).
+   * Пустой список ролей трактуется как ['viewer']. Если какая-то роль не
+   * найдена — транзакция откатывается.
+   */
+  async createUserWithRoles(data: {
     username: string;
     email: string;
     passwordHash: string;
+    roleNames: string[];
   }): Promise<string> {
+    const roleNames = data.roleNames.length > 0 ? [...new Set(data.roleNames)] : ['viewer'];
     return withTransaction(async (client) => {
       const user = await client.query<{ id: string }>(
         `INSERT INTO users (username, email, password_hash) VALUES ($1, $2, $3)
@@ -467,16 +475,21 @@ export const rbacRepository = {
       );
       const userId = user.rows[0]?.id;
       if (!userId) throw new Error('пользователь не создан');
-      const role = await client.query<{ id: string }>(
-        `SELECT id FROM roles WHERE name = $1`,
-        ['viewer'],
+      const roles = await client.query<{ id: string; name: string }>(
+        `SELECT id, name FROM roles WHERE name = ANY($1)`,
+        [roleNames],
       );
-      const viewerId = role.rows[0]?.id;
-      if (!viewerId) throw new Error('роль viewer не найдена (она нужна для назначения новому пользователю)');
-      await client.query(
-        'INSERT INTO user_roles (user_id, role_id) VALUES ($1, $2)',
-        [userId, viewerId],
-      );
+      const foundNames = new Set(roles.rows.map((r) => r.name));
+      const missing = roleNames.filter((name) => !foundNames.has(name));
+      if (missing.length > 0) {
+        throw new Error(`роль не найдена: ${missing.join(', ')}`);
+      }
+      for (const role of roles.rows) {
+        await client.query(
+          'INSERT INTO user_roles (user_id, role_id) VALUES ($1, $2)',
+          [userId, role.id],
+        );
+      }
       return userId;
     });
   },

@@ -103,7 +103,7 @@ adminRouter.use(authenticate);
 adminRouter.get('/users', requireCapability('user:read'), async (req: Request, res: Response) => {
   const limit = Number(req.query.limit) || 20;
   const offset = Number(req.query.offset) || 0;
-  const users = await rbacRepository.findUsersWithRoles(limit, offset);
+  const users = await rbacService.listUsers(limit, offset);
   res.json(users);
 });
 
@@ -1108,7 +1108,7 @@ adminRouter.put('/groups/:id/objects', requireCapability('permission:manage'), a
  *     tags: [Admin]
  *     operationId: createAdminUser
  *     summary: Создание пользователя
- *     description: Создаёт пользователя и выдаёт ему роль viewer. Если password не передан — генерируется временный и возвращается один раз в initialPassword. Требуется capability user:create.
+ *     description: Создаёт пользователя и выдаёт роли из roleNames (если не указаны — viewer). Роль admin может назначить только владелец. Если password не передан — генерируется временный и возвращается один раз в initialPassword. Требуется capability user:create.
  *     requestBody:
  *       required: true
  *       content:
@@ -1130,7 +1130,7 @@ adminRouter.put('/groups/:id/objects', requireCapability('permission:manage'), a
  *                   type: string
  *                   description: Временный пароль (возвращается только при генерации).
  *       '400':
- *         description: Невалидные username/email или password не является строкой
+ *         description: Невалидные username/email, password не строка, roleNames не массив строк или неизвестная роль
  *         content:
  *           application/json:
  *             schema:
@@ -1156,7 +1156,12 @@ adminRouter.put('/groups/:id/objects', requireCapability('permission:manage'), a
  */
 adminRouter.post('/users', requireCapability('user:create'), async (req: Request, res: Response) => {
   try {
-    const body = (req.body ?? {}) as { username?: unknown; email?: unknown; password?: unknown };
+    const body = (req.body ?? {}) as {
+      username?: unknown;
+      email?: unknown;
+      password?: unknown;
+      roleNames?: unknown;
+    };
     const result = await rbacService.createUser(body, actorOf(req));
     res.status(201).json(result);
   } catch (e) {

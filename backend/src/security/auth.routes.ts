@@ -7,6 +7,7 @@ import { rbacRepository } from '../repositories/rbac.repository';
 import { pool } from '../database/connection';
 import { auditService } from '../services/audit.service';
 import { config } from '../config';
+import { isOwnerUsername } from '../services/owner.service';
 import type { Role, Capability } from './types';
 import { replyError } from '../http/errors';
 
@@ -47,7 +48,7 @@ async function fetchRole(userId: string): Promise<Role> {
 
 /** Единая форма сессионного ответа: полный user из БД + актуальные capabilities (union по ролям). */
 async function authPayload(userId: string): Promise<{
-  user: { id: string; username: string; email: string; createdAt: string; role: Role };
+  user: { id: string; username: string; email: string; createdAt: string; role: Role; isOwner: boolean };
   capabilities: Capability[];
 }> {
   const [user, role, capabilities] = await Promise.all([
@@ -63,6 +64,7 @@ async function authPayload(userId: string): Promise<{
       email: user.email,
       createdAt: user.createdAt.toISOString(),
       role,
+      isOwner: isOwnerUsername(user.username),
     },
     capabilities,
   };
