@@ -137,12 +137,22 @@ export function RolesTab() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [tick, setTick] = useState(0);
+  const [groupsLoading, setGroupsLoading] = useState(true);
+  const [permissionsLoading, setPermissionsLoading] = useState(true);
+  const [groupsAvailable, setGroupsAvailable] = useState(false);
+  const [permissionsAvailable, setPermissionsAvailable] = useState(false);
 
   // Спец-права видит только admin:read, каталог читается под role:read,
   // изменение требует admin:write (gates зеркалят права backend-эндпоинтов).
   const canViewSpecialCaps = capabilities.includes('admin:read');
   const canReadSpecialCaps = canViewSpecialCaps && capabilities.includes('role:read');
   const canManageSpecialCaps = capabilities.includes('admin:write');
+  const canReadRoleUsers = capabilities.includes('user:read');
+  const canReadAccess = capabilities.includes('permission:read');
+  const canManageAccess = capabilities.includes('permission:manage');
+  const canCreateRole = capabilities.includes('role:create');
+  const canUpdateRole = capabilities.includes('role:update');
+  const canDeleteRole = capabilities.includes('role:delete');
 
   const [name, setName] = useState('');
   const [creating, setCreating] = useState(false);
@@ -198,28 +208,72 @@ export function RolesTab() {
     let cancelled = false;
     setLoading(true);
     setLoadError('');
-    Promise.all([
-      apiFetch('/admin/roles'),
-      apiFetch('/admin/groups'),
-      apiFetch('/admin/permissions'),
-    ])
-      .then(async ([rolesRes, groupsRes, permsRes]) => {
-        if (!rolesRes.ok || !groupsRes.ok || !permsRes.ok) {
-          throw new Error(`Ошибка загрузки (${rolesRes.status}/${groupsRes.status}/${permsRes.status})`);
-        }
-        return Promise.all([rolesRes.json(), groupsRes.json(), permsRes.json()]);
+    apiFetch('/admin/roles')
+      .then(async r => {
+        if (!r.ok) throw new Error(`Ошибка загрузки (${r.status})`);
+        return (await r.json()) as AdminRole[];
       })
-      .then(([rolesData, groupsData, permsData]: [AdminRole[], AdminGroup[], AdminPermission[]]) => {
-        if (cancelled) return;
-        setRoles(rolesData);
-        setGroups(groupsData);
-        setPermissions(permsData);
+      .then(data => {
+        if (!cancelled) setRoles(data);
       })
       .catch((e: unknown) => {
-        if (!cancelled) setLoadError(e instanceof Error ? e.message : 'Не удалось загрузить');
+        if (!cancelled) setLoadError(e instanceof Error ? e.message : 'Не удалось загрузить роли');
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [tick]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setGroupsLoading(true);
+    apiFetch('/admin/groups')
+      .then(async r => {
+        if (r.status === 403) return null;
+        if (!r.ok) throw new Error(`Ошибка загрузки (${r.status})`);
+        return (await r.json()) as AdminGroup[];
+      })
+      .then(data => {
+        if (cancelled) return;
+        setGroups(data ?? []);
+        setGroupsAvailable(data !== null);
+      })
+      .catch(() => {
+        // Смежные данные недоступны — матрица групп скрывается, основной список ролей не блокируется.
+        if (!cancelled) {
+          setGroups([]);
+          setGroupsAvailable(false);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setGroupsLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [tick]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setPermissionsLoading(true);
+    apiFetch('/admin/permissions')
+      .then(async r => {
+        if (r.status === 403) return null;
+        if (!r.ok) throw new Error(`Ошибка загрузки (${r.status})`);
+        return (await r.json()) as AdminPermission[];
+      })
+      .then(data => {
+        if (cancelled) return;
+        setPermissions(data ?? []);
+        setPermissionsAvailable(data !== null);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setPermissions([]);
+          setPermissionsAvailable(false);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setPermissionsLoading(false);
       });
     return () => { cancelled = true; };
   }, [tick]);
@@ -332,6 +386,7 @@ export function RolesTab() {
     setGrantsError('');
     apiFetch(`/admin/roles/${roleId}/grants`)
       .then(async r => {
+        if (r.status === 403) return null;
         if (!r.ok) {
           const d = await r.json().catch(() => ({}));
           throw new Error(d.error || `Ошибка загрузки (${r.status})`);
@@ -339,7 +394,7 @@ export function RolesTab() {
         return (await r.json()) as AdminObjectGrant[];
       })
       .then(rows => {
-        if (detailSeq.current !== seq) return;
+        if (detailSeq.current !== seq || rows === null) return;
         setGrants(rows.map(g => ({ objectId: g.objectId, objectType: g.objectType, objectName: g.objectName, action: g.action })));
         setGrantsLoaded(true);
       })
@@ -348,7 +403,6 @@ export function RolesTab() {
         const msg = e instanceof Error ? e.message : 'Не удалось загрузить прямые доступы';
         setGrantsLoaded(false);
         setGrantsError(msg);
-        toast.error(msg);
       })
       .finally(() => {
         if (detailSeq.current === seq) setGrantsLoading(false);
@@ -366,6 +420,7 @@ export function RolesTab() {
     setCapsError('');
     apiFetch(`/admin/roles/${roleId}/capabilities`)
       .then(async r => {
+        if (r.status === 403) return null;
         if (!r.ok) {
           const d = await r.json().catch(() => ({}));
           throw new Error(d.error || `Ошибка загрузки (${r.status})`);
@@ -373,7 +428,7 @@ export function RolesTab() {
         return (await r.json()) as string[];
       })
       .then(codes => {
-        if (detailSeq.current !== seq) return;
+        if (detailSeq.current !== seq || codes === null) return;
         setCapsDraft(new Set(codes));
         setCapsLoaded(true);
       })
@@ -382,7 +437,6 @@ export function RolesTab() {
         const msg = e instanceof Error ? e.message : 'Не удалось загрузить спец-права';
         setCapsLoaded(false);
         setCapsError(msg);
-        toast.error(msg);
       })
       .finally(() => {
         if (detailSeq.current === seq) setCapsLoading(false);
@@ -429,28 +483,30 @@ export function RolesTab() {
 
     const seq = ++detailSeq.current;
 
-    setUsersLoading(true);
-    apiFetch(`/admin/roles/${row.id}/users?limit=100`)
-      .then(async r => {
-        if (!r.ok) {
-          const d = await r.json().catch(() => ({}));
-          throw new Error(d.error || `Ошибка загрузки (${r.status})`);
-        }
-        return (await r.json()) as AdminUser[];
-      })
-      .then(users => {
-        if (detailSeq.current !== seq) return;
-        setRoleUsers(users);
-      })
-      .catch((e: unknown) => {
-        if (detailSeq.current !== seq) return;
-        const msg = e instanceof Error ? e.message : 'Не удалось загрузить пользователей';
-        setUsersError(msg);
-        toast.error(msg);
-      })
-      .finally(() => {
-        if (detailSeq.current === seq) setUsersLoading(false);
-      });
+    if (canReadRoleUsers) {
+      setUsersLoading(true);
+      apiFetch(`/admin/roles/${row.id}/users?limit=100`)
+        .then(async r => {
+          if (r.status === 403) return null;
+          if (!r.ok) {
+            const d = await r.json().catch(() => ({}));
+            throw new Error(d.error || `Ошибка загрузки (${r.status})`);
+          }
+          return (await r.json()) as AdminUser[];
+        })
+        .then(users => {
+          if (detailSeq.current !== seq || users === null) return;
+          setRoleUsers(users);
+        })
+        .catch((e: unknown) => {
+          if (detailSeq.current !== seq) return;
+          const msg = e instanceof Error ? e.message : 'Не удалось загрузить пользователей';
+          setUsersError(msg);
+        })
+        .finally(() => {
+          if (detailSeq.current === seq) setUsersLoading(false);
+        });
+    }
 
     if (canReadSpecialCaps) fetchRoleCaps(row.id, seq);
     if (isAdminRole(row)) {
@@ -458,7 +514,7 @@ export function RolesTab() {
       setGrantsLoading(false);
       return;
     }
-    fetchRoleGrants(row.id, seq);
+    if (canReadAccess) fetchRoleGrants(row.id, seq);
   }
 
   async function handleCreate(e: FormEvent) {
@@ -594,34 +650,38 @@ export function RolesTab() {
     let grantsSaved = false;
     let capsSaved = false;
 
-    // 1) Матрица группового доступа.
-    try {
-      const entries = [...matrixDraft].map(key => {
-        const sep = key.indexOf('|');
-        return { groupId: key.slice(0, sep), action: key.slice(sep + 1) };
-      });
-      const r = await apiFetch(`/admin/roles/${activeRole.id}/permissions`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ entries }),
-      });
-      if (!r.ok) {
-        const d = await r.json().catch(() => ({}));
-        throw new Error(d.error || 'Не удалось сохранить групповые права');
+    // 1) Матрица группового доступа. Секция редактируется только когда она доступна и
+    // есть право permission:manage; иначе PUT не отправляем (пустые данные могут стереть права).
+    if (canManageAccess && groupsAvailable && permissionsAvailable) {
+      try {
+        const entries = [...matrixDraft].map(key => {
+          const sep = key.indexOf('|');
+          return { groupId: key.slice(0, sep), action: key.slice(sep + 1) };
+        });
+        const r = await apiFetch(`/admin/roles/${activeRole.id}/permissions`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ entries }),
+        });
+        if (!r.ok) {
+          const d = await r.json().catch(() => ({}));
+          throw new Error(d.error || 'Не удалось сохранить групповые права');
+        }
+        const updated = (await r.json()) as AdminPermission[];
+        setPermissions(prev => [...prev.filter(p => p.roleId !== activeRole.id), ...updated]);
+        setPermissionsAvailable(true);
+        matrixSaved = true;
+      } catch (err: unknown) {
+        const msg = `групповой доступ: ${err instanceof Error ? err.message : 'ошибка'}`;
+        // Матрица осталась локальным черновиком — повторное сохранение безопасно (полная замена).
+        setMatrixError(msg);
+        failures.push(msg);
       }
-      const updated = (await r.json()) as AdminPermission[];
-      setPermissions(prev => [...prev.filter(p => p.roleId !== activeRole.id), ...updated]);
-      matrixSaved = true;
-    } catch (err: unknown) {
-      const msg = `групповой доступ: ${err instanceof Error ? err.message : 'ошибка'}`;
-      // Матрица осталась локальным черновиком — повторное сохранение безопасно (полная замена).
-      setMatrixError(msg);
-      failures.push(msg);
     }
 
     // 2) Прямые выдачи на объекты. PUT — полная замена: без успешной GET-загрузки
     // отправлять список нельзя (пустой grants сотрёт все выдачи роли).
-    if (!isAdminRole(activeRole)) {
+    if (canManageAccess && permissionsAvailable && !isAdminRole(activeRole)) {
       if (!grantsLoaded) {
         const msg = 'прямые доступы: список не загружен, изменения не отправлены — повторите загрузку';
         setGrantsError(msg);
@@ -724,12 +784,16 @@ export function RolesTab() {
         </Button>
         {!isSystemRole(row) && (
           <>
-            <Button size="sm" variant="outline" onClick={() => startRename(row)}>
-              Переименовать
-            </Button>
-            <Button size="sm" variant="outline" onClick={() => askDelete(row)}>
-              Удалить
-            </Button>
+            {canUpdateRole && (
+              <Button size="sm" variant="outline" onClick={() => startRename(row)}>
+                Переименовать
+              </Button>
+            )}
+            {canDeleteRole && (
+              <Button size="sm" variant="outline" onClick={() => askDelete(row)}>
+                Удалить
+              </Button>
+            )}
           </>
         )}
       </div>
@@ -737,6 +801,7 @@ export function RolesTab() {
   }
 
   function renderRoleUsers() {
+    if (!canReadRoleUsers) return null;
     return (
       <div className={styles.detailSection}>
         <div className={styles.matrixHead}>
@@ -783,7 +848,18 @@ export function RolesTab() {
 
   function renderMatrix() {
     const role = activeRole;
-    if (!role) return null;
+    if (!role || !canReadAccess) return null;
+    if (groupsLoading || permissionsLoading) {
+      return (
+        <div className={styles.detailSection}>
+          <div className={styles.matrixHead}>
+            <div className={styles.matrixTitle}>Групповой доступ</div>
+          </div>
+          <SkeletonRows rows={3} cols={4} cellWidths={['34%', '22%', '22%', '22%']} />
+        </div>
+      );
+    }
+    if (!groupsAvailable || !permissionsAvailable) return null;
     const isAdmin = isAdminRole(role);
     return (
       <div className={styles.detailSection}>
@@ -824,7 +900,7 @@ export function RolesTab() {
                           type="checkbox"
                           className={styles.permCheck}
                           checked={isAdmin || matrixDraft.has(entryKey(g.id, a.value))}
-                          disabled={isAdmin}
+                          disabled={isAdmin || !canManageAccess}
                           onChange={() => togglePerm(g.id, a.value)}
                         />
                       </td>
@@ -928,7 +1004,7 @@ export function RolesTab() {
 
   function renderGrants() {
     const role = activeRole;
-    if (!role) return null;
+    if (!role || !canReadAccess || !permissionsAvailable) return null;
     const isAdmin = isAdminRole(role);
     return (
       <div className={styles.detailSection}>
@@ -966,7 +1042,7 @@ export function RolesTab() {
                       <th>Тип</th>
                       <th>ID</th>
                       <th>Действие</th>
-                      <th />
+                      {canManageAccess && <th />}
                     </tr>
                   </thead>
                   <tbody>
@@ -976,19 +1052,25 @@ export function RolesTab() {
                         <td><span className={styles.typeChip}>{typeLabel(g.objectType)}</span></td>
                         <td><span className={styles.monoId}>{shortId(g.objectId)}</span></td>
                         <td><span className={styles.actionChip}>{actionLabel(g.action)}</span></td>
-                        <td>
-                          <Button size="sm" variant="outline" onClick={() => removeGrant(grantKey(g))}>
-                            Убрать
-                          </Button>
-                        </td>
+                        {canManageAccess && (
+                          <td>
+                            <Button size="sm" variant="outline" onClick={() => removeGrant(grantKey(g))}>
+                              Убрать
+                            </Button>
+                          </td>
+                        )}
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
             )}
-            <div className={styles.searchLabel}>Добавить прямой доступ</div>
-            {renderGrantsSearch()}
+            {canManageAccess && (
+              <>
+                <div className={styles.searchLabel}>Добавить прямой доступ</div>
+                {renderGrantsSearch()}
+              </>
+            )}
           </>
         )}
       </div>
@@ -1012,9 +1094,7 @@ export function RolesTab() {
                 : 'просмотр доступен, изменение требует capability admin:write'}
           </div>
         </div>
-        {capsCatalog.length === 0 ? (
-          <div className={styles.noGroups}>Каталог спец-прав недоступен</div>
-        ) : capsLoading ? (
+        {capsCatalog.length === 0 ? null : capsLoading ? (
           <SkeletonRows rows={3} cols={3} cellWidths={['40%', '52%', '52%']} />
         ) : capsError && !capsLoaded ? (
           // Список не загружен: PUT по пустому Set сотрёт коды — показываем retry-блок.
@@ -1086,7 +1166,7 @@ export function RolesTab() {
         {canViewSpecialCaps && renderSpecialCaps()}
         {renderGrants()}
         <div className={styles.matrixActions}>
-          {!isAdmin && (
+          {!isAdmin && ((canManageAccess && permissionsAvailable) || (canManageSpecialCaps && !isSystemRole(activeRole))) && (
             <Button size="sm" variant="primary" onClick={handleDetailSave} disabled={detailSaving}>
               {detailSaving ? '…' : 'Сохранить'}
             </Button>
@@ -1167,21 +1247,23 @@ export function RolesTab() {
 
   return (
     <>
-      <form className={styles.createBox} onSubmit={handleCreate}>
-        <div className={styles.createLabel}>Новая роль</div>
-        <div className={styles.createRow}>
-          <input
-            className={styles.createInput}
-            placeholder="имя роли"
-            value={name}
-            onChange={e => setName(e.target.value)}
-          />
-          <Button size="sm" variant="primary" type="submit" disabled={creating || !name.trim()}>
-            {creating ? '…' : 'Создать'}
-          </Button>
-        </div>
-        {createError && <div className={styles.formError}>{createError}</div>}
-      </form>
+      {canCreateRole && (
+        <form className={styles.createBox} onSubmit={handleCreate}>
+          <div className={styles.createLabel}>Новая роль</div>
+          <div className={styles.createRow}>
+            <input
+              className={styles.createInput}
+              placeholder="имя роли"
+              value={name}
+              onChange={e => setName(e.target.value)}
+            />
+            <Button size="sm" variant="primary" type="submit" disabled={creating || !name.trim()}>
+              {creating ? '…' : 'Создать'}
+            </Button>
+          </div>
+          {createError && <div className={styles.formError}>{createError}</div>}
+        </form>
+      )}
       {actionError && <div className={styles.saveError}>{actionError}</div>}
       <Table columns={columns} data={roles} emptyText="Ролей нет" />
       {renderRoleDetail()}
