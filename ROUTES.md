@@ -12,7 +12,6 @@
 
 | Метод | Эндпоинт | Назначение | Доступ |
 | --- | --- | --- | --- |
-
 | GET | `/api/v1/health` | Проверка доступности API | открытый |
 | GET | `/api/v1/docs` | Swagger UI (открыт при `SWAGGER_ENABLED=1`; CSP снят только здесь) | открытый |
 | GET | `/api/v1/docs.json` | OpenAPI-спека (при `SWAGGER_ENABLED=1`) | открытый |
