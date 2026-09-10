@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Table, type Column } from '../Table/Table';
 import { Button } from '../Button/Button';
 import { apiFetch } from '../../api';
+import { useAuth } from '../../auth';
 import { useNotify } from '../../notifications';
 import { Skeleton, SkeletonRows } from '../Skeleton/Skeleton';
 import type {
@@ -47,7 +48,13 @@ function objectDisplayName(name: string | null, id: string) {
 }
 
 export function GroupsTab() {
+  const { capabilities } = useAuth();
   const { toast } = useNotify();
+  const canReadObjectCatalog = capabilities.includes('permission:read');
+  const canManageComposition = capabilities.includes('permission:manage');
+  const canCreateGroup = capabilities.includes('group:create');
+  const canUpdateGroup = capabilities.includes('group:update');
+  const canDeleteGroup = capabilities.includes('group:delete');
   const [groups, setGroups] = useState<AdminGroup[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
@@ -166,7 +173,7 @@ export function GroupsTab() {
     }
     const trimmed = query.trim();
     const seq = ++searchSeq.current;
-    if (!composingId || trimmed === '') {
+    if (!composingId || !canReadObjectCatalog || trimmed === '') {
       setSearchResults([]);
       setSearchTotal(0);
       setSearchError('');
@@ -191,7 +198,7 @@ export function GroupsTab() {
           if (searchSeq.current === seq) setSearchLoading(false);
         });
     }, 250);
-  }, [query, typeFilter, composingId]);
+  }, [query, typeFilter, composingId, canReadObjectCatalog]);
 
   async function handleCreate(e: FormEvent) {
     e.preventDefault();
@@ -296,6 +303,7 @@ export function GroupsTab() {
     setCompError('');
     apiFetch(`/admin/groups/${groupId}/objects`)
       .then(async r => {
+        if (r.status === 403) return null;
         if (!r.ok) {
           const d = await r.json().catch(() => ({}));
           throw new Error(d.error || 'Не удалось загрузить состав');
@@ -303,7 +311,7 @@ export function GroupsTab() {
         return (await r.json()) as AdminGroupObject[];
       })
       .then(objs => {
-        if (compRequestId.current !== seq) return;
+        if (compRequestId.current !== seq || objs === null) return;
         setMembers(objs);
         setMembersLoaded(true);
       })
@@ -312,7 +320,6 @@ export function GroupsTab() {
         const msg = e instanceof Error ? e.message : 'Не удалось загрузить состав';
         setMembersLoaded(false);
         setCompError(msg);
-        toast.error(msg);
       })
       .finally(() => {
         if (compRequestId.current === seq) setCompLoading(false);
@@ -353,7 +360,7 @@ export function GroupsTab() {
   }
 
   async function handleCompositionSave() {
-    if (!composingId || compSaving) return;
+    if (!composingId || compSaving || !canManageComposition) return;
     if (!membersLoaded) {
       setCompError('состав не загружен, изменения не отправлены — повторите загрузку');
       return;
@@ -417,12 +424,16 @@ export function GroupsTab() {
         </Button>
         {!row.isSystem && (
           <>
-            <Button size="sm" variant="outline" onClick={() => startRename(row)}>
-              Переименовать
-            </Button>
-            <Button size="sm" variant="outline" onClick={() => askDelete(row)}>
-              Удалить
-            </Button>
+            {canUpdateGroup && (
+              <Button size="sm" variant="outline" onClick={() => startRename(row)}>
+                Переименовать
+              </Button>
+            )}
+            {canDeleteGroup && (
+              <Button size="sm" variant="outline" onClick={() => askDelete(row)}>
+                Удалить
+              </Button>
+            )}
           </>
         )}
       </div>
@@ -565,7 +576,7 @@ export function GroupsTab() {
                       <th>Объект</th>
                       <th>Тип</th>
                       <th>ID</th>
-                      <th />
+                      {canManageComposition && <th />}
                     </tr>
                   </thead>
                   <tbody>
@@ -574,24 +585,28 @@ export function GroupsTab() {
                         <td className={styles.objectNameCell}>{objectDisplayName(m.name, m.objectId)}</td>
                         <td><span className={styles.typeChip}>{typeLabel(m.type)}</span></td>
                         <td><span className={styles.monoId}>{shortId(m.objectId)}</span></td>
-                        <td>
-                          <Button size="sm" variant="outline" onClick={() => removeMember(m.objectId)}>
-                            Убрать
-                          </Button>
-                        </td>
+                        {canManageComposition && (
+                          <td>
+                            <Button size="sm" variant="outline" onClick={() => removeMember(m.objectId)}>
+                              Убрать
+                            </Button>
+                          </td>
+                        )}
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
             )}
-            {renderMemberSearch()}
+            {canReadObjectCatalog && canManageComposition && renderMemberSearch()}
             <div className={styles.compActions}>
-              <Button size="sm" variant="primary" onClick={handleCompositionSave} disabled={compSaving}>
-                {compSaving ? '…' : 'Сохранить'}
-              </Button>
+              {canManageComposition && (
+                <Button size="sm" variant="primary" onClick={handleCompositionSave} disabled={compSaving}>
+                  {compSaving ? '…' : 'Сохранить'}
+                </Button>
+              )}
               <Button size="sm" variant="outline" onClick={closeComposition} disabled={compSaving}>
-                Отмена
+                {canManageComposition ? 'Отмена' : 'Закрыть'}
               </Button>
             </div>
           </>
@@ -662,21 +677,23 @@ export function GroupsTab() {
 
   return (
     <>
-      <form className={styles.createBox} onSubmit={handleCreate}>
-        <div className={styles.createLabel}>Новая группа</div>
-        <div className={styles.createRow}>
-          <input
-            className={styles.createInput}
-            placeholder="имя группы"
-            value={name}
-            onChange={e => setName(e.target.value)}
-          />
-          <Button size="sm" variant="primary" type="submit" disabled={creating || !name.trim()}>
-            {creating ? '…' : 'Создать'}
-          </Button>
-        </div>
-        {createError && <div className={styles.formError}>{createError}</div>}
-      </form>
+      {canCreateGroup && (
+        <form className={styles.createBox} onSubmit={handleCreate}>
+          <div className={styles.createLabel}>Новая группа</div>
+          <div className={styles.createRow}>
+            <input
+              className={styles.createInput}
+              placeholder="имя группы"
+              value={name}
+              onChange={e => setName(e.target.value)}
+            />
+            <Button size="sm" variant="primary" type="submit" disabled={creating || !name.trim()}>
+              {creating ? '…' : 'Создать'}
+            </Button>
+          </div>
+          {createError && <div className={styles.formError}>{createError}</div>}
+        </form>
+      )}
       {actionError && <div className={styles.saveError}>{actionError}</div>}
       <Table columns={columns} data={groups} emptyText="Групп нет" />
       {renderComposition()}
